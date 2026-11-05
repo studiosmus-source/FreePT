@@ -96,7 +96,7 @@ async function refreshOnVisible(){
     try {
       if(me && profile?.status==='pending'){
         await loadProfile();
-        if(profile.status==='approved'){await renderWorkspace();return}
+        if(profile.status==='approved'){await renderWorkspace();return}if(profile.status==='blocked'){requestScreen(true);return}
       }
       if(me && profile?.role==='admin' && profile.status==='approved'){
         await listPeople();
@@ -108,7 +108,7 @@ async function refreshOnVisible(){
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
 }
 function renderLayout(){let admin=profile.role==='admin';el.innerHTML='<div class="shell">'+heading('FreePT', '<button id="logout">Esci</button>')+'<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+'<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+(admin?'<button class="mobileBack" id="back">‹</button>':'')+'<strong class="grow" id="chatTitle">Servizio</strong></div><div class="feed" id="feed"></div><div class="hint" id="queued"></div><form class="compose" id="send"><label class="attach" for="file">📎</label><input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea><button id="sendBtn">Invia</button></form><p id="status" class="hint"></p></section></div></div>';document.getElementById('logout').onclick=logout;if(admin){renderPeople();document.getElementById('back').onclick=()=>{document.getElementById('chat').classList.add('off');document.getElementById('people').classList.remove('off')}} document.getElementById('send').onsubmit=send}
-function renderPeople(){const p=document.getElementById('people');if(!p)return;p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+esc(x.phone)+' · '+esc(x.status)+'</small>'+(x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span>':'')+'</button>').join('');p.querySelectorAll('[data-id]').forEach(b=>b.onclick=async ev=>{const id=b.dataset.id;if(ev.target.dataset.approve){ev.stopPropagation();if(!confirm('Approvare questo utente?'))return;let {error}=await db.from('profiles').update({status:'approved'}).eq('id',id);if(error)alert(friendly(error));else{await listPeople();renderPeople()}return}selected=id;messageRequest++;document.getElementById('chat').classList.remove('off');p.classList.add('off');document.getElementById('chatTitle').textContent=people.find(x=>x.id===id)?.full_name||'Chat';await showMessages()})}
+function renderPeople(){const p=document.getElementById('people');if(!p)return;p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+esc(x.phone)+' · '+esc(x.status)+'</small>'+(x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+'</button>').join('');p.querySelectorAll('[data-id]').forEach(b=>b.onclick=async ev=>{const id=b.dataset.id;if(ev.target.dataset.approve||ev.target.dataset.deny){ev.stopPropagation();const approved=!!ev.target.dataset.approve;if(!confirm(approved?'Approvare questo utente?':'Rifiutare questa richiesta?'))return;const {error}=await db.from('profiles').update({status:approved?'approved':'blocked'}).eq('id',id);if(error)alert(friendly(error));else{await listPeople();renderPeople()}return}selected=id;messageRequest++;document.getElementById('chat').classList.remove('off');p.classList.add('off');document.getElementById('chatTitle').textContent=people.find(x=>x.id===id)?.full_name||'Chat';await showMessages()})}
 async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<a href="#" class="filelink" data-file="'+esc(m.file_path)+'">📎 '+esc(m.file_name||'Allegato')+'</a>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
   const queue=document.getElementById('queued');
   if(queue){
@@ -125,7 +125,7 @@ setInterval(async () => {
   try {
     if(profile.status==='pending'){
       await loadProfile();
-      if(profile.status==='approved') await renderWorkspace();
+      if(profile.status==='approved') await renderWorkspace(); else if(profile.status==='blocked') requestScreen(true);
     } else if(profile.status==='approved' && profile.role==='admin'){
       await listPeople();
       renderPeople();
