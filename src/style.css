@@ -28,3 +28,27 @@ html,body,#app{min-height:100%;height:100%}
 .panel:has(.disclaimer){margin:12px auto}
 .admin-entry{display:block;width:100%;margin:4px 0 14px;border:1px solid #cbd5e1;background:#f2f5f8;color:#164b70;font-size:14px;font-weight:600;padding:12px}
 .workspace{min-height:0}
+
+/* Test amministratore / utente sullo stesso telefono, due sessioni vere. */
+#app.dual-test{display:flex;flex-direction:column;overflow:hidden;height:100dvh}
+#app.dual-test>.shell{flex:0 0 50%;height:50dvh;min-height:0;max-width:none;overflow:hidden;border-bottom:3px solid #164b70}
+#app.dual-test .top{padding:8px 12px;min-height:54px}
+#app.dual-test .workspace{overflow:hidden;flex:1;min-height:0}
+#app.dual-test .people{overflow:auto}
+#app.dual-test .chat{min-height:0;overflow:hidden}
+#app.dual-test .feed{min-height:0}
+#app.dual-test #testToggle{background:#d5e9f6;color:#103f65;font-weight:700}
+.test-pane{flex:1;min-height:0;background:#f7fbfe;display:flex;flex-direction:column;overflow-y:auto;padding:10px 12px calc(14px + env(safe-area-inset-bottom,0px))}
+.test-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:8px;border-bottom:1px solid #cbd5e1;font-size:13px}
+.test-heading span{color:#64748b;font-size:11px}
+.test-form{display:grid;gap:8px;padding-top:10px}
+.test-form input{padding:9px}
+.test-form label{font-size:12px;display:flex;gap:8px;align-items:flex-start}
+.test-form label input{width:20px;height:20px;flex:none;margin:0}
+.test-form button,.test-compose button{padding:9px}
+.test-feed{flex:1;min-height:75px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:10px 4px}
+.test-feed .bubble{font-size:13px}
+.test-compose{display:flex;align-items:end;gap:8px}
+.test-compose textarea{flex:1;min-height:38px;padding:8px}
+.test-pane .notice{font-size:13px;margin:10px 0}
+.test-pane .small,.test-pane .error{font-size:12px;margin:5px 0}
