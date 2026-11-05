@@ -18,9 +18,36 @@ async function boot(){ const {data:{user}}=await db.auth.getUser();me=user;if(!m
 async function logout(){if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;authScreen()}
 async function listPeople(){const {data,error}=await db.from('profiles').select('id,full_name,phone,status,role').neq('role','admin').order('created_at',{ascending:false});if(error)throw error;people=data||[]}
 async function renderWorkspace(){if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
-function refreshOnVisible(){if(document.visibilityState==='visible'&&selected)showMessages(false);else document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function refreshOnVisible(){
+  if(document.visibilityState==='visible'){
+    try {
+      if(me && profile?.status==='pending'){
+        await loadProfile();
+        if(profile.status==='approved'){await renderWorkspace();return}
+      }
+      if(me && profile?.role==='admin' && profile.status==='approved'){
+        await listPeople();
+        renderPeople();
+      }
+      if(selected) await showMessages(false);
+    } catch(e){ status(friendly(e),true) }
+  }
+  document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
+}
 function renderLayout(){let admin=profile.role==='admin';el.innerHTML='<div class="shell">'+heading('FreePT', '<button id="logout">Esci</button>')+'<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+'<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+(admin?'<button class="mobileBack" id="back">‹</button>':'')+'<strong class="grow" id="chatTitle">Servizio</strong></div><div class="feed" id="feed"></div><div class="hint" id="queued"></div><form class="compose" id="send"><label class="attach" for="file">📎</label><input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea><button id="sendBtn">Invia</button></form><p id="status" class="hint"></p></section></div></div>';document.getElementById('logout').onclick=logout;if(admin){renderPeople();document.getElementById('back').onclick=()=>{document.getElementById('chat').classList.add('off');document.getElementById('people').classList.remove('off')}} document.getElementById('send').onsubmit=send}
 function renderPeople(){const p=document.getElementById('people');if(!p)return;p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+esc(x.phone)+' · '+esc(x.status)+'</small>'+(x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span>':'')+'</button>').join('');p.querySelectorAll('[data-id]').forEach(b=>b.onclick=async ev=>{const id=b.dataset.id;if(ev.target.dataset.approve){ev.stopPropagation();if(!confirm('Approvare questo utente?'))return;let {error}=await db.from('profiles').update({status:'approved'}).eq('id',id);if(error)alert(friendly(error));else{await listPeople();renderPeople()}return}selected=id;document.getElementById('chat').classList.remove('off');p.classList.add('off');document.getElementById('chatTitle').textContent=people.find(x=>x.id===id)?.full_name||'Chat';await showMessages()})}
 async function showMessages(scroll=true){if(!selected)return;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',selected).order('created_at',{ascending:true}).limit(200);const {data,error}=await query;if(error){status(friendly(error),true);return}messages=data||[];const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<a href="#" class="filelink" data-file="'+esc(m.file_path)+'">📎 '+esc(m.file_name||'Allegato')+'</a>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');feed.querySelectorAll('[data-file]').forEach(a=>a.onclick=async ev=>{ev.preventDefault();const {data,error}=await db.storage.from('attachments').createSignedUrl(a.dataset.file,60);if(error){status(friendly(error),true);return}window.open(data.signedUrl,'_blank','noopener')});if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
 async function send(ev){ev.preventDefault();if(busy||!selected)return;const form=ev.target,body=form.elements.text.value.trim(),file=form.elements.file.files[0];if(!body&&!file)return;if(file&&file.size>25*1024*1024){status('Allegato troppo grande: massimo 25 MB',true);return}busy=true;document.getElementById('sendBtn').disabled=true;status('Invio in corso...');let path=null;try{if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';path=selected+'/'+crypto.randomUUID()+'/'+safe;const upload=await db.storage.from('attachments').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(upload.error)throw upload.error}const id=crypto.randomUUID();const payload={id,user_id:selected,sender_id:me.id,body,file_path:path,file_name:file?.name||null};const {error}=await db.from('messages').insert(payload);if(error)throw error;form.reset();status('Messaggio ricevuto dal server.');await showMessages()}catch(e){status('Invio non completato: '+friendly(e),true)}finally{busy=false;document.getElementById('sendBtn').disabled=false}}
 boot();
+setInterval(async () => {
+  if(document.visibilityState!=='visible' || !me || !profile) return;
+  try {
+    if(profile.status==='pending'){
+      await loadProfile();
+      if(profile.status==='approved') await renderWorkspace();
+    } else if(profile.status==='approved' && profile.role==='admin'){
+      await listPeople();
+      renderPeople();
+    }
+  } catch(e){ status(friendly(e),true) }
+}, 20000);
