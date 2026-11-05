@@ -45,6 +45,22 @@ La modalità temporanea a schermo diviso, con il pulsante TEST e la seconda sess
 
 Le righe di prova eventualmente create in Supabase non vengono cancellate da questa modifica, per evitare alterazioni involontarie del database. Il funzionamento con due installazioni fisiche separate non è ancora stato verificato.
 
+## Gestione chat: pressione lunga (solo amministratore)
+
+Dalla lista chat, tenere premuta una conversazione per circa 650 ms (oppure usare il menu contestuale con il mouse). Si apre una finestra con conferme esplicite:
+
+- **Cancella chat:** elimina i messaggi della conversazione e i relativi allegati; mantiene l'utente approvato. La chat sparisce dalla lista fino a quando l'utente non scrive di nuovo.
+- **Elimina utente:** elimina gli allegati tramite la Storage API e poi cancella l'identità Supabase Auth; la rimozione del profilo e dei messaggi avviene con i vincoli di cascata del database. La persona dovrà effettuare una nuova richiesta se vuole tornare.
+- **Annulla:** chiude il menu senza modifiche.
+
+Questi comandi sono visibili **soltanto all'amministratore** autenticato e la RPC verifica sul server il ruolo admin approvato, senza potersi applicare all'admin stesso. Non sono concessi permessi DELETE diretti sulle tabelle all'app. I file sono cancellati tramite Storage API con una policy dedicata: non cancellare mai direttamente righe in `storage.objects`.
+
+### Migrazione obbligatoria
+
+Prima di installare la nuova APK, eseguire una volta in **Supabase SQL Editor** il file `supabase/migrations/20261105_delete_chats_users.sql`. Aggiunge `profiles.chat_hidden_at`, la policy di eliminazione dei file per l'admin e la RPC `freept_admin_delete_conversation`. L'esecuzione della migrazione **non cancella alcun dato**. Se non è stata eseguita, la nuova APK potrebbe non riuscire a caricare l'elenco chat.
+
+Le operazioni sono irreversibili. Gli allegati sono eliminati prima delle righe SQL: se il processo fallisce a metà, alcuni file possono essere già stati eliminati anche se la chat è ancora presente. Evitare operazioni contemporanee sulla stessa chat. Non è stata verificata l'esecuzione SQL nel progetto Supabase remoto né il collaudo di queste cancellazioni su Android; provarle prima su un account fittizio.
+
 ## APK Android
 
 Il workflow GitHub `.github/workflows/android-debug.yml` genera un APK di debug e verifica archivio, identificativo `it.freept.app` e hash. Dopo ogni modifica controllare l'esito della nuova build: una vecchia compilazione verde non prova che la nuova versione funzioni.
