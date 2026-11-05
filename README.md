@@ -19,6 +19,14 @@ FreePT è una chat privata con richiesta di accesso. L'utente inserisce nome e c
 
 Il telefono è una dichiarazione, non una verifica del possesso del numero. Per mantenere le chat separate, Supabase crea internamente una sessione anonima associata ai dati dell'installazione. Non esiste login utente con nome/telefono: se l'app viene disinstallata o i dati vengono cancellati, si può perdere l'accesso alla conversazione precedente. Non utilizzare con dati reali prima del collaudo completo dell'isolamento delle chat e degli allegati.
 
+## Accesso amministratore biometrico (decisione di progetto)
+
+L'amministratore si identifica tramite email e desidera sbloccare l'area riservata con l'impronta digitale Android, senza digitare una password a ogni apertura. Gli altri utenti non hanno email/password e continuano a inviare soltanto una richiesta di accesso.
+
+**Da implementare, non operativo nell'APK attuale:** per autenticazione realmente passwordless usare una **passkey verificata dal backend**, non soltanto una finestra biometrica lato client. Supabase Auth offre passkey/WebAuthn sperimentali (richiesta versione aggiornata di supabase-js e configurazione server): verificare supporto e compatibilità Android/Capacitor prima della modifica. La passkey richiede una prima attivazione sull'account amministratore non anonimo e confermato. Prevedere recupero con metodo dispositivo/autenticazione sicura se impronta non disponibile; non memorizzare dati biometrici nell'app e non assegnare ruoli in base al solo superamento di un controllo locale. Conservare le RLS basate su un'identità admin Auth autorizzata.
+
+**Il form email/password presente nel codice è provvisorio** e non rappresenta il metodo finale concordato. Evitare di eliminarlo prima di aver verificato un percorso amministratore funzionante, per non perdere la possibilità di accesso.
+
 ## Configurazione Supabase richiesta prima del test reale
 
 1. Il progetto deve contenere lo schema originale `supabase/schema.sql` (non rieseguire ciecamente operazioni già applicate).
