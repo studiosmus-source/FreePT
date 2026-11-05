@@ -63,6 +63,12 @@ Prima di rimuovere gli allegati, l'app verifica sul server tramite `freept_delet
 
 Le operazioni sono irreversibili. Gli allegati sono eliminati prima delle righe SQL: se il processo fallisce a metà, alcuni file possono essere già stati eliminati anche se la chat è ancora presente. Evitare operazioni contemporanee sulla stessa chat. Non è stata verificata l'esecuzione SQL nel progetto Supabase remoto né il collaudo di queste cancellazioni su Android; provarle prima su un account fittizio.
 
+## Caricamento di foto e allegati su Android
+
+Per file fino a **6 MB** FreePT usa il caricamento Supabase Storage gia' collaudato. Per file oltre 6 MB e fino al limite di **25 MB**, ora usa il caricamento riprendibile TUS con blocchi da 6 MB, tentativi automatici e percentuale di avanzamento. Nessuna foto viene ridimensionata o ricodificata. Si conserva la stessa sessione Supabase anonima per gli amici e la stessa policy RLS del bucket privato `attachments`.
+
+Questo cambio e' stato introdotto per migliorare l'affidabilita' su connessioni mobili, **non** sulla base di un errore remoto acquisito: l'assenza di un messaggio dal telefono dell'amico non consente di dimostrare che sia questa la causa. Verificare su una APK compilata che funzionino foto piccole, foto oltre 6 MB, documenti, profili approvati e l'invio di messaggi dopo il caricamento. Il blocco puo' dipendere anche dal selettore Android, dai permessi, da un limite Storage globale o dalla rete.
+
 ## APK Android
 
 Il workflow GitHub `.github/workflows/android-debug.yml` genera un APK di debug e verifica archivio, identificativo `it.freept.app` e hash. Dopo ogni modifica controllare l'esito della nuova build: una vecchia compilazione verde non prova che la nuova versione funzioni.
