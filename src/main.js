@@ -419,8 +419,9 @@ async function uploadAttachment(path,file,onProgress){
   if(error)throw error;
   const token=data?.session?.access_token;
   if(!token)throw Error('Sessione scaduta: riapri FreePT.');
-  const storageUrl=URL.replace(/\\.supabase\\.co\\/?$/,'.storage.supabase.co');
-  const endpoint=storageUrl.replace(/\\/$/,'')+'/storage/v1/upload/resumable';
+  const storageUrl=URL.includes('.supabase.co')
+    ? URL.replace('.supabase.co','.storage.supabase.co') : URL;
+  const endpoint=storageUrl.replace(/\/$/,'')+'/storage/v1/upload/resumable';
   await new Promise((resolve,reject)=>{
     const upload=new tus.Upload(file,{
       endpoint,
