@@ -12,7 +12,8 @@
     "@capacitor/android": "^7.4.0",
     "@capacitor/cli": "^7.4.0",
     "@capacitor/core": "^7.4.0",
-    "@supabase/supabase-js": "^2.57.0"
+    "@supabase/supabase-js": "^2.57.0",
+    "@capgo/capacitor-native-biometric": "^7.0.0"
   },
   "devDependencies": {
     "vite": "^7.1.0"
