@@ -294,7 +294,7 @@ async function submitTestRequest(ev){
   ev.preventDefault();if(testBusy)return;testBusy=true;
   const form=ev.target, f=new FormData(form);
   const name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
-  if(name.length<2||!/^\\+[1-9]\\d{7,14}$/.test(phone)){testStatus('Inserisci nome e telefono internazionale valido.',true);testBusy=false;return}
+  if(name.length<2||!/^\+[1-9]\d{7,14}$/.test(phone)){testStatus('Inserisci nome e telefono internazionale valido.',true);testBusy=false;return}
   form.querySelector('button').disabled=true;testStatus('Invio della richiesta...');
   try{
     let user=testUser;
