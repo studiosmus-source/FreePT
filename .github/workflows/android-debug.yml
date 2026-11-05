@@ -29,8 +29,18 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: JavaScript syntax check
         run: node --check src/main.js
-      - name: Build web bundle
-        run: npm run build
+      - name: Build web bundle (3-minute diagnostic timeout)
+        run: |
+          echo "Node: $(node --version) / npm: $(npm --version)"
+          echo "Vite path: $(readlink -f node_modules/.bin/vite)"
+          timeout --signal=TERM --kill-after=10s 180s npm run build -- --debug 2>&1 | tee vite-build.log
+      - name: Upload Vite build diagnostic log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-vite-build-diagnostic
+          path: vite-build.log
+          if-no-files-found: warn
       - name: Generate Android project
         run: npx cap add android
       - name: Check Android project and permissions
