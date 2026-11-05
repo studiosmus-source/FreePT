@@ -13,6 +13,7 @@ let fetchingMessages = false;
 let adminUnlocked = false;
 let adminUnlocking = false;
 let awaySince = 0;
+let deleteMigrationReady = true;
 let filePickerActive = false;
 let filePickerReturned = false;
 let filePickerClearTimer = null;
@@ -169,11 +170,18 @@ async function boot(){
 
 async function logout(){adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
-  const {data,error}=await db.from('profiles')
+  let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
     .neq('role','admin').order('created_at',{ascending:false});
-  if(error)throw error;
-  const users=data||[];
+  if(result.error && /chat_hidden_at/i.test(result.error.message||'')){
+    // Backwards compatibility: keep normal chat functional before SQL migration.
+    deleteMigrationReady=false;
+    result=await db.from('profiles')
+      .select('id,full_name,phone,status,role,created_at')
+      .neq('role','admin').order('created_at',{ascending:false});
+  }else if(!result.error)deleteMigrationReady=true;
+  if(result.error)throw result.error;
+  const users=result.data||[];
   const {data:recent,error:messagesError}=await db.from('messages')
     .select('user_id,body,file_name,created_at')
     .order('created_at',{ascending:false}).limit(300);
@@ -308,6 +316,12 @@ function showConversationActions(user){
   modal.onclick=event=>{if(event.target===modal)close()};
   document.getElementById('cancelChatAction').onclick=close;
   const run=async deleteUser=>{
+    if(!deleteMigrationReady){
+      const statusNode=document.getElementById('actionStatus');
+      statusNode.textContent='Prima devi applicare in Supabase la migrazione 20261105_delete_chats_users.sql.';
+      statusNode.className='error';
+      return;
+    }
     const name=user.full_name;
     const question=deleteUser
       ? 'ELIMINARE DEFINITIVAMENTE '+name+'? Verranno rimossi account, accesso, messaggi e allegati. Non si puo annullare.'
@@ -315,8 +329,13 @@ function showConversationActions(user){
     if(!confirm(question))return;
     modal.querySelectorAll('button').forEach(b=>b.disabled=true);
     const statusNode=document.getElementById('actionStatus');
-    statusNode.textContent='Rimozione degli allegati in corso...';
+    statusNode.textContent='Verifica delle autorizzazioni...';
     try{
+      // Do not touch Storage until the backend migration and admin check succeed.
+      const readiness=await db.rpc('freept_delete_ready');
+      if(readiness.error)throw new Error('Migrazione SQL non pronta: '+friendly(readiness.error));
+      if(readiness.data!==true)throw new Error('Autorizzazione amministratore negata.');
+      statusNode.textContent='Rimozione degli allegati in corso...';
       await deleteConversationFiles(user.id);
       statusNode.textContent=deleteUser?'Eliminazione account in corso...':'Cancellazione chat in corso...';
       const {error}=await db.rpc('freept_admin_delete_conversation',{
