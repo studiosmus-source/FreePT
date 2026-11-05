@@ -21,6 +21,8 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install web dependencies
         run: npm install --no-audit --no-fund
+      - name: JavaScript syntax check
+        run: node --check src/main.js
       - name: Build web bundle
         run: npm run build
       - name: Generate Android project
