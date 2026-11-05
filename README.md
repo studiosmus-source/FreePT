@@ -37,19 +37,13 @@ Il plugin `@capgo/capacitor-native-biometric` versione 7 è associato a Capacito
 
 **Attenzione:** i passaggi Supabase non sono stati eseguiti né verificati da questa repository. L'APK può compilare correttamente ma la richiesta di accesso fallire finché non vengono completati.
 
-## Collaudo con un solo telefono — schermo diviso
+## Collaudo completato e modalità TEST rimossa
 
-Dopo avere effettuato l'accesso come amministratore nell'APK Android, premere **TEST** nella barra superiore. La schermata è divisa in due metà:
-- **Sopra:** area amministratore vera con elenco richieste e conversazioni.
-- **Sotto:** utente di prova con una **seconda sessione Auth anonima**, conservata con una chiave di archiviazione differente (`freept-test-user-session`).
+Nel collaudo su un solo telefono, l'utente ha confermato il funzionamento di richiesta e approvazione, chat bidirezionale, allegati e apertura della galleria senza perdere la sessione amministrativa.
 
-Inserire un nome di prova e un **numero di telefono non già usato nel database** (formato internazionale), accettare il consenso e inviare. L'account di prova compare tra le richieste reali: approvarlo sopra, quindi inviare un messaggio dalla chat in basso, aprire la relativa chat in alto e rispondere. I messaggi e i permessi sono gestiti dal vero Supabase; non è una simulazione offline.
+La modalità temporanea a schermo diviso, con il pulsante TEST e la seconda sessione Supabase, è stata rimossa dai sorgenti. La chat normale mantiene il caricamento di allegati (limite 25 MB), il nome del file scelto, il permesso biometrico e la sospensione del blocco durante la selezione di foto/documenti.
 
-Il pulsante **TEST** chiude e riapre la vista divisa senza disconnettere l'amministratore. La sessione di prova persiste sul dispositivo. **Attenzione:** i profili e i messaggi di prova sono scritti nel database reale e non vengono cancellati automaticamente. Usare soltanto dati fittizi; non usare il numero di un amico né dati personali. La modalità TEST è disponibile soltanto quando l'amministratore è autenticato e ha sbloccato l'app.
-
-Gli allegati (fino a 25 MB) sono supportati anche nella chat dell'utente di prova: il file viene caricato nel bucket privato `attachments` tramite la sessione anonima separata e collegato al messaggio. In entrambe le chat appare il nome del file prima dell'invio. Aprire il selettore/galleria non deve più provocare il blocco immediato dell'amministratore: un flag temporaneo sospende soltanto il blocco mentre il selettore è attivo, poi la protezione biometrica torna normale. Il selettore chiuso senza file viene gestito anche dall'evento `cancel` e da un breve ripristino su ritorno in primo piano.
-
-Questo collaudo non sostituisce la verifica con due veri telefoni prima della distribuzione, specialmente per isolamento tra installazioni, allegati e comportamento dopo riavvio. Il comportamento del selettore Android e l'invio dei file devono essere verificati sulla nuova APK, non sono ancora testati su dispositivo.
+Le righe di prova eventualmente create in Supabase non vengono cancellate da questa modifica, per evitare alterazioni involontarie del database. Il funzionamento con due installazioni fisiche separate non è ancora stato verificato.
 
 ## APK Android
 
