@@ -52,6 +52,17 @@ jobs:
           npx cap add android
           npx cap sync android
           test -s android/capacitor.settings.gradle
+      - name: Ensure Android biometric permission
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          if 'android.permission.USE_BIOMETRIC' not in s:
+              s=s.replace('<application', '<uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <application', 1)
+              p.write_text(s)
+          assert 'android.permission.USE_BIOMETRIC' in p.read_text()
+          PY
       - name: Check Android project and permissions
         run: |
           test -f android/app/src/main/AndroidManifest.xml
