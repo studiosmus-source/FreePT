@@ -1,23 +1,31 @@
 # FreePT
 
-FreePT è una chat privata per inviare richieste e allegati al servizio e ricevere risposte. Il proprietario del servizio gestisce tutte le conversazioni; ogni utente vede solo la propria.
+FreePT è una chat privata con richiesta di accesso. L'utente inserisce nome e cellulare, accetta il disclaimer, invia la richiesta e attende una decisione. Non deve inserire password o verificare il telefono tramite SMS.
 
-## Stato e sicurezza
+## Esperienza utente
 
-**Prototipo non collaudato.** Non utilizzare dati personali reali prima di verificare autenticazione, RLS e permessi Storage. Le regole SQL sono in `supabase/schema.sql`; la loro presenza nel repository non ne prova l'applicazione sul progetto remoto.
+- Prima apertura: modulo con nome, telefono e accettazione obbligatoria del disclaimer.
+- Richiesta inviata: «I nostri sistemi stanno elaborando la tua richiesta di accesso… Attendere.»
+- Approvazione amministratore: la chat si apre al successivo controllo dello stato (ogni 20 secondi con app visibile).
+- Rifiuto: la chat resta bloccata e l'app mostra la schermata di accesso con richiesta non approvata.
+- Invio messaggi/allegati: dopo la conferma del server compare «Richiesta in elaborazione… Attendere.» finché non arriva la risposta nella stessa chat.
+- Amministratore: elenco utenti, pulsanti Approva e Rifiuta per le richieste in attesa, chat singole.
+- **Non ci sono notifiche push quando l'app è chiusa**. L'approvazione è rilevata quando l'app è aperta o torna in primo piano.
 
-## Autenticazione con numero e password (senza SMS)
+## Identità tecnica e limiti
 
-L'app ora usa `supabase.auth.signUp({ phone, password })` e `signInWithPassword({ phone, password })`. Non usa più indirizzi email sintetici: il dominio `.invalid` può essere rifiutato da Supabase.
+Il telefono è una dichiarazione, non una verifica del possesso del numero. Per mantenere le chat separate, Supabase crea internamente una sessione anonima associata ai dati dell'installazione. Non esiste login utente con nome/telefono: se l'app viene disinstallata o i dati vengono cancellati, si può perdere l'accesso alla conversazione precedente. Non utilizzare con dati reali prima del collaudo completo dell'isolamento delle chat e degli allegati.
 
-Sul progetto Supabase devono essere abilitati **Phone provider** e la modalità **senza conferma telefonica**. *Non attivare la conferma tramite SMS e non configurare un provider SMS a pagamento.* Se la configurazione hosted non consente di usare Phone+Password senza invio di SMS, occorre sostituire il flusso con una procedura di registrazione amministrata lato server **prima del rilascio**; non aggirare la verifica utilizzando indirizzi email inventati.
+## Configurazione Supabase richiesta prima del test reale
 
-Il numero non è verificato via SMS e deve essere trattato come dichiarazione dell'utente. L'approvazione amministrativa è separata dall'autenticazione.
+1. Il progetto deve contenere lo schema originale `supabase/schema.sql` (non rieseguire ciecamente operazioni già applicate).
+2. Applicare la migrazione `supabase/migrations/20261105_access_requests.sql` nel SQL Editor e confermare che non abbia errori.
+3. In Authentication abilitare **Anonymous Sign-ins**. Non è necessario abilitare **Phone signups**, conferme via SMS o provider SMS a pagamento.
+4. Creare **separatamente** l'identità amministratore tramite Supabase Authentication, con email e password affidabili. Verificare l'ID in `auth.users`, creare o associare il corrispondente profilo in `public.profiles` e assegnare `role='admin', status='approved'` soltanto a quell'ID. Il profilo amministratore **non** va ottenuto dalla richiesta anonima di un utente.
+5. Fare test con due dispositivi/sessioni distinti: richiesta, approvazione, rifiuto, invio e ricezione, RLS e Storage. Verificare il comportamento dopo riavvio app e cambio rete.
 
-## Amministratore
+**Attenzione:** i passaggi Supabase non sono stati eseguiti né verificati da questa repository. L'APK può compilare correttamente ma la richiesta di accesso fallire finché non vengono completati.
 
-Dopo aver creato il primo account e verificato la sua identità, l'assegnazione del ruolo `admin` va eseguita mediante il SQL Editor con una query puntuale sull'ID corretto. **Non** promuovere un account sulla base del solo numero dichiarato da una persona sconosciuta.
+## APK Android
 
-## Android
-
-Il workflow `.github/workflows/android-debug.yml` prova a costruire un APK di debug tramite GitHub Actions. La presenza del workflow non significa che una build abbia avuto successo. Conservare il file di build e i log per verificare il risultato prima di distribuire l'app.
+Il workflow GitHub `.github/workflows/android-debug.yml` genera un APK di debug e verifica archivio, identificativo `it.freept.app` e hash. Dopo ogni modifica controllare l'esito della nuova build: una vecchia compilazione verde non prova che la nuova versione funzioni.
