@@ -89,7 +89,7 @@ Il workflow GitHub `.github/workflows/android-debug.yml` genera un APK di debug 
 ### Attivazione — passaggi obbligatori
 
 1. Creare un progetto [Firebase Console](https://console.firebase.google.com/) e registrare una app **Android** con identificatore **`it.freept.app`**.
-2. Scaricare dal progetto Firebase **`google-services.json`**, assicurandosi che il package sia esatto. NON inserirlo nel repository. Convertirlo in base64 senza modifiche e salvare il risultato in **GitHub Actions → Secrets and variables → Actions**, nome `FREEPT_GOOGLE_SERVICES_JSON_B64`. La build sul ramo push fallisce esplicitamente se manca.
+2. Scaricare dal progetto Firebase **`google-services.json`**, assicurandosi che il package sia esatto. NON inserirlo nel repository. Aprirlo con un editor di testo e copiare tutto il contenuto JSON nel segreto **GitHub Actions → Secrets and variables → Actions** chiamato `FREEPT_GOOGLE_SERVICES_JSON` (non occorre Base64). La build sul ramo push fallisce esplicitamente se manca.
 3. Abilitare l'API **Firebase Cloud Messaging HTTP v1** e generare una credenziale **Firebase service account** destinata solo all'invio server. NON inserire il JSON della chiave in GitHub e non condividerlo in chat. In Supabase **Edge Functions → Secrets** configurare `FCM_SERVICE_ACCOUNT_JSON` con il contenuto JSON completo.
 4. Generare una stringa casuale privata lunga per `FREEPT_WEBHOOK_KEY` e salvarla **solo nei Secrets Supabase**; servira' anche nel database webhook come header `x-freept-webhook-key`. Non scrivere la chiave nel codice.
 5. Eseguire in Supabase SQL Editor la migrazione **`supabase/migrations/20261105_push_devices.sql`**. Crea una nuova tabella con RLS; NON elimina utenti, chat o documenti.
