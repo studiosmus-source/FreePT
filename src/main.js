@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
+import * as tus from 'tus-js-client';
 
 const URL = import.meta.env.VITE_SUPABASE_URL || 'https://cpopqsvzzxfjgnlawlvc.supabase.co';
 const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Q74UCgQUXO6f_7vZhXcbyg_2KRl2OSN';
@@ -402,7 +403,46 @@ async function showMessages(scroll=true){if(!selected)return;const requestedUser
     queue.classList.toggle('processing',!!awaiting);
   }
 } feed.querySelectorAll('[data-file]').forEach(a=>a.onclick=async ev=>{ev.preventDefault();const {data,error}=await db.storage.from('attachments').createSignedUrl(a.dataset.file,60);if(error){status(friendly(error),true);return}window.open(data.signedUrl,'_blank','noopener')});if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
-async function send(ev){ev.preventDefault();if(busy||!selected)return;const form=ev.target,body=form.elements.text.value.trim(),file=form.elements.file.files[0];if(!body&&!file)return;if(file&&file.size>25*1024*1024){status('Allegato troppo grande: massimo 25 MB',true);return}busy=true;document.getElementById('sendBtn').disabled=true;status('Invio in corso...');let path=null;try{if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';path=selected+'/'+crypto.randomUUID()+'/'+safe;const upload=await db.storage.from('attachments').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(upload.error)throw upload.error}const id=crypto.randomUUID();const payload={id,user_id:selected,sender_id:me.id,body,file_path:path,file_name:file?.name||null};const {error}=await db.from('messages').insert(payload);if(error)throw error;form.reset();const fileLabel=form.querySelector('[data-file-name]');if(fileLabel)fileLabel.textContent='';status('Richiesta inviata.');await showMessages()}catch(e){status('Invio non completato: '+friendly(e)+(path?' (allegato caricato; invio del messaggio da verificare)':''),true)}finally{busy=false;document.getElementById('sendBtn').disabled=false}}
+// Small files keep the proven Storage SDK path. Larger files use resumable
+// chunks with retries so mobile connections can recover without changing photos.
+async function uploadAttachment(path,file,onProgress){
+  const bucket=db.storage.from('attachments');
+  if(file.size<=6*1024*1024){
+    const {error}=await bucket.upload(path,file,{
+      contentType:file.type||'application/octet-stream',upsert:false
+    });
+    if(error)throw error;
+    onProgress?.(100);
+    return;
+  }
+  const {data,error}=await db.auth.getSession();
+  if(error)throw error;
+  const token=data?.session?.access_token;
+  if(!token)throw Error('Sessione scaduta: riapri FreePT.');
+  const storageUrl=URL.replace(/\\.supabase\\.co\\/?$/,'.storage.supabase.co');
+  const endpoint=storageUrl.replace(/\\/$/,'')+'/storage/v1/upload/resumable';
+  await new Promise((resolve,reject)=>{
+    const upload=new tus.Upload(file,{
+      endpoint,
+      headers:{authorization:'Bearer '+token,apikey:KEY},
+      retryDelays:[0,1000,3000,5000,10000],
+      uploadDataDuringCreation:true,
+      removeFingerprintOnSuccess:true,
+      metadata:{
+        bucketName:'attachments',
+        objectName:path,
+        contentType:file.type||'application/octet-stream'
+      },
+      chunkSize:6*1024*1024,
+      onError:reject,
+      onProgress:(sent,total)=>onProgress?.(total?Math.round(sent/total*100):0),
+      onSuccess:resolve
+    });
+    upload.start();
+  });
+}
+
+async function send(ev){ev.preventDefault();if(busy||!selected)return;const form=ev.target,body=form.elements.text.value.trim(),file=form.elements.file.files[0];if(!body&&!file)return;if(file&&file.size>25*1024*1024){status('Allegato troppo grande: massimo 25 MB',true);return}busy=true;document.getElementById('sendBtn').disabled=true;status('Invio in corso...');let path=null;try{if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';path=selected+'/'+crypto.randomUUID()+'/'+safe;await uploadAttachment(path,file,percent=>status('Caricamento allegato: '+percent+'%'))}const id=crypto.randomUUID();const payload={id,user_id:selected,sender_id:me.id,body,file_path:path,file_name:file?.name||null};const {error}=await db.from('messages').insert(payload);if(error)throw error;form.reset();const fileLabel=form.querySelector('[data-file-name]');if(fileLabel)fileLabel.textContent='';status('Richiesta inviata.');await showMessages()}catch(e){status('Invio non completato: '+friendly(e)+(path?' (allegato caricato; invio del messaggio da verificare)':''),true)}finally{busy=false;document.getElementById('sendBtn').disabled=false}}
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&filePickerActive){
     filePickerReturned=true;
