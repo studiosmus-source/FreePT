@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
+import { Capacitor } from '@capacitor/core';
+import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 
 const URL = import.meta.env.VITE_SUPABASE_URL || 'https://cpopqsvzzxfjgnlawlvc.supabase.co';
 const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Q74UCgQUXO6f_7vZhXcbyg_2KRl2OSN';
@@ -8,6 +10,27 @@ const el = document.getElementById('app');
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
 let messageRequest = 0;
 let fetchingMessages = false;
+let adminUnlocked = false;
+let adminUnlocking = false;
+let awaySince = 0;
+async function unlockAdmin(){
+  if(adminUnlocked)return true;
+  if(adminUnlocking)return false;
+  if(!Capacitor.isNativePlatform())return true; // Lo sblocco nativo funziona soltanto nell'APK.
+  adminUnlocking=true;
+  try{
+    const available=await NativeBiometric.isAvailable();
+    if(!available.isAvailable)throw Error('Impronta non disponibile: usa l’accesso amministratore.');
+    await NativeBiometric.verifyIdentity({reason:'Sblocca FreePT amministratore',title:'FreePT',subtitle:'Accesso amministratore'});
+    adminUnlocked=true;return true;
+  }catch(e){
+    el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Area amministratore bloccata</h2><p>Per accedere conferma l’impronta sul telefono.</p><button id="unlock">Sblocca con impronta</button><p id="status" class="small"></p></main></div>';
+    document.getElementById('unlock').onclick=async()=>{if(await unlockAdmin())await renderWorkspace()};
+    status(friendly(e),true);
+    return false;
+  }finally{adminUnlocking=false}
+}
+
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const friendly = e => e?.message || 'Operazione non riuscita';
 function status(msg, bad=false){ const n=document.getElementById('status'); if(n){n.textContent=msg;n.className=bad?'error':'small'} }
@@ -70,7 +93,7 @@ function adminScreen(){
         me=null;profile=null;
         throw Error('Questo account non è un amministratore autorizzato.');
       }
-      await renderWorkspace();
+      if(await unlockAdmin())await renderWorkspace();
     }catch(err){status(friendly(err),true)}
   };
 }
@@ -91,11 +114,12 @@ async function boot(){
     if(!profile){requestScreen();return}
     if(profile.status==='blocked'){requestScreen(true);return}
     if(profile.status==='pending'){waitingScreen();return}
+    if(profile.role==='admin' && !(await unlockAdmin()))return;
     await renderWorkspace();
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
   const {data,error}=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at')
@@ -112,9 +136,14 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
+    if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
+      if(await unlockAdmin())await renderWorkspace();
+      document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
+      return;
+    }
     try {
       if(me && profile?.status==='pending'){
         await loadProfile();
@@ -141,6 +170,14 @@ async function showMessages(scroll=true){if(!selected)return;const requestedUser
   }
 } feed.querySelectorAll('[data-file]').forEach(a=>a.onclick=async ev=>{ev.preventDefault();const {data,error}=await db.storage.from('attachments').createSignedUrl(a.dataset.file,60);if(error){status(friendly(error),true);return}window.open(data.signedUrl,'_blank','noopener')});if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
 async function send(ev){ev.preventDefault();if(busy||!selected)return;const form=ev.target,body=form.elements.text.value.trim(),file=form.elements.file.files[0];if(!body&&!file)return;if(file&&file.size>25*1024*1024){status('Allegato troppo grande: massimo 25 MB',true);return}busy=true;document.getElementById('sendBtn').disabled=true;status('Invio in corso...');let path=null;try{if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';path=selected+'/'+crypto.randomUUID()+'/'+safe;const upload=await db.storage.from('attachments').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(upload.error)throw upload.error}const id=crypto.randomUUID();const payload={id,user_id:selected,sender_id:me.id,body,file_path:path,file_name:file?.name||null};const {error}=await db.from('messages').insert(payload);if(error)throw error;form.reset();status('Richiesta inviata.');await showMessages()}catch(e){status('Invio non completato: '+friendly(e)+(path?' (allegato caricato; invio del messaggio da verificare)':''),true)}finally{busy=false;document.getElementById('sendBtn').disabled=false}}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'&&profile?.role==='admin'&&Capacitor.isNativePlatform()){
+    adminUnlocked=false;
+    if(sub){db.removeChannel(sub);sub=null}
+    selected=null;messageRequest++;
+    el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Area amministratore bloccata</h2><p>Riapri FreePT per sbloccare con l’impronta.</p></main></div>';
+  }
+});
 boot();
 // Polling leggero quando l'app è in primo piano: recupera anche eventi realtime persi.
 setInterval(async () => {
