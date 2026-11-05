@@ -41,12 +41,13 @@ function heading(t,extra=''){return '<header class="top"><h1>'+esc(t)+'</h1>'+ex
 function requestScreen(denied=false){
   selected=null; messageRequest++;
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
+  '<button type="button" id="adminAccess" class="admin-entry">Accesso amministratore</button>'+
   '<form class="form" id="request"><input name="name" placeholder="Nome e cognome" maxlength="80" minlength="2" required autocomplete="name" '+(denied?'disabled':'')+'/>'+
   '<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>'+
   '<section class="disclaimer" aria-label="Informativa sull’intelligenza artificiale"><h3>FreePT · L’intelligenza artificiale per tutti</h3><p><strong>La potenza di ChatGPT e Claude senza dover sottoscrivere un abbonamento personale.</strong></p><p>Con FreePT puoi fare liberamente domande, inviare richieste, foto e documenti e ricevere risposte elaborate attraverso ChatGPT e Claude. Nessun account personale presso questi servizi è necessario.</p><p class="disclaimer-promise"><strong>SENZA LIMITI*<br>SENZA CENSURA*</strong></p><p class="disclaimer-note">* Salvo particolari condizioni legate alla disponibilità del servizio e alla possibilità di elaborare determinate richieste.</p><p>FreePT è un servizio indipendente, non affiliato a OpenAI o Anthropic.</p><label class="consent"><input name="disclaimer" type="checkbox" required><span>Dichiaro di aver letto e accettato quanto sopra.</span></label></section>'+
   '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
-  '<button type="button" id="adminAccess" class="admin-entry">Accesso amministratore</button></main></div>';
+  '</main></div>';
   document.getElementById('adminAccess').onclick=adminScreen;
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
