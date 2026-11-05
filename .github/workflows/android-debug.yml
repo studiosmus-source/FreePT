@@ -27,6 +27,12 @@ jobs:
         run: npm run build
       - name: Generate Android project
         run: npx cap add android
+      - name: Check Android project and permissions
+        run: |
+          test -f android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || {
+            echo 'Missing INTERNET permission'; exit 1;
+          }
       - name: Build debug APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
       - name: Upload installable debug APK
