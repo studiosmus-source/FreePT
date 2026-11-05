@@ -59,6 +59,8 @@ Questi comandi sono visibili **soltanto all'amministratore** autenticato e la RP
 
 Prima di installare la nuova APK, eseguire una volta in **Supabase SQL Editor** il file `supabase/migrations/20261105_delete_chats_users.sql`. Aggiunge `profiles.chat_hidden_at`, la policy di eliminazione dei file per l'admin e la RPC `freept_admin_delete_conversation`. L'esecuzione della migrazione **non cancella alcun dato**. Se non è stata eseguita, la nuova APK potrebbe non riuscire a caricare l'elenco chat.
 
+Prima di rimuovere gli allegati, l'app verifica sul server tramite `freept_delete_ready()` che la migrazione sia installata e che il richiedente sia l'amministratore approvato. Se la migrazione manca, la chat normale resta utilizzabile, ma la cancellazione non parte.
+
 Le operazioni sono irreversibili. Gli allegati sono eliminati prima delle righe SQL: se il processo fallisce a metà, alcuni file possono essere già stati eliminati anche se la chat è ancora presente. Evitare operazioni contemporanee sulla stessa chat. Non è stata verificata l'esecuzione SQL nel progetto Supabase remoto né il collaudo di queste cancellazioni su Android; provarle prima su un account fittizio.
 
 ## APK Android
