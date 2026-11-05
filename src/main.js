@@ -3,6 +3,7 @@ import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
+import { PushNotifications } from '@capacitor/push-notifications';
 
 const URL = import.meta.env.VITE_SUPABASE_URL || 'https://cpopqsvzzxfjgnlawlvc.supabase.co';
 const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Q74UCgQUXO6f_7vZhXcbyg_2KRl2OSN';
@@ -15,6 +16,46 @@ let adminUnlocked = false;
 let adminUnlocking = false;
 let awaySince = 0;
 let deleteMigrationReady = true;
+let pushListenersRegistered=false;
+let currentPushToken=null;
+let pushPermissionAttempted=false;
+// The actual FCM token is private; it is stored in a restricted Supabase table.
+async function ensurePushNotifications(){
+  if(!Capacitor.isNativePlatform()||!me||profile?.status!=='approved')return;
+  if(!pushListenersRegistered){
+    await PushNotifications.addListener('registration',async token=>{
+      currentPushToken=token.value;
+      try{
+        const {error}=await db.from('push_devices').upsert({
+          token:token.value,user_id:me.id,platform:'android',updated_at:new Date().toISOString()
+        },{onConflict:'token'});
+        if(error)throw error;
+      }catch(e){console.warn('FCM token registration failed:',friendly(e))}
+    });
+    await PushNotifications.addListener('registrationError',e=>{
+      console.warn('FCM registration error:',friendly(e));
+    });
+    await PushNotifications.addListener('pushNotificationReceived',()=>{
+      // When the app is foregrounded, Realtime/polling updates the chat.
+      if(profile?.role==='admin')listPeople().then(renderPeople).catch(()=>{});
+      else if(selected)showMessages(false).catch(()=>{});
+    });
+    await PushNotifications.addListener('pushNotificationActionPerformed',async()=>{
+      // On Android the app resumes; administrator fingerprint protection is retained.
+      if(profile?.role==='admin'&&!adminUnlocked)return;
+      if(profile?.role==='admin')await listPeople().then(renderPeople).catch(()=>{});
+      else if(selected)await showMessages(false).catch(()=>{});
+    });
+    pushListenersRegistered=true;
+  }
+  if(!pushPermissionAttempted){
+    pushPermissionAttempted=true;
+    let permission=await PushNotifications.checkPermissions();
+    if(permission.receive==='prompt')permission=await PushNotifications.requestPermissions();
+    if(permission.receive!=='granted')return; // Respect the user's choice.
+  }
+  await PushNotifications.register();
+}
 let filePickerActive = false;
 let filePickerReturned = false;
 let filePickerClearTimer = null;
@@ -169,7 +210,16 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){
+  adminUnlocked=false;
+  if(sub){db.removeChannel(sub);sub=null}
+  if(currentPushToken){
+    // Best effort; DB user ownership protects other users' registrations.
+    await db.from('push_devices').delete().eq('token',currentPushToken).eq('user_id',me.id);
+    currentPushToken=null;
+  }
+  await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen();
+}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -195,7 +245,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();ensurePushNotifications().catch(e=>console.warn('Push notifications unavailable:',friendly(e)));sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
