@@ -13,10 +13,82 @@ function status(msg, bad=false){ const n=document.getElementById('status'); if(n
 function phoneNorm(s){ return s.replace(/[\s().-]/g,''); }
 
 function heading(t,extra=''){return '<header class="top"><h1>'+esc(t)+'</h1>'+extra+'</header>'}
-function authScreen(signup=false){ el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>'+(signup?'Richiedi iscrizione':'Accedi')+'</h2><form class="form" id="auth">'+(signup?'<input name="name" placeholder="Nome e cognome" maxlength="80" required autocomplete="name"/>':'')+'<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel"/><input name="pass" type="password" minlength="8" placeholder="Password (almeno 8 caratteri)" required autocomplete="'+(signup?'new-password':'current-password')+'"/>'+(signup?'<section class="disclaimer" aria-label="Informativa sull’intelligenza artificiale"><h3>FreePT · L’intelligenza artificiale per tutti</h3><p><strong>La potenza di ChatGPT e Claude senza dover sottoscrivere un abbonamento personale.</strong></p><p>Con FreePT puoi fare liberamente domande, inviare richieste, foto e documenti e ricevere risposte elaborate attraverso ChatGPT e Claude. Nessun account personale presso questi servizi è necessario.</p><p class="disclaimer-promise"><strong>SENZA LIMITI*<br>SENZA CENSURA*</strong></p><p class="disclaimer-note">* Salvo particolari condizioni legate alla disponibilità del servizio e alla possibilità di elaborare determinate richieste.</p><p>FreePT è un servizio indipendente, non affiliato a OpenAI o Anthropic.</p><label class="consent"><input name="disclaimer" type="checkbox" required><span>Dichiaro di aver letto e accettato quanto sopra.</span></label></section>':'')+'<button>'+(signup?'Invia richiesta':'Entra')+'</button></form><p id="status" class="small"></p><button id="toggle" type="button">'+(signup?'Ho già un account':'Nuova iscrizione')+'</button></main></div>';document.getElementById('toggle').onclick=()=>authScreen(!signup); document.getElementById('auth').onsubmit=async ev=>{ev.preventDefault();const f=new FormData(ev.target),phone=phoneNorm(f.get('phone'));if(!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso internazionale, ad esempio +39...',true);return}const pass=String(f.get('pass'));status('Operazione in corso...');try{let result;if(signup){let name=String(f.get('name')).trim();if(name.length<2)throw Error('Inserisci il nome');result=await db.auth.signUp({phone,password:pass,options:{data:{full_name:name,phone,disclaimer_version:'freept-ai-v1',disclaimer_accepted_at:new Date().toISOString()}}})}else{result=await db.auth.signInWithPassword({phone,password:pass})}if(result.error)throw result.error; if(signup){if(!result.data?.session){throw Error('La registrazione richiede una verifica telefonica. FreePT deve essere configurata senza SMS prima di accettare iscrizioni.')}status('Richiesta inviata. Attendi l’approvazione.'); await db.auth.signOut()} else await boot()}catch(e){status(friendly(e),true)}}}
-async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,role,status').eq('id',me.id).single();if(error)throw error;profile=data}
-async function boot(){ const {data:{user}}=await db.auth.getUser();me=user;if(!me){profile=null;authScreen();return}try{await loadProfile();if(profile.status==='blocked'){await db.auth.signOut();el.innerHTML='<div class="panel">Accesso disabilitato.</div>';return}if(profile.status!=='approved'){el.innerHTML='<div class="shell">'+heading('FreePT','<button id="logout">Esci</button>')+'<div class="notice">Registrazione ricevuta. In attesa di approvazione.</div></div>';document.getElementById('logout').onclick=logout;return}await renderWorkspace()}catch(e){el.innerHTML='<div class="panel"><h2>Configurazione non completata</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></div>';document.getElementById('retry').onclick=boot}}
-async function logout(){if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;authScreen()}
+
+function requestScreen(denied=false){
+  selected=null; messageRequest++;
+  el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
+  '<form class="form" id="request"><input name="name" placeholder="Nome e cognome" maxlength="80" minlength="2" required autocomplete="name" '+(denied?'disabled':'')+'/>'+
+  '<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>'+
+  '<section class="disclaimer" aria-label="Informativa sull’intelligenza artificiale"><h3>FreePT · L’intelligenza artificiale per tutti</h3><p><strong>La potenza di ChatGPT e Claude senza dover sottoscrivere un abbonamento personale.</strong></p><p>Con FreePT puoi fare liberamente domande, inviare richieste, foto e documenti e ricevere risposte elaborate attraverso ChatGPT e Claude. Nessun account personale presso questi servizi è necessario.</p><p class="disclaimer-promise"><strong>SENZA LIMITI*<br>SENZA CENSURA*</strong></p><p class="disclaimer-note">* Salvo particolari condizioni legate alla disponibilità del servizio e alla possibilità di elaborare determinate richieste.</p><p>FreePT è un servizio indipendente, non affiliato a OpenAI o Anthropic.</p><label class="consent"><input name="disclaimer" type="checkbox" required><span>Dichiaro di aver letto e accettato quanto sopra.</span></label></section>'+
+  '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
+  '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
+  '<button type="button" id="adminAccess" class="admin-entry">Accesso amministratore</button></main></div>';
+  document.getElementById('adminAccess').onclick=adminScreen;
+  document.getElementById('request').onsubmit=async ev=>{
+    ev.preventDefault();
+    const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
+    if(name.length<2){status('Inserisci nome e cognome',true);return}
+    if(!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso, ad esempio +39...',true);return}
+    const button=form.querySelector('button');button.disabled=true;status('Invio richiesta in corso...');
+    try {
+      const {data:sessionData}=await db.auth.getSession();
+      let user=sessionData?.session?.user;
+      if(!user){
+        const auth=await db.auth.signInAnonymously();
+        if(auth.error) throw auth.error;
+        user=auth.data.user;
+      }
+      if(!user?.is_anonymous) throw Error('Una sessione amministratore è già attiva.');
+      const {error}=await db.from('profiles').insert({id:user.id,full_name:name,phone});
+      if(error) throw error;
+      await boot();
+    }catch(e){
+      const message=friendly(e);
+      status(message.includes('Anonymous sign-ins are disabled')?'Occorre abilitare gli accessi anonimi nel progetto FreePT.':message,true);
+    }finally{button.disabled=false}
+  };
+}
+function adminScreen(){
+  el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
+  '<form id="adminForm" class="form"><input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required>'+
+  '<input type="password" name="password" autocomplete="current-password" placeholder="Password" required>'+
+  '<button>Accedi</button></form><p id="status" class="small"></p>'+
+  '<button id="backRequest" type="button">Torna alla richiesta di accesso</button></main></div>';
+  document.getElementById('backRequest').onclick=()=>requestScreen();
+  document.getElementById('adminForm').onsubmit=async e=>{
+    e.preventDefault();const f=new FormData(e.target);status('Accesso in corso...');
+    try {
+      const {data:{session}}=await db.auth.getSession();
+      if(session?.user?.is_anonymous) await db.auth.signOut();
+      const result=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});
+      if(result.error)throw result.error;
+      await boot();
+      if(profile?.role!=='admin'){await db.auth.signOut();profile=null;requestScreen();status('Questo account non è un amministratore autorizzato.',true)}
+    }catch(err){status(friendly(err),true)}
+  };
+}
+function waitingScreen(){
+  el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiesta inviata</h2>'+
+  '<p class="notice">In attesa della tua approvazione. La chat comparirà qui automaticamente quando l’accesso sarà autorizzato.</p>'+
+  '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
+}
+
+async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
+async function boot(){
+  const {data:{user},error}=await db.auth.getUser();
+  if(error){requestScreen();status(friendly(error),true);return}
+  me=user;selected=null;
+  if(!me){profile=null;requestScreen();return}
+  try{
+    await loadProfile();
+    if(!profile){requestScreen();return}
+    if(profile.status==='blocked'){requestScreen(true);return}
+    if(profile.status==='pending'){waitingScreen();return}
+    await renderWorkspace();
+  }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
+}
+
+async function logout(){if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){const {data,error}=await db.from('profiles').select('id,full_name,phone,status,role').neq('role','admin').order('created_at',{ascending:false});if(error)throw error;people=data||[]}
 async function renderWorkspace(){if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
