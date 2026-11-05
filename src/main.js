@@ -18,6 +18,32 @@ let testMode = false;
 let testUser = null;
 let testProfile = null;
 let testBusy = false;
+let filePickerActive = false;
+let filePickerReturned = false;
+let filePickerClearTimer = null;
+function onFilePickerClick(){
+  filePickerActive=true;
+  filePickerReturned=false;
+  if(filePickerClearTimer)clearTimeout(filePickerClearTimer);
+}
+function finishFilePicker(){
+  filePickerActive=false;
+  filePickerReturned=false;
+  if(filePickerClearTimer){clearTimeout(filePickerClearTimer);filePickerClearTimer=null}
+}
+function fileChanged(event){
+  const input=event.currentTarget;
+  const label=input.closest('form')?.querySelector('[data-file-name]');
+  if(label)label.textContent=input.files?.[0]?.name||'';
+  finishFilePicker();
+}
+function configureFileInput(input){
+  if(!input)return;
+  input.addEventListener('click',onFilePickerClick);
+  input.addEventListener('change',fileChanged);
+  input.addEventListener('cancel',finishFilePicker);
+}
+
 async function unlockAdmin(){
   if(adminUnlocked)return true;
   if(adminUnlocking)return false;
@@ -200,7 +226,7 @@ if(admin&&testMode){
   pane.className='test-pane';
   el.appendChild(pane);
   refreshTestPane().catch(e=>testStatus(friendly(e),true));
-}else el.classList.remove('dual-test');if(admin){renderPeople();document.getElementById('back').onclick=()=>{document.getElementById('chat').classList.add('off');document.getElementById('people').classList.remove('off')}} document.getElementById('send').onsubmit=send}
+}else el.classList.remove('dual-test');if(admin){renderPeople();document.getElementById('back').onclick=()=>{document.getElementById('chat').classList.add('off');document.getElementById('people').classList.remove('off')}} document.getElementById('send').onsubmit=send;configureFileInput(document.getElementById('file'))}
 function renderPeople(){const p=document.getElementById('people');if(!p)return;p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':x.status)+'</small>'+(x.lastMessage?'<span class="chat-preview">'+esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+'</span>':'')+(x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+'</button>').join('');p.querySelectorAll('[data-id]').forEach(b=>b.onclick=async ev=>{const id=b.dataset.id;if(ev.target.dataset.approve||ev.target.dataset.deny){ev.stopPropagation();const approved=!!ev.target.dataset.approve;if(!confirm(approved?'Approvare questo utente?':'Rifiutare questa richiesta?'))return;const {error}=await db.from('profiles').update({status:approved?'approved':'blocked'}).eq('id',id);if(error)alert(friendly(error));else{await listPeople();renderPeople();if(testMode)await refreshTestPane()}return}if(people.find(x=>x.id===id)?.status!=='approved'){return}selected=id;messageRequest++;document.getElementById('chat').classList.remove('off');p.classList.add('off');document.getElementById('chatTitle').textContent=people.find(x=>x.id===id)?.full_name||'Chat';await showMessages()})}
 async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<a href="#" class="filelink" data-file="'+esc(m.file_path)+'">📎 '+esc(m.file_name||'Allegato')+'</a>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
   const queue=document.getElementById('queued');
@@ -213,7 +239,14 @@ async function showMessages(scroll=true){if(!selected)return;const requestedUser
 } feed.querySelectorAll('[data-file]').forEach(a=>a.onclick=async ev=>{ev.preventDefault();const {data,error}=await db.storage.from('attachments').createSignedUrl(a.dataset.file,60);if(error){status(friendly(error),true);return}window.open(data.signedUrl,'_blank','noopener')});if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
 async function send(ev){ev.preventDefault();if(busy||!selected)return;const form=ev.target,body=form.elements.text.value.trim(),file=form.elements.file.files[0];if(!body&&!file)return;if(file&&file.size>25*1024*1024){status('Allegato troppo grande: massimo 25 MB',true);return}busy=true;document.getElementById('sendBtn').disabled=true;status('Invio in corso...');let path=null;try{if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';path=selected+'/'+crypto.randomUUID()+'/'+safe;const upload=await db.storage.from('attachments').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(upload.error)throw upload.error}const id=crypto.randomUUID();const payload={id,user_id:selected,sender_id:me.id,body,file_path:path,file_name:file?.name||null};const {error}=await db.from('messages').insert(payload);if(error)throw error;form.reset();status('Richiesta inviata.');await showMessages()}catch(e){status('Invio non completato: '+friendly(e)+(path?' (allegato caricato; invio del messaggio da verificare)':''),true)}finally{busy=false;document.getElementById('sendBtn').disabled=false}}
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='hidden'&&profile?.role==='admin'&&Capacitor.isNativePlatform()){
+  if(document.visibilityState==='visible'&&filePickerActive){
+    filePickerReturned=true;
+    if(filePickerClearTimer)clearTimeout(filePickerClearTimer);
+    // On Android the chooser may return without change/cancel; do not leave a
+    // permanent bypass of the background biometric lock.
+    filePickerClearTimer=setTimeout(finishFilePicker,1800);
+  }
+  if(document.visibilityState==='hidden'&&profile?.role==='admin'&&Capacitor.isNativePlatform()&&!filePickerActive){
     adminUnlocked=false;
     testMode=false;
     el.classList.remove('dual-test');
@@ -283,9 +316,11 @@ async function refreshTestPane(replace=true){
     }else{
       pane.innerHTML='<div class="test-heading"><strong>UTENTE DI PROVA · '+esc(testProfile.full_name)+'</strong><span>Chat autorizzata</span></div>'+
         '<div class="test-feed" id="testFeed"></div><p id="testQueued" class="hint"></p>'+
-        '<form class="test-compose" id="testSend"><textarea name="message" placeholder="Messaggio utente di prova" maxlength="10000"></textarea>'+
-        '<button>Invia</button></form><p id="testStatus" class="small"></p>';
+        '<form class="test-compose" id="testSend"><label class="attach" for="testFile" title="Allega file">📎</label>'+
+        '<input type="file" id="testFile" name="file"><textarea name="message" placeholder="Messaggio utente di prova" maxlength="10000"></textarea>'+
+        '<button>Invia</button></form><span class="chosen-file" data-file-name></span><p id="testStatus" class="small"></p>';
       document.getElementById('testSend').onsubmit=sendTestMessage;
+      configureFileInput(document.getElementById('testFile'));
     }
   }
   if(statusKey==='approved')await loadTestMessages();
@@ -314,7 +349,7 @@ async function submitTestRequest(ev){
 async function loadTestMessages(){
   if(!testUser||testProfile?.status!=='approved')return;
   const {data,error}=await testDb.from('messages')
-    .select('id,sender_id,body,file_name,created_at')
+    .select('id,sender_id,body,file_name,file_path,created_at')
     .eq('user_id',testUser.id).order('created_at',{ascending:true}).limit(200);
   if(error)throw error;
   const feed=document.getElementById('testFeed');if(!feed)return;
@@ -323,8 +358,15 @@ async function loadTestMessages(){
   const signature=rows.map(x=>x.id).join(',');
   if(feed.dataset.signature!==signature){
     feed.innerHTML=rows.map(m=>'<article class="bubble '+(m.sender_id===testUser.id?'mine':'other')+'">'+
-      esc(m.body||('📎 '+(m.file_name||'Allegato')))+
+      (m.body?esc(m.body):'')+
+      (m.file_path?'<a href="#" class="filelink" data-test-file="'+esc(m.file_path)+'">📎 '+esc(m.file_name||'Allegato')+'</a>':'')+
       '<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');
+    feed.querySelectorAll('[data-test-file]').forEach(link=>link.onclick=async event=>{
+      event.preventDefault();
+      const {data,error}=await testDb.storage.from('attachments').createSignedUrl(link.dataset.testFile,60);
+      if(error){testStatus(friendly(error),true);return}
+      window.open(data.signedUrl,'_blank','noopener');
+    });
     feed.dataset.signature=signature;
     if(nearEnd)feed.scrollTop=feed.scrollHeight;
   }
@@ -333,16 +375,38 @@ async function loadTestMessages(){
   if(queued)queued.textContent=last?.sender_id===testUser.id?'Richiesta in elaborazione… Attendere.':'';
 }
 async function sendTestMessage(ev){
-  ev.preventDefault();if(testBusy||!testUser||testProfile?.status!=='approved')return;
-  const form=ev.target,body=form.elements.message.value.trim();if(!body)return;
+  ev.preventDefault();
+  if(testBusy||!testUser||testProfile?.status!=='approved')return;
+  const form=ev.target;
+  const body=form.elements.message.value.trim();
+  const file=form.elements.file.files[0];
+  if(!body&&!file)return;
+  if(file&&file.size>25*1024*1024){testStatus('Allegato troppo grande: massimo 25 MB',true);return}
   testBusy=true;form.querySelector('button').disabled=true;testStatus('Invio...');
+  let path=null;
   try{
+    if(file){
+      const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';
+      path=testUser.id+'/'+crypto.randomUUID()+'/'+safe;
+      const upload=await testDb.storage.from('attachments').upload(path,file,{
+        contentType:file.type||'application/octet-stream',upsert:false
+      });
+      if(upload.error)throw upload.error;
+    }
     const {error}=await testDb.from('messages').insert({
-      id:crypto.randomUUID(),user_id:testUser.id,sender_id:testUser.id,body
+      id:crypto.randomUUID(),user_id:testUser.id,sender_id:testUser.id,
+      body,file_path:path,file_name:file?.name||null
     });
     if(error)throw error;
-    form.reset();testStatus('Richiesta inviata.');await loadTestMessages();
+    form.reset();
+    const label=document.querySelector('#testPane [data-file-name]');
+    if(label)label.textContent='';
+    testStatus('Richiesta inviata.');await loadTestMessages();
     await listPeople();renderPeople();
-  }catch(e){testStatus(friendly(e),true)}
-  finally{testBusy=false;if(document.contains(form))form.querySelector('button').disabled=false}
+  }catch(e){
+    testStatus('Invio non completato: '+friendly(e)+(path?' (allegato caricato, messaggio da verificare)':''),true);
+  }finally{
+    testBusy=false;
+    if(document.contains(form))form.querySelector('button').disabled=false;
+  }
 }
