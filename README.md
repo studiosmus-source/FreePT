@@ -37,6 +37,18 @@ Il plugin `@capgo/capacitor-native-biometric` versione 7 è associato a Capacito
 
 **Attenzione:** i passaggi Supabase non sono stati eseguiti né verificati da questa repository. L'APK può compilare correttamente ma la richiesta di accesso fallire finché non vengono completati.
 
+## Collaudo con un solo telefono — schermo diviso
+
+Dopo avere effettuato l'accesso come amministratore nell'APK Android, premere **TEST** nella barra superiore. La schermata è divisa in due metà:
+- **Sopra:** area amministratore vera con elenco richieste e conversazioni.
+- **Sotto:** utente di prova con una **seconda sessione Auth anonima**, conservata con una chiave di archiviazione differente (`freept-test-user-session`).
+
+Inserire un nome di prova e un **numero di telefono non già usato nel database** (formato internazionale), accettare il consenso e inviare. L'account di prova compare tra le richieste reali: approvarlo sopra, quindi inviare un messaggio dalla chat in basso, aprire la relativa chat in alto e rispondere. I messaggi e i permessi sono gestiti dal vero Supabase; non è una simulazione offline.
+
+Il pulsante **TEST** chiude e riapre la vista divisa senza disconnettere l'amministratore. La sessione di prova persiste sul dispositivo. **Attenzione:** i profili e i messaggi di prova sono scritti nel database reale e non vengono cancellati automaticamente. Usare soltanto dati fittizi; non usare il numero di un amico né dati personali. La modalità TEST è disponibile soltanto quando l'amministratore è autenticato e ha sbloccato l'app.
+
+Questo collaudo non sostituisce la verifica con due veri telefoni prima della distribuzione, specialmente per isolamento tra installazioni, allegati e comportamento dopo riavvio.
+
 ## APK Android
 
 Il workflow GitHub `.github/workflows/android-debug.yml` genera un APK di debug e verifica archivio, identificativo `it.freept.app` e hash. Dopo ogni modifica controllare l'esito della nuova build: una vecchia compilazione verde non prova che la nuova versione funzioni.
