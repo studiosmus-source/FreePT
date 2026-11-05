@@ -35,6 +35,24 @@ jobs:
           }
       - name: Build debug APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Verify APK integrity and identity
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" > /dev/null
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
+          test -n "$AAPT"
+          "$AAPT" dump badging "$APK" | tee android-apk-info.txt
+          grep -q "package: name='it.freept.app'" android-apk-info.txt
+          sha256sum "$APK" | tee android-apk-sha256.txt
+      - name: Upload APK verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-apk-report
+          path: |
+            android-apk-info.txt
+            android-apk-sha256.txt
+          if-no-files-found: error
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
