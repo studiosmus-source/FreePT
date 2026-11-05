@@ -107,12 +107,25 @@ async function loadProfile(){const {data,error}=await db.from('profiles').select
 async function boot(){
   // A fresh installation has no session: this is normal, not an error.
   const {data:{session},error:sessionError}=await db.auth.getSession();
-  if(sessionError){requestScreen();status(friendly(sessionError),true);return}
+  if(sessionError){
+    me=null;profile=null;requestScreen();
+    // Supabase may report a missing session as an AuthSessionMissingError.
+    // On a first launch this is expected, not a registration failure.
+    if(sessionError.name!=='AuthSessionMissingError' &&
+       sessionError.code!=='session_not_found' &&
+       !/auth session missing/i.test(sessionError.message||'')){
+      status(friendly(sessionError),true);
+    }
+    return;
+  }
   if(!session){me=null;profile=null;requestScreen();return}
   const {data:{user},error}=await db.auth.getUser();
   if(error||!user){
-    requestScreen();
-    status(friendly(error||new Error('Sessione non valida: riapri FreePT.')),true);
+    me=null;profile=null;requestScreen();
+    if(error && error.name!=='AuthSessionMissingError' &&
+       !/auth session missing/i.test(error.message||'')){
+      status(friendly(error),true);
+    }
     return;
   }
   me=user;selected=null;
