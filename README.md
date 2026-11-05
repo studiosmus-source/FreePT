@@ -11,6 +11,9 @@ FreePT è una chat privata con richiesta di accesso. L'utente inserisce nome e c
 - Invio messaggi/allegati: dopo la conferma del server compare «Richiesta in elaborazione… Attendere.» finché non arriva la risposta nella stessa chat.
 - Amministratore: elenco utenti, pulsanti Approva e Rifiuta per le richieste in attesa, chat singole.
 - **Non ci sono notifiche push quando l'app è chiusa**. L'approvazione è rilevata quando l'app è aperta o torna in primo piano.
+- Con l'app aperta, i messaggi sono ricontrollati circa ogni 6 secondi anche se gli eventi realtime non arrivano.
+- L'utente non ha il pulsante «Esci»: la sessione anonima deve rimanere associata all'installazione. Solo l'amministratore può effettuare il logout.
+- Le richieste pending o rifiutate non aprono la chat nella lista amministrativa.
 
 ## Identità tecnica e limiti
 
