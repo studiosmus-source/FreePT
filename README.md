@@ -72,3 +72,32 @@ Questo cambio e' stato introdotto per migliorare l'affidabilita' su connessioni 
 ## APK Android
 
 Il workflow GitHub `.github/workflows/android-debug.yml` genera un APK di debug e verifica archivio, identificativo `it.freept.app` e hash. Dopo ogni modifica controllare l'esito della nuova build: una vecchia compilazione verde non prova che la nuova versione funzioni.
+
+## Notifiche push Android (ramo sperimentale `feature/push-notifications`)
+
+**Stato:** sorgenti predisposti, NON attivo nel progetto Supabase e NON distribuito nell'APK su `main`. Finche' manca la configurazione dei servizi esterni, la versione Android funzionante resta quella di `main`. Il codice non espone chiavi di servizio nell'app.
+
+### Comportamento previsto
+
+- Le notifiche sono bidirezionali: quando un amico approvato scrive, si avvisa l'amministratore; quando l'amministratore risponde, si avvisa soltanto il dispositivo dell'amico.
+- La notifica mostra solo **FreePT — Hai un nuovo messaggio**. Non contiene testo, nomi o allegati.
+- Il dispositivo Android chiede una volta l'autorizzazione alle notifiche quando l'utente entra in una chat approvata; un rifiuto viene rispettato.
+- La registrazione FCM usa Supabase Auth esistente; i token sono protetti da RLS e non leggibili da altri account.
+- Le notifiche si ricevono anche quando l'app non e' in primo piano, **dopo il collaudo** e quando Android/Google Play Services lo consentono. Il tocco apre l'app, mantenendo lo sblocco biometrico per l'amministratore.
+- Non vengono aggiunti servizi IA, abbonamenti ChatGPT/Claude o SMS. Firebase FCM ha disponibilita' e quote proprie.
+
+### Attivazione — passaggi obbligatori
+
+1. Creare un progetto [Firebase Console](https://console.firebase.google.com/) e registrare una app **Android** con identificatore **`it.freept.app`**.
+2. Scaricare dal progetto Firebase **`google-services.json`**, assicurandosi che il package sia esatto. NON inserirlo nel repository. Convertirlo in base64 senza modifiche e salvare il risultato in **GitHub Actions → Secrets and variables → Actions**, nome `FREEPT_GOOGLE_SERVICES_JSON_B64`. La build sul ramo push fallisce esplicitamente se manca.
+3. Abilitare l'API **Firebase Cloud Messaging HTTP v1** e generare una credenziale **Firebase service account** destinata solo all'invio server. NON inserire il JSON della chiave in GitHub e non condividerlo in chat. In Supabase **Edge Functions → Secrets** configurare `FCM_SERVICE_ACCOUNT_JSON` con il contenuto JSON completo.
+4. Generare una stringa casuale privata lunga per `FREEPT_WEBHOOK_KEY` e salvarla **solo nei Secrets Supabase**; servira' anche nel database webhook come header `x-freept-webhook-key`. Non scrivere la chiave nel codice.
+5. Eseguire in Supabase SQL Editor la migrazione **`supabase/migrations/20261105_push_devices.sql`**. Crea una nuova tabella con RLS; NON elimina utenti, chat o documenti.
+6. Distribuire la Edge Function **`freept-push`** da questo ramo usando Supabase CLI/integrazione delle funzioni. In `supabase/config.toml`, `verify_jwt=false` e' intenzionale per il webhook: la funzione verifica il segreto privato nell'header.
+7. In **Supabase Dashboard → Database → Webhooks** creare un webhook sullo schema `public`, tabella `messages`, evento **INSERT**; destinazione Edge Function `freept-push`, metodo POST, header `x-freept-webhook-key` con il valore segreto del punto 4. Non far inviare eventi di UPDATE/DELETE.
+8. Avviare manualmente il workflow **Build Android APK** scegliendo il ramo `feature/push-notifications`, e verificare la build con il vero `google-services.json`. Non installare una APK di un altro ramo per verificare le notifiche.
+9. Collaudare **due installazioni Android distinte**, con permessi notifiche concessi: amico → admin app chiusa, admin → amico app chiusa; ripetere in background, con file allegato, con accesso negato e dopo riavvio. Controllare i log della Edge Function e la tabella `push_devices` senza pubblicarne i token.
+
+**Sicurezza:** la funzione controlla il segreto webhook, rilegge il messaggio dal DB, verifica che mittente e destinatari siano approvati e invia solo ai token dei destinatari. La chiave privata Firebase non e' mai richiesta dall'APK. Le righe `push_devices` sono rimosse quando un profilo utente viene eliminato (FK CASCADE). Le notifiche Android possono essere limitate da batteria, restrizioni del dispositivo o diniego dell'autorizzazione.
+
+**Limite del collaudo:** la sintassi JS potra' essere verificata staticamente ma la consegna di push reali NON e' stata verificata; senza i tre elementi (Firebase Android, credenziali server, webhook) non puo' funzionare.
