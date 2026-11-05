@@ -13,6 +13,11 @@ let fetchingMessages = false;
 let adminUnlocked = false;
 let adminUnlocking = false;
 let awaySince = 0;
+const testDb = createClient(URL, KEY, {auth:{storageKey:'freept-test-user-session',persistSession:true,autoRefreshToken:true}});
+let testMode = false;
+let testUser = null;
+let testProfile = null;
+let testBusy = false;
 async function unlockAdmin(){
   if(adminUnlocked)return true;
   if(adminUnlocking)return false;
@@ -141,7 +146,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){testMode=false;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
   const {data,error}=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at')
@@ -180,8 +185,23 @@ async function refreshOnVisible(){
   }
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
 }
-function renderLayout(){let admin=profile.role==='admin';el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button id="logout">Esci</button>':'')+'<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+'<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+(admin?'<button class="mobileBack" id="back">‹</button>':'')+'<strong class="grow" id="chatTitle">Servizio</strong></div><div class="feed" id="feed"></div><div class="hint" id="queued"></div><form class="compose" id="send"><label class="attach" for="file">📎</label><input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea><button id="sendBtn">Invia</button></form><p id="status" class="hint"></p></section></div></div>';if(admin)document.getElementById('logout').onclick=logout;if(admin){renderPeople();document.getElementById('back').onclick=()=>{document.getElementById('chat').classList.add('off');document.getElementById('people').classList.remove('off')}} document.getElementById('send').onsubmit=send}
-function renderPeople(){const p=document.getElementById('people');if(!p)return;p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':x.status)+'</small>'+(x.lastMessage?'<span class="chat-preview">'+esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+'</span>':'')+(x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+'</button>').join('');p.querySelectorAll('[data-id]').forEach(b=>b.onclick=async ev=>{const id=b.dataset.id;if(ev.target.dataset.approve||ev.target.dataset.deny){ev.stopPropagation();const approved=!!ev.target.dataset.approve;if(!confirm(approved?'Approvare questo utente?':'Rifiutare questa richiesta?'))return;const {error}=await db.from('profiles').update({status:approved?'approved':'blocked'}).eq('id',id);if(error)alert(friendly(error));else{await listPeople();renderPeople()}return}if(people.find(x=>x.id===id)?.status!=='approved'){return}selected=id;messageRequest++;document.getElementById('chat').classList.remove('off');p.classList.add('off');document.getElementById('chatTitle').textContent=people.find(x=>x.id===id)?.full_name||'Chat';await showMessages()})}
+function renderLayout(){let admin=profile.role==='admin';el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button id="testToggle" type="button">TEST</button><button id="logout">Esci</button>':'')+'<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+'<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+(admin?'<button class="mobileBack" id="back">‹</button>':'')+'<strong class="grow" id="chatTitle">Servizio</strong></div><div class="feed" id="feed"></div><div class="hint" id="queued"></div><form class="compose" id="send"><label class="attach" for="file">📎</label><input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea><button id="sendBtn">Invia</button></form><p id="status" class="hint"></p></section></div></div>';if(admin){
+  document.getElementById('testToggle').onclick=()=>{
+    testMode=!testMode;
+    renderLayout();
+    if(selected)showMessages(false);
+  };
+  document.getElementById('logout').onclick=logout;
+}
+if(admin&&testMode){
+  el.classList.add('dual-test');
+  const pane=document.createElement('section');
+  pane.id='testPane';
+  pane.className='test-pane';
+  el.appendChild(pane);
+  refreshTestPane();
+}else el.classList.remove('dual-test');if(admin){renderPeople();document.getElementById('back').onclick=()=>{document.getElementById('chat').classList.add('off');document.getElementById('people').classList.remove('off')}} document.getElementById('send').onsubmit=send}
+function renderPeople(){const p=document.getElementById('people');if(!p)return;p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':x.status)+'</small>'+(x.lastMessage?'<span class="chat-preview">'+esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+'</span>':'')+(x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+'</button>').join('');p.querySelectorAll('[data-id]').forEach(b=>b.onclick=async ev=>{const id=b.dataset.id;if(ev.target.dataset.approve||ev.target.dataset.deny){ev.stopPropagation();const approved=!!ev.target.dataset.approve;if(!confirm(approved?'Approvare questo utente?':'Rifiutare questa richiesta?'))return;const {error}=await db.from('profiles').update({status:approved?'approved':'blocked'}).eq('id',id);if(error)alert(friendly(error));else{await listPeople();renderPeople();if(testMode)await refreshTestPane()}return}if(people.find(x=>x.id===id)?.status!=='approved'){return}selected=id;messageRequest++;document.getElementById('chat').classList.remove('off');p.classList.add('off');document.getElementById('chatTitle').textContent=people.find(x=>x.id===id)?.full_name||'Chat';await showMessages()})}
 async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<a href="#" class="filelink" data-file="'+esc(m.file_path)+'">📎 '+esc(m.file_name||'Allegato')+'</a>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
   const queue=document.getElementById('queued');
   if(queue){
@@ -195,6 +215,8 @@ async function send(ev){ev.preventDefault();if(busy||!selected)return;const form
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='hidden'&&profile?.role==='admin'&&Capacitor.isNativePlatform()){
     adminUnlocked=false;
+    testMode=false;
+    el.classList.remove('dual-test');
     if(sub){db.removeChannel(sub);sub=null}
     selected=null;messageRequest++;
     el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Area amministratore bloccata</h2><p>Riapri FreePT per sbloccare con l’impronta.</p></main></div>';
@@ -219,3 +241,108 @@ setInterval(async () => {
     }
   } catch(e){ status(friendly(e),true) }
 }, 20000);
+setInterval(async()=>{
+  if(document.visibilityState==='visible'&&testMode&&profile?.role==='admin'&&adminUnlocked){
+    await refreshTestPane(false).catch(e=>testStatus(friendly(e),true));
+  }
+}, 4000);
+
+function testStatus(message,bad=false){
+  const elStatus=document.getElementById('testStatus');
+  if(elStatus){elStatus.textContent=message;elStatus.className=bad?'error':'small'}
+}
+async function refreshTestPane(replace=true){
+  if(!testMode||profile?.role!=='admin'||!adminUnlocked)return;
+  const pane=document.getElementById('testPane');
+  if(!pane)return;
+  const {data:{session},error:sessionError}=await testDb.auth.getSession();
+  if(sessionError)throw sessionError;
+  testUser=session?.user||null;
+  if(testUser){
+    const {data,error}=await testDb.from('profiles').select('id,full_name,status').eq('id',testUser.id).maybeSingle();
+    if(error)throw error;
+    testProfile=data;
+  }else testProfile=null;
+  const statusKey=testProfile?.status||'new';
+  const current=pane.dataset.view;
+  if(replace||current!==statusKey){
+    pane.dataset.view=statusKey;
+    if(!testProfile){
+      pane.innerHTML='<div class="test-heading"><strong>UTENTE DI PROVA</strong><span>Sessione separata · Supabase reale</span></div>'+
+        '<form id="testRegister" class="test-form"><input name="name" required minlength="2" maxlength="80" placeholder="Nome utente di prova">'+
+        '<input name="phone" type="tel" required placeholder="Cellulare (+39...)">'+
+        '<label><input type="checkbox" name="consent" required> Accetto l’informativa FreePT visualizzata nella schermata di richiesta accesso</label>'+
+        '<button>Invia richiesta di accesso</button></form><p id="testStatus" class="small"></p>';
+      document.getElementById('testRegister').onsubmit=submitTestRequest;
+    }else if(statusKey==='pending'){
+      pane.innerHTML='<div class="test-heading"><strong>UTENTE DI PROVA</strong><span>'+esc(testProfile.full_name)+'</span></div>'+
+        '<p class="notice">I nostri sistemi stanno elaborando la tua richiesta di accesso… Attendere.</p><p id="testStatus" class="small"></p>';
+    }else if(statusKey==='blocked'){
+      pane.innerHTML='<div class="test-heading"><strong>UTENTE DI PROVA</strong></div>'+
+        '<p class="error">Richiesta non approvata. Accesso negato.</p><p id="testStatus" class="small"></p>';
+    }else{
+      pane.innerHTML='<div class="test-heading"><strong>UTENTE DI PROVA · '+esc(testProfile.full_name)+'</strong><span>Chat autorizzata</span></div>'+
+        '<div class="test-feed" id="testFeed"></div><p id="testQueued" class="hint"></p>'+
+        '<form class="test-compose" id="testSend"><textarea name="message" placeholder="Messaggio utente di prova" maxlength="10000"></textarea>'+
+        '<button>Invia</button></form><p id="testStatus" class="small"></p>';
+      document.getElementById('testSend').onsubmit=sendTestMessage;
+    }
+  }
+  if(statusKey==='approved')await loadTestMessages();
+}
+async function submitTestRequest(ev){
+  ev.preventDefault();if(testBusy)return;testBusy=true;
+  const form=ev.target, f=new FormData(form);
+  const name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
+  if(name.length<2||!/^\\+[1-9]\\d{7,14}$/.test(phone)){testStatus('Inserisci nome e telefono internazionale valido.',true);testBusy=false;return}
+  form.querySelector('button').disabled=true;testStatus('Invio della richiesta...');
+  try{
+    let user=testUser;
+    if(!user){
+      const auth=await testDb.auth.signInAnonymously();
+      if(auth.error)throw auth.error;
+      user=auth.data.user;
+    }
+    if(!user?.is_anonymous)throw Error('La sessione di prova non è anonima.');
+    const {error}=await testDb.from('profiles').insert({id:user.id,full_name:name,phone});
+    if(error)throw error;
+    await refreshTestPane();
+    await listPeople();renderPeople();
+  }catch(e){testStatus(friendly(e),true)}
+  finally{testBusy=false;if(document.contains(form))form.querySelector('button').disabled=false}
+}
+async function loadTestMessages(){
+  if(!testUser||testProfile?.status!=='approved')return;
+  const {data,error}=await testDb.from('messages')
+    .select('id,sender_id,body,file_name,created_at')
+    .eq('user_id',testUser.id).order('created_at',{ascending:true}).limit(200);
+  if(error)throw error;
+  const feed=document.getElementById('testFeed');if(!feed)return;
+  const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<80;
+  const rows=data||[];
+  const signature=rows.map(x=>x.id).join(',');
+  if(feed.dataset.signature!==signature){
+    feed.innerHTML=rows.map(m=>'<article class="bubble '+(m.sender_id===testUser.id?'mine':'other')+'">'+
+      esc(m.body||('📎 '+(m.file_name||'Allegato')))+
+      '<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');
+    feed.dataset.signature=signature;
+    if(nearEnd)feed.scrollTop=feed.scrollHeight;
+  }
+  const last=rows[rows.length-1];
+  const queued=document.getElementById('testQueued');
+  if(queued)queued.textContent=last?.sender_id===testUser.id?'Richiesta in elaborazione… Attendere.':'';
+}
+async function sendTestMessage(ev){
+  ev.preventDefault();if(testBusy||!testUser||testProfile?.status!=='approved')return;
+  const form=ev.target,body=form.elements.message.value.trim();if(!body)return;
+  testBusy=true;form.querySelector('button').disabled=true;testStatus('Invio...');
+  try{
+    const {error}=await testDb.from('messages').insert({
+      id:crypto.randomUUID(),user_id:testUser.id,sender_id:testUser.id,body
+    });
+    if(error)throw error;
+    form.reset();testStatus('Richiesta inviata.');await loadTestMessages();
+    await listPeople();renderPeople();
+  }catch(e){testStatus(friendly(e),true)}
+  finally{testBusy=false;if(document.contains(form))form.querySelector('button').disabled=false}
+}
