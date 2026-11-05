@@ -33,7 +33,7 @@ begin
   if not found then
     raise exception 'Profilo presente con numero diverso: nessuna modifica';
   end if;
-  raise notice 'Amministratore associato all\'account: %', v_id;
+  raise notice 'Amministratore associato all account %', v_id;
 exception
   when no_data_found then
     raise exception 'Email non trovata tra gli utenti Auth non anonimi';
