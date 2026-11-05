@@ -18,7 +18,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
+      - name: Inspect preinstalled Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME"
+          test -d "$ANDROID_HOME/platform-tools"
+          test -d "$ANDROID_HOME/build-tools"
+          ls "$ANDROID_HOME/build-tools"
       - name: Install web dependencies
         run: npm install --no-audit --no-fund
       - name: JavaScript syntax check
