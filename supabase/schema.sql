@@ -1,6 +1,8 @@
 -- FreePT. Eseguire in un nuovo progetto dedicato, una volta sola.
--- Nota: Authentication > Providers > Email: disattivare "Confirm email" per il login
--- tramite numero dichiarato/password senza SMS (non e' verifica del telefono).
+-- Schema BASE storico. Per la versione corrente usare anche
+-- supabase/migrations/20261105_access_requests.sql.
+-- Gli amici usano sessioni anonime + approvazione; niente password o SMS.
+-- L'amministratore usa un'identità Auth email distinta e verificata.
 create extension if not exists pgcrypto;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -70,9 +72,11 @@ create policy "attachments upload" on storage.objects for insert to authenticate
  bucket_id='attachments' and (select public.freept_is_approved()) and
  ((select public.freept_is_admin()) or (storage.foldername(name))[1]=(select auth.uid())::text)
 );
--- Dopo la prima iscrizione: assegnare manualmente UN SOLO admin dal SQL editor,
--- sostituendo il numero reale: update public.profiles set role='admin',status='approved' where phone='+39...';
--- Proteggere l'accesso a SQL editor: qui non sono presenti credenziali privilegiate.
+-- NON assegnare il ruolo amministratore in base al solo numero dichiarato.
+-- Usare supabase/admin_bootstrap.sql: identifica un account Auth email noto,
+-- verifica che non sia anonimo e impedisce una promozione non controllata.
+-- Questo file rappresenta lo schema originario; i cambi al flusso di accesso
+-- vanno applicati tramite supabase/migrations/20261105_access_requests.sql.
 
 -- Realtime messages publication (safe to re-run).
 do $$ begin
