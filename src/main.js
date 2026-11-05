@@ -105,8 +105,16 @@ function waitingScreen(){
 
 async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
 async function boot(){
+  // A fresh installation has no session: this is normal, not an error.
+  const {data:{session},error:sessionError}=await db.auth.getSession();
+  if(sessionError){requestScreen();status(friendly(sessionError),true);return}
+  if(!session){me=null;profile=null;requestScreen();return}
   const {data:{user},error}=await db.auth.getUser();
-  if(error){requestScreen();status(friendly(error),true);return}
+  if(error||!user){
+    requestScreen();
+    status(friendly(error||new Error('Sessione non valida: riapri FreePT.')),true);
+    return;
+  }
   me=user;selected=null;
   if(!me){profile=null;requestScreen();return}
   try{
