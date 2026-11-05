@@ -1,0 +1,8 @@
+{
+  "appId": "it.freept.app",
+  "appName": "FreePT",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}
