@@ -170,7 +170,7 @@ async function boot(){
 async function logout(){adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
   const {data,error}=await db.from('profiles')
-    .select('id,full_name,phone,status,role,created_at')
+    .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
     .neq('role','admin').order('created_at',{ascending:false});
   if(error)throw error;
   const users=data||[];
@@ -181,6 +181,8 @@ async function listPeople(){
   const latest=new Map();
   for(const msg of recent||[])if(!latest.has(msg.user_id))latest.set(msg.user_id,msg);
   people=users.map(u=>({...u,lastMessage:latest.get(u.id)||null}))
+    .filter(u=>u.status==='pending'||!u.chat_hidden_at||
+      (u.lastMessage && Date.parse(u.lastMessage.created_at)>Date.parse(u.chat_hidden_at)))
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
@@ -229,7 +231,149 @@ function renderLayout(){
   document.getElementById('send').onsubmit=send;
   configureFileInput(document.getElementById('file'));
 }
-function renderPeople(){const p=document.getElementById('people');if(!p)return;p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':x.status)+'</small>'+(x.lastMessage?'<span class="chat-preview">'+esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+'</span>':'')+(x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+'</button>').join('');p.querySelectorAll('[data-id]').forEach(b=>b.onclick=async ev=>{const id=b.dataset.id;if(ev.target.dataset.approve||ev.target.dataset.deny){ev.stopPropagation();const approved=!!ev.target.dataset.approve;if(!confirm(approved?'Approvare questo utente?':'Rifiutare questa richiesta?'))return;const {error}=await db.from('profiles').update({status:approved?'approved':'blocked'}).eq('id',id);if(error)alert(friendly(error));else{await listPeople();renderPeople()}return}if(people.find(x=>x.id===id)?.status!=='approved'){return}selected=id;messageRequest++;document.getElementById('chat').classList.remove('off');p.classList.add('off');document.getElementById('chatTitle').textContent=people.find(x=>x.id===id)?.full_name||'Chat';await showMessages()})}
+function renderPeople(){
+  const p=document.getElementById('people');
+  if(!p)return;
+  p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+
+    people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+
+      esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
+      (x.lastMessage?'<span class="chat-preview">'+
+        esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+
+        '</span>':'')+
+      (x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+
+      '</button>').join('');
+  p.querySelectorAll('[data-id]').forEach(button=>{
+    let holdTimer=null;
+    let suppressClick=false;
+    let startX=0,startY=0;
+    const id=button.dataset.id;
+    const stopHold=()=>{if(holdTimer){clearTimeout(holdTimer);holdTimer=null}};
+    const showActions=()=>{
+      stopHold();
+      suppressClick=true;
+      const user=people.find(x=>x.id===id);
+      if(user)showConversationActions(user);
+    };
+    button.addEventListener('pointerdown',event=>{
+      if(event.pointerType==='mouse'&&event.button!==0)return;
+      startX=event.clientX;startY=event.clientY;
+      stopHold();
+      holdTimer=setTimeout(showActions,650);
+    });
+    button.addEventListener('pointermove',event=>{
+      if(Math.abs(event.clientX-startX)>12||Math.abs(event.clientY-startY)>12)stopHold();
+    });
+    for(const type of ['pointerup','pointercancel','pointerleave'])button.addEventListener(type,stopHold);
+    button.addEventListener('contextmenu',event=>{event.preventDefault();showActions()});
+    button.onclick=async event=>{
+      if(suppressClick){suppressClick=false;event.preventDefault();return}
+      if(event.target.dataset.approve||event.target.dataset.deny){
+        event.stopPropagation();
+        const approved=!!event.target.dataset.approve;
+        if(!confirm(approved?'Approvare questo utente?':'Rifiutare questa richiesta?'))return;
+        const {error}=await db.from('profiles').update({status:approved?'approved':'blocked'}).eq('id',id);
+        if(error)alert(friendly(error));
+        else{await listPeople();renderPeople()}
+        return;
+      }
+      const user=people.find(x=>x.id===id);
+      if(user?.status!=='approved')return;
+      selected=id;messageRequest++;
+      document.getElementById('chat').classList.remove('off');
+      p.classList.add('off');
+      document.getElementById('chatTitle').textContent=user.full_name||'Chat';
+      await showMessages();
+    };
+  });
+}
+
+function showConversationActions(user){
+  if(profile?.role!=='admin'||!adminUnlocked)return;
+  const old=document.getElementById('chatActions');
+  if(old)old.remove();
+  const modal=document.createElement('div');
+  modal.id='chatActions';
+  modal.className='chat-actions-shade';
+  modal.setAttribute('role','dialog');
+  modal.setAttribute('aria-modal','true');
+  modal.setAttribute('aria-label','Gestione conversazione');
+  modal.innerHTML='<div class="chat-actions-box"><h3>'+esc(user.full_name)+'</h3>'+
+    '<p>Che cosa vuoi fare?</p>'+
+    '<button type="button" id="clearChatAction">Cancella chat</button>'+
+    '<button type="button" class="danger" id="deleteUserAction">Elimina utente</button>'+
+    '<button type="button" class="secondary" id="cancelChatAction">Annulla</button>'+
+    '<p id="actionStatus" class="small"></p></div>';
+  el.appendChild(modal);
+  const close=()=>modal.remove();
+  modal.onclick=event=>{if(event.target===modal)close()};
+  document.getElementById('cancelChatAction').onclick=close;
+  const run=async deleteUser=>{
+    const name=user.full_name;
+    const question=deleteUser
+      ? 'ELIMINARE DEFINITIVAMENTE '+name+'? Verranno rimossi account, accesso, messaggi e allegati. Non si puo annullare.'
+      : 'CANCELLARE tutta la chat con '+name+' e i suoi allegati? L’utente rimarra autorizzato e potra scrivere di nuovo. Non si puo annullare.';
+    if(!confirm(question))return;
+    modal.querySelectorAll('button').forEach(b=>b.disabled=true);
+    const statusNode=document.getElementById('actionStatus');
+    statusNode.textContent='Rimozione degli allegati in corso...';
+    try{
+      await deleteConversationFiles(user.id);
+      statusNode.textContent=deleteUser?'Eliminazione account in corso...':'Cancellazione chat in corso...';
+      const {error}=await db.rpc('freept_admin_delete_conversation',{
+        p_user_id:user.id,p_delete_user:deleteUser
+      });
+      if(error)throw error;
+      close();
+      if(selected===user.id){
+        selected=null;messageRequest++;
+        document.getElementById('chat')?.classList.add('off');
+        document.getElementById('people')?.classList.remove('off');
+      }
+      await listPeople();renderPeople();
+    }catch(e){
+      statusNode.textContent='Operazione non completata: '+friendly(e)+
+        '. Alcuni allegati potrebbero essere stati rimossi; riprova solo dopo aver verificato.';
+      statusNode.className='error';
+    }finally{
+      if(document.contains(modal))modal.querySelectorAll('button').forEach(b=>b.disabled=false);
+    }
+  };
+  document.getElementById('clearChatAction').onclick=()=>run(false);
+  document.getElementById('deleteUserAction').onclick=()=>run(true);
+}
+
+// The Storage API must remove the physical objects before the database RPC.
+// Supabase Storage objects are organized under user_id / message UUID / filename.
+async function deleteConversationFiles(userId){
+  if(!/^[0-9a-f-]{36}$/i.test(userId))throw Error('Identificativo utente non valido.');
+  const files=[];
+  const walk=async (prefix,depth)=>{
+    if(depth>3)throw Error('Struttura allegati inattesa.');
+    for(let offset=0;;offset+=100){
+      const {data,error}=await db.storage.from('attachments').list(prefix,{
+        limit:100,offset,sortBy:{column:'name',order:'asc'}
+      });
+      if(error)throw error;
+      if(!data?.length)break;
+      for(const entry of data){
+        const path=prefix+'/'+entry.name;
+        if(entry.id===null||entry.id===undefined){
+          await walk(path,depth+1);
+        }else{
+          files.push(path);
+          if(files.length>10000)throw Error('Troppi allegati: eliminazione interrotta per sicurezza.');
+        }
+      }
+      if(data.length<100)break;
+    }
+  };
+  await walk(userId,0);
+  for(let i=0;i<files.length;i+=100){
+    const {error}=await db.storage.from('attachments').remove(files.slice(i,i+100));
+    if(error)throw error;
+  }
+}
+
 async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<a href="#" class="filelink" data-file="'+esc(m.file_path)+'">📎 '+esc(m.file_name||'Allegato')+'</a>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
   const queue=document.getElementById('queued');
   if(queue){
