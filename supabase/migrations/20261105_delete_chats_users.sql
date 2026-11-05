@@ -67,3 +67,17 @@ grant execute on function public.freept_admin_delete_conversation(uuid,boolean)
 
 -- La funzione non deve essere invocata da utenti anonimi in attesa o approvati:
 -- auth.uid() e freept_is_admin() effettuano il controllo sul server.
+
+-- Preflight read-only: l'app usa questo RPC per verificare che la migrazione
+-- sia stata applicata prima di cancellare qualsiasi allegato.
+create or replace function public.freept_delete_ready()
+returns boolean
+language sql
+stable
+security invoker
+set search_path=''
+as $$
+  select (select public.freept_is_admin());
+$$;
+revoke all on function public.freept_delete_ready() from public, anon;
+grant execute on function public.freept_delete_ready() to authenticated;
