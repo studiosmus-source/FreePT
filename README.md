@@ -47,7 +47,9 @@ Inserire un nome di prova e un **numero di telefono non già usato nel database*
 
 Il pulsante **TEST** chiude e riapre la vista divisa senza disconnettere l'amministratore. La sessione di prova persiste sul dispositivo. **Attenzione:** i profili e i messaggi di prova sono scritti nel database reale e non vengono cancellati automaticamente. Usare soltanto dati fittizi; non usare il numero di un amico né dati personali. La modalità TEST è disponibile soltanto quando l'amministratore è autenticato e ha sbloccato l'app.
 
-Questo collaudo non sostituisce la verifica con due veri telefoni prima della distribuzione, specialmente per isolamento tra installazioni, allegati e comportamento dopo riavvio.
+Gli allegati (fino a 25 MB) sono supportati anche nella chat dell'utente di prova: il file viene caricato nel bucket privato `attachments` tramite la sessione anonima separata e collegato al messaggio. In entrambe le chat appare il nome del file prima dell'invio. Aprire il selettore/galleria non deve più provocare il blocco immediato dell'amministratore: un flag temporaneo sospende soltanto il blocco mentre il selettore è attivo, poi la protezione biometrica torna normale. Il selettore chiuso senza file viene gestito anche dall'evento `cancel` e da un breve ripristino su ritorno in primo piano.
+
+Questo collaudo non sostituisce la verifica con due veri telefoni prima della distribuzione, specialmente per isolamento tra installazioni, allegati e comportamento dopo riavvio. Il comportamento del selettore Android e l'invio dei file devono essere verificati sulla nuova APK, non sono ancora testati su dispositivo.
 
 ## APK Android
 
