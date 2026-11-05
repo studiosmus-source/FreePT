@@ -16,3 +16,6 @@
 .person [data-approve],.person [data-deny]{display:inline-block;margin-top:8px;padding:6px 10px;border-radius:7px;font-size:13px}
 .person [data-approve]{background:#def7e9;color:#12623f}
 .person [data-deny]{background:#fee2e2;color:#991b1b}
+
+/* Anteprima ultimo messaggio nell'elenco conversazioni */
+.chat-preview{display:block;margin-top:5px;color:#667085;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
