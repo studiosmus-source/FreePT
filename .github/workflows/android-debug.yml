@@ -45,11 +45,27 @@ jobs:
           path: vite-build.log
           if-no-files-found: warn
       - name: Generate and synchronize Android project
+        env:
+          FREEPT_GOOGLE_SERVICES_JSON_B64: ${{ secrets.FREEPT_GOOGLE_SERVICES_JSON_B64 }}
         shell: bash
         run: |
           set -euo pipefail
           test -s dist/index.html
           npx cap add android
+          # This feature must NOT produce an APK without Firebase credentials.
+          # Save the original Firebase Android JSON as GitHub Actions secret
+          # FREEPT_GOOGLE_SERVICES_JSON_B64 (base64 of the exact JSON bytes).
+          test -n "${FREEPT_GOOGLE_SERVICES_JSON_B64:-}" || {
+            echo 'Missing FREEPT_GOOGLE_SERVICES_JSON_B64 GitHub Actions secret'; exit 1;
+          }
+          printf '%s' "$FREEPT_GOOGLE_SERVICES_JSON_B64" | base64 -d > android/app/google-services.json
+          python3 - <<'PY'
+          import json
+          cfg=json.load(open('android/app/google-services.json'))
+          clients=cfg.get('client',[])
+          assert any(a.get('client_info',{}).get('android_client_info',{}).get('package_name')=='it.freept.app' for a in clients), 'Firebase JSON must match it.freept.app'
+          print('Firebase Android package verified')
+          PY
           npx cap sync android
           test -s android/capacitor.settings.gradle
       - name: Ensure Android biometric permission
