@@ -19,13 +19,13 @@ FreePT è una chat privata con richiesta di accesso. L'utente inserisce nome e c
 
 Il telefono è una dichiarazione, non una verifica del possesso del numero. Per mantenere le chat separate, Supabase crea internamente una sessione anonima associata ai dati dell'installazione. Non esiste login utente con nome/telefono: se l'app viene disinstallata o i dati vengono cancellati, si può perdere l'accesso alla conversazione precedente. Non utilizzare con dati reali prima del collaudo completo dell'isolamento delle chat e degli allegati.
 
-## Accesso amministratore biometrico (decisione di progetto)
+## Accesso amministratore biometrico (APK di test)
 
-L'amministratore si identifica tramite email e desidera sbloccare l'area riservata con l'impronta digitale Android, senza digitare una password a ogni apertura. Gli altri utenti non hanno email/password e continuano a inviare soltanto una richiesta di accesso.
+L'amministratore mantiene un'identità **Supabase Auth** con email e password per l'attivazione iniziale. Finché tale sessione resta valida, la nuova versione APK usa il riconoscimento biometrico **nativo Android** per sbloccare l'area amministrativa all'avvio e quando l'app torna in primo piano. Non salva o legge impronte digitali.
 
-**Da implementare, non operativo nell'APK attuale:** per autenticazione realmente passwordless usare una **passkey verificata dal backend**, non soltanto una finestra biometrica lato client. Supabase Auth offre passkey/WebAuthn sperimentali (richiesta versione aggiornata di supabase-js e configurazione server): verificare supporto e compatibilità Android/Capacitor prima della modifica. La passkey richiede una prima attivazione sull'account amministratore non anonimo e confermato. Prevedere recupero con metodo dispositivo/autenticazione sicura se impronta non disponibile; non memorizzare dati biometrici nell'app e non assegnare ruoli in base al solo superamento di un controllo locale. Conservare le RLS basate su un'identità admin Auth autorizzata.
+Il plugin `@capgo/capacitor-native-biometric` versione 7 è associato a Capacitor 7; il workflow Android aggiunge il permesso `USE_BIOMETRIC` durante la generazione del progetto. Se il telefono non ha biometria disponibile, lo sblocco è bloccato nella nuova versione: non distribuire senza collaudare questa situazione e predisporre il recupero dell'account. La verifica biometrica è **solo uno sblocco locale della sessione**: non sostituisce la verifica di identità sul server. Per un login realmente senza password serve la futura integrazione di passkey/WebAuthn lato Supabase, che non è stata implementata.
 
-**Il form email/password presente nel codice è provvisorio** e non rappresenta il metodo finale concordato. Evitare di eliminarlo prima di aver verificato un percorso amministratore funzionante, per non perdere la possibilità di accesso.
+**Non ancora testato su dispositivo** e non va presentato come pronto finché GitHub Actions non produce la nuova build e si verifica l'impronta su Android.
 
 ## Configurazione Supabase richiesta prima del test reale
 
