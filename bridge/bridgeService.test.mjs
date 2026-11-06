@@ -93,9 +93,9 @@ test('only verified requesting admin can see or cancel a job', async () => {
   })).state, 'cancelled');
   const tx = sessions.open({ deviceId:'tx-a', secret:a.secret });
   assert.equal(service.pollDevice({ deviceId:'tx-a', sessionToken:tx.token }), null);
-  await assert.rejects(() => service.getRequestStatus({
+  assert.equal((await service.getRequestStatus({
     authContext:'verified-admin', jobId:'cancel-1'
-  }), /job_not_authorized/);
+  })).state, 'cancelled');
 });
 
 test('request cancellation works on a sent job and prevents completion', async () => {
@@ -109,4 +109,21 @@ test('request cancellation works on a sent job and prevents completion', async (
   assert.throws(() => service.completeDevice({
     deviceId:'tx-a', sessionToken:tx.token, jobId:'cancel-2'
   }), /job_not_authorized/);
+});
+
+test('completed status is visible to only the verified requesting admin', async () => {
+  const { service, sessions, a } = setup();
+  await service.requestList({ authContext:'verified-admin', deviceId:'tx-a', jobId:'done-visible' });
+  const tx = sessions.open({ deviceId:'tx-a', secret:a.secret });
+  service.pollDevice({ deviceId:'tx-a', sessionToken:tx.token });
+  service.completeDevice({ deviceId:'tx-a', sessionToken:tx.token, jobId:'done-visible' });
+  assert.equal((await service.getRequestStatus({
+    authContext:'verified-admin', jobId:'done-visible'
+  })).state, 'done');
+  await assert.rejects(() => service.getRequestStatus({
+    authContext:'unverified', jobId:'done-visible'
+  }), /bridge_admin_required/);
+  await assert.rejects(() => service.cancelRequest({
+    authContext:'verified-admin', jobId:'done-visible'
+  }), /job_already_final/);
 });
