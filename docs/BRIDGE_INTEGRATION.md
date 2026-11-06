@@ -89,7 +89,7 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - La verifica controlla dispositivo, verificatore aggiornato, grant del ricevitore e presenza/stato del Ponte. Rotazione e revoca della credenziale invalidano le sessioni precedenti.
 - Il contatore temporaneo `sessionEpoch` nel registro cambia al comando OFF: un token aperto prima dello spegnimento rimane inutilizzabile anche dopo un nuovo ON. Il contatore non è un segreto e non viene persistito: le sessioni esistono soltanto nel processo.
 - L'identità del ricevitore che autorizza un'operazione deve arrivare da un contesto **autenticato dal backend**, mai da un parametro HTTP non verificato. Per ora nessuna API HTTP o connessione Android usa queste funzioni.
-- Sono predisposti otto test delle sessioni, non ancora confermati nel workflow GitHub Actions. Senza un archivio server condiviso, verifica delle richieste, TLS e protezioni contro replay/rate-limit questo modello **non è pronto per l'utilizzo reale**.
+- Sono predisposti nove test delle sessioni, non ancora confermati nel workflow GitHub Actions. L'apertura viene inoltre respinta se il dispositivo è offline o Bridge è disattivato. Senza un archivio server condiviso, verifica delle richieste, TLS e protezioni contro replay/rate-limit questo modello **non è pronto per l'utilizzo reale**.
 
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
