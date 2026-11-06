@@ -138,6 +138,25 @@ test('disabled Bridge survives restart and requires owner reactivation', () => {
   restarted.setOnline('tx-a', true);
   assert.throws(() => restarted.enqueue({ jobId: 'job', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' }), /device_offline/);
   restarted.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  // A fresh authenticated connection is required after reactivation.
+  restarted.setOnline('tx-a', true);
   restarted.enqueue({ jobId: 'job', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
   assert.equal(restarted.takeNext('tx-a').jobId, 'job');
+});
+
+test('status distinguishes intentional closure from temporary network outage', () => {
+  const r = paired();
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'online');
+  r.setOnline('tx-a', false);
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'offline');
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'closed_by_owner');
+  r.setOnline('tx-a', true);
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'closed_by_owner');
+  assert.equal(r.listApproved('rx-1').find(x => x.id === 'tx-a').online, false);
+  assert.throws(() => r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-2' }), /not_authorized/);
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'offline');
+  r.setOnline('tx-a', true);
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'online');
 });
