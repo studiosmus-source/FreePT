@@ -91,5 +91,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - L'identità del ricevitore che autorizza un'operazione deve arrivare da un contesto **autenticato dal backend**, mai da un parametro HTTP non verificato. Per ora nessuna API HTTP o connessione Android usa queste funzioni.
 - Sono predisposti undici test delle sessioni, non ancora confermati nel workflow GitHub Actions. L'apertura viene inoltre respinta se il dispositivo è offline o Bridge è disattivato. Senza un archivio server condiviso, verifica delle richieste, TLS e protezioni contro replay/rate-limit questo modello **non è pronto per l'utilizzo reale**.
 
+## Collegamento logico amministratore → TX (isolato, non esposto)
+- `bridge/bridgeService.mjs` collega richiesta dell'amministratore, coda per dispositivo, verifica della sessione TX, ritiro e completamento di un job; al momento l'unica operazione prevista è `list`, senza percorsi file, lettura dati o trasferimento.
+- `requestList` non accetta un receiverId libero: un adattatore backend **deve** validare un JWT Supabase e restituire l'identità di un admin approvato. Il callback di prova non è autenticazione reale.
+- Un TX non ritira una richiesta senza sessione autenticata; il completamento ricava il receiver dal job conservato lato server e non da un parametro fornito dal telefono.
+- Cinque test di integrazione logica (runner JS adattato) controllano flusso completo, amministratore falso, TX sbagliato, revoca e token invalido.
+- Questo modulo è un prototipo **in-process**: non usa ancora endpoint HTTP, autorizzazione Supabase reale, transazioni database, autorizzazione di cartelle Android, canale streaming o distribuzione multiprocesso. Il modello in memoria non è una garanzia di revoca su servizi remoti.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
