@@ -27,6 +27,14 @@ const commands={
   bridge_server_complete_list:{
     keys:['p_job_id','p_device_id','p_session_binding_hex'],
     sql:"select public.bridge_server_complete_list(:'p_job_id'::uuid,:'p_device_id'::uuid,:'p_session_binding_hex')::text;"
+  },
+  bridge_server_job_status:{
+    keys:['p_job_id','p_receiver_id'],
+    sql:"select public.bridge_server_job_status(:'p_job_id'::uuid,:'p_receiver_id'::uuid)::text;"
+  },
+  bridge_server_cancel_job:{
+    keys:['p_job_id','p_receiver_id'],
+    sql:"select public.bridge_server_cancel_job(:'p_job_id'::uuid,:'p_receiver_id'::uuid)::text;"
   }
 };
 function query(sql,vars={}) {
@@ -59,7 +67,9 @@ function rpcClient() {
     try {
       const raw=await query(command.sql,args);
       if(raw==='__EMPTY__')return {data:null,error:null};
-      return {data:(raw==='t'||raw==='true')?true:(raw==='f'||raw==='false')?false:raw,error:null};
+      const value=raw.startsWith('{')?JSON.parse(raw):raw;
+      return {data:(value==='t'||value==='true')?true:
+        (value==='f'||value==='false')?false:value,error:null};
     } catch {
       return {data:null,error:{code:'db_denied_or_unavailable'}};
     }
@@ -108,6 +118,23 @@ test('Node adapter executes real PostgreSQL RPCs, persists completion and honors
   await assert.rejects(()=>f.adapter.completeDevice({
     deviceId:DEVICE,sessionToken:f.session.token,jobId:JOB
   }),/bridge_jobs_database_unavailable/);
+  assert.deepEqual(await f.adapter.getRequestStatus({
+    authContext:'approved-ci-admin',jobId:JOB
+  }),{jobId:JOB,deviceId:DEVICE,state:'done'});
+  await assert.rejects(()=>f.adapter.cancelRequest({
+    authContext:'approved-ci-admin',jobId:JOB
+  }),/bridge_jobs_database_unavailable/);
+  const cancelId='77777777-7777-4777-8777-777777777778';
+  await f.adapter.requestList({authContext:'approved-ci-admin',deviceId:DEVICE,jobId:cancelId});
+  assert.deepEqual(await f.adapter.cancelRequest({
+    authContext:'approved-ci-admin',jobId:cancelId
+  }),{jobId:cancelId,deviceId:DEVICE,state:'cancelled'});
+  assert.deepEqual(await f.adapter.getRequestStatus({
+    authContext:'approved-ci-admin',jobId:cancelId
+  }),{jobId:cancelId,deviceId:DEVICE,state:'cancelled'});
+  await assert.rejects(()=>f.adapter.getRequestStatus({
+    authContext:'unauthorized',jobId:JOB
+  }),/bridge_admin_required/);
 
   // This is a real DB revocation; the local registry remains deliberately stale.
   await query("update public.bridge_grants set revoked_at=clock_timestamp() where device_id='"+DEVICE+"' and receiver_id='"+ADMIN+"';");
