@@ -53,5 +53,13 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Sono presenti 13 test del modello e 6 test per lo store su file. I 13 test del modello sono stati eseguiti con un runner JavaScript adattato.
 - `getDeviceStatus` distingue `online`, `offline` e `closed_by_owner`; un heartbeat ricevuto mentre il Ponte è chiuso non lo riattiva. La riattivazione richiede una nuova presenza di rete autenticata (da integrare nel backend).
 
+## Migrazione server predisposta (non applicata)
+- `supabase/migrations/20261106_bridge_foundation.sql` crea due tabelle isolate: `bridge_devices` e `bridge_grants`, con chiavi esterne a `profiles`, RLS e scritture negate ai client.
+- `supabase/bridge_preflight.sql` verifica in sola lettura tabelle, RLS e privilegi dopo l'applicazione in un **progetto di prova**.
+- L'amministratore approvato può leggere soltanto dispositivi collegati a una sua autorizzazione ancora attiva; il proprietario approvato vede i propri. I client non possono concedere o revocare diritti con scritture dirette.
+- La tabella SQL parte con `bridge_enabled=false` (impostazione prudente), mentre `BridgeRegistry` è ancora un prototipo che inizializza un nuovo dispositivo con `true` per i test. Prima dell'integrazione reale occorre unificare questi default e introdurre la transazione di attivazione esplicita.
+- Le tabelle non generano token, non provano il possesso del dispositivo, non implementano audit o trasferimenti. Solo un backend autenticato potrà gestire associazioni e revoche. Non usare una chiave `service_role` nel client.
+- **Questa migrazione non è stata applicata a Supabase e non è stata validata con un database PostgreSQL reale.**
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
