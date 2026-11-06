@@ -176,7 +176,8 @@ export class BridgeRegistry {
       throw new Error('invalid_job');
     this.#pruneJobs();
     if (this.#jobs.has(jobId)) throw new Error('duplicate_job');
-    if (this.#jobs.size >= this.maxJobs) throw new Error('job_queue_full');
+    if ([...this.#jobs.values()].filter(job => job.state === 'queued' || job.state === 'sent').length >= this.maxJobs)
+      throw new Error('job_queue_full');
     const device = this.#devices.get(deviceId);
     if (!device?.online || !device.bridgeEnabled) throw new Error('device_offline');
     if (!this.#grants.get(this.#grantKey(deviceId, receiverId))?.active) throw new Error('bridge_not_authorized');
@@ -190,7 +191,9 @@ export class BridgeRegistry {
     this.#pruneJobs();
     const job = this.#jobs.get(jobId);
     if (!job || job.receiverId !== receiverId) throw new Error('job_not_authorized');
-    this.#jobs.delete(jobId);
+    if (job.state === 'done' || job.state === 'cancelled')
+      throw new Error('job_already_final');
+    job.state = 'cancelled';
     return { jobId, deviceId: job.deviceId, state: 'cancelled' };
   }
 
@@ -237,7 +240,7 @@ export class BridgeRegistry {
         !this.#devices.get(deviceId)?.bridgeEnabled ||
         !this.#grants.get(this.#grantKey(deviceId, receiverId))?.active)
       throw new Error('job_not_authorized');
-    this.#jobs.delete(jobId);
-    return { ...job, state: 'done' };
+    job.state = 'done';
+    return { ...job };
   }
 }
