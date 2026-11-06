@@ -12,6 +12,44 @@ export class BridgeRegistry {
     return JSON.stringify([deviceId, receiverId]);
   }
 
+  /**
+   * Durable state for a trusted server-side store.
+   * Online presence and queued/sent jobs are deliberately not persisted:
+   * after restart, every device must reconnect and authenticate again.
+   * NEVER hydrate directly from a client-provided snapshot.
+   */
+  snapshot() {
+    return {
+      version: 1,
+      devices: [...this.#devices.values()].map(({ id, ownerId, label }) => ({
+        id, ownerId, label
+      })),
+      grants: [...this.#grants.values()]
+        .filter(grant => grant.active)
+        .map(({ deviceId, receiverId }) => ({ deviceId, receiverId }))
+    };
+  }
+
+  static fromTrustedSnapshot(snapshot) {
+    if (!snapshot || snapshot.version !== 1 ||
+        !Array.isArray(snapshot.devices) || !Array.isArray(snapshot.grants))
+      throw new Error('invalid_snapshot');
+
+    const registry = new BridgeRegistry();
+    for (const device of snapshot.devices) registry.registerDevice(device);
+    for (const grant of snapshot.grants) {
+      const device = registry.#devices.get(grant.deviceId);
+      if (!device || !grant.receiverId || typeof grant.receiverId !== 'string')
+        throw new Error('invalid_snapshot');
+      registry.grant({
+        deviceId: grant.deviceId,
+        receiverId: grant.receiverId,
+        approvedByOwnerId: device.ownerId
+      });
+    }
+    return registry;
+  }
+
   registerDevice({ id, ownerId, label }) {
     if (!id || !ownerId || !label || typeof id !== 'string' ||
         typeof ownerId !== 'string' || typeof label !== 'string')
