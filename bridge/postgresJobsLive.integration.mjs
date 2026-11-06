@@ -84,6 +84,9 @@ test('Node adapter executes real PostgreSQL RPCs, persists completion and honors
   // Earlier PostgreSQL contract tests deliberately leave this device OFF.
   await query("update public.bridge_devices set bridge_enabled=true where id='"+DEVICE+"';");
   await query("update public.bridge_grants set revoked_at=null where device_id='"+DEVICE+"' and receiver_id='"+ADMIN+"';");
+  // Earlier SQL tests deliberately leave queued jobs behind. Isolate this
+  // integration scenario so FIFO cannot select a prior test's job.
+  await query("update public.bridge_jobs set state='cancelled', updated_at=clock_timestamp() where device_id='"+DEVICE+"' and state='queued';");
 
   const f=fixture();
   await assert.rejects(()=>f.adapter.requestList({
