@@ -134,5 +134,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - La primitiva resta interna a un unico processo e **non** è un endpoint HTTP. Occorrono un backend autenticato, persistenza affidabile e collegamento al servizio Android prima di poterla usare con telefoni reali.
 - Aggiunti quattro test di sessione e due test di servizio per avvio offline, credenziali non valide, OFF del proprietario, riavvio e flusso fino al completamento. Il workflow nativo GitHub Actions `42249686124`, eseguito sul commit `d442f6e476b9db8bae03ed758508f684d237fca1`, è terminato con **73 test superati su 73**, zero fallimenti e controlli di sintassi superati.
 
+## Verifica amministratore Supabase (adattatore backend isolato)
+- `bridge/supabaseAdminAuth.mjs` aggiunge `createSupabaseBridgeAdminAuthenticator`, che dipende da due client **server-side** forniti dal backend: verifica l'access token tramite `auth.getUser(token)` e legge `profiles(id,role,status)` per l'identità restituita da Auth.
+- L'accesso Bridge amministratore è consentito soltanto quando il profilo di database corrisponde allo stesso Auth user, ha `role='admin'` e `status='approved'`; account anonimi, dichiarazioni di ruolo nel payload, errori di Auth o query e token malformati vengono respinti.
+- Il modulo non contiene URL, service key, nuove rotte HTTP o chiamate reali a Supabase. Il callback è da creare **esclusivamente sul server** con configurazione riservata. L'integrazione del validatore all'endpoint di rete, il controllo di revoca transazionale e il collegamento database reale restano da sviluppare.
+- `bridge/supabaseAdminAuth.test.mjs` contiene sette test per verifica positiva, spoofing, ruoli non ammessi, credenziali errate, indisponibilità dei servizi e utilizzo con `BridgeService`. GitHub Actions run `42250316149` sul commit `95861ecb3feb56bc5287c89764e908372bd69d8b`: **80 test Node.js superati su 80, 0 falliti**, controllo di sintassi Bridge/FreePT superato. I client Supabase nei test sono mock, non un database PostgreSQL reale.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
