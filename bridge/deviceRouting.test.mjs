@@ -36,12 +36,12 @@ test('unauthorized RX cannot queue or retrieve another RX jobs', () => {
 
 test('revocation cancels outstanding work and hides device', () => {
   const r = paired();
-  r.enqueue({ jobId: 'j', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'read' });
+  r.enqueue({ jobId: 'j', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
   assert.throws(() => r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-b' }), /owner_required/);
   r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
   assert.deepEqual(r.listApproved('rx-1').map(x => x.id), ['tx-b']);
   assert.equal(r.takeNext('tx-a'), null);
-  assert.throws(() => r.enqueue({ jobId: 'j2', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'read' }), /not_authorized/);
+  assert.throws(() => r.enqueue({ jobId: 'j2', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' }), /not_authorized/);
 });
 
 test('offline and missing approvals fail closed', () => {
@@ -67,7 +67,7 @@ test('offline TX does not accept queued jobs and cannot complete an in-flight re
 
 test('revocation prevents completion of a command already dispatched', () => {
   const r = paired();
-  r.enqueue({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'read' });
+  r.enqueue({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
   assert.equal(r.takeNext('tx-a').jobId, 'sent');
   r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
   assert.throws(() => r.complete({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
