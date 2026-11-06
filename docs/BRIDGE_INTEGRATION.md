@@ -40,11 +40,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 
 ## Stato del modello di persistenza
 - Il modulo `bridge/deviceRouting.mjs` espone `snapshot()` e `fromTrustedSnapshot()`: serializza dispositivi e associazioni ancora valide.
-- Snapshot e ripristino operano **solo in memoria**: non è presente alcun repository database, adapter disk, API di scrittura o migrazione Supabase.
+- Snapshot e ripristino sono gestiti dal modello in memoria; è disponibile anche `bridge/localSnapshotStore.mjs`, adattatore di prova su file locale. Non esiste ancora persistenza condivisa di produzione, endpoint autenticato o migrazione Supabase. Il filesystem Render non è un database affidabile.
 - Al ripristino `online` torna `false`, nessun job pendente viene ripristinato e ogni dispositivo deve riconnettersi e autenticarsi al backend.
 - La funzione di ripristino deve accettare esclusivamente dati già validati dal server e provenienti da un archivio attendibile. Non usarla direttamente con input dell'utente.
 - Il prototipo JS non è un sistema di autenticazione: autorizzazioni e revoca richiedono verifica lato backend anche durante stream/trasferimenti in corso.
-- Sono presenti dieci test per il modello, eseguiti anche in runner JavaScript adattato; il workflow CI definito nel repository non risulta ancora verificato.
+- Sono presenti dieci test del modello e sei test dell'archivio locale. Non è ancora confermato l'esito del workflow CI del repository.
 
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
