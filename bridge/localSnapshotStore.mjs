@@ -20,6 +20,8 @@ export class LocalBridgeSnapshotStore {
   #queue;
 
   async load() {
+    // A read in the same instance must observe all completed queued saves.
+    await this.#queue;
     let raw;
     try {
       raw = await readFile(this.filePath, 'utf8');
@@ -36,8 +38,10 @@ export class LocalBridgeSnapshotStore {
    * A caller must prevent other processes/instances from writing concurrently.
    */
   save(registry) {
+    // Capture caller state NOW, not after an earlier asynchronous write.
+    // This preserves the ordering of grant/revoke operations.
+    const snapshot = registry.snapshot();
     const operation = async () => {
-      const snapshot = registry.snapshot();
       const folder = dirname(this.filePath);
       await mkdir(folder, { recursive: true });
       const temp = join(folder, '.' + basename(this.filePath) + '.' + randomUUID() + '.tmp');
