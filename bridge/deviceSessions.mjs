@@ -51,10 +51,10 @@ export class BridgeDeviceSessionGate {
   }
 
   /**
-   * The receiver identity is a TRUSTED backend context, never a plain
-   * unverified HTTP parameter. Recheck grant, TX state and token rotation.
+   * Validate the TX itself BEFORE dequeueing work. The token does not confer
+   * admin rights or file access by itself.
    */
-  authorize({ token, deviceId, receiverId }) {
+  assertDeviceSession({ token, deviceId }) {
     if (typeof token !== 'string' || !TOKEN_RE.test(token))
       throw new Error('invalid_device_session');
     const tokenHash = hashToken(token).toString('hex');
@@ -73,15 +73,22 @@ export class BridgeDeviceSessionGate {
     const savedVerifier = Buffer.from(state.verifier, 'hex');
     const liveVerifier = Buffer.from(current.verifier, 'hex');
     if (savedVerifier.length !== liveVerifier.length ||
-        !timingSafeEqual(savedVerifier, liveVerifier)) {
+        !timingSafeEqual(savedVerifier, liveVerifier) ||
+        state.sessionEpoch !== this.registry.getSessionEpoch(deviceId)) {
       this.#sessions.delete(tokenHash);
       throw new Error('device_session_revoked');
     }
+    if (!this.registry.isDeviceReady(deviceId))
+      throw new Error('bridge_unavailable');
+    return deviceId;
+  }
 
-    if (state.sessionEpoch !== this.registry.getSessionEpoch(deviceId)) {
-      this.#sessions.delete(tokenHash);
-      throw new Error('device_session_revoked');
-    }
+  /**
+   * The receiver identity is a TRUSTED backend context, never a plain
+   * unverified HTTP parameter. Recheck grant, TX state and token rotation.
+   */
+  authorize({ token, deviceId, receiverId }) {
+    this.assertDeviceSession({ token, deviceId });
     const device = this.registry.getDeviceStatus({ deviceId, receiverId });
     if (device.state !== 'online') throw new Error('bridge_unavailable');
     return { deviceId, receiverId };
