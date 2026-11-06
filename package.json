@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:bridge": "node --test bridge/*.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.0",
