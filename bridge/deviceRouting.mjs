@@ -88,7 +88,18 @@ export class BridgeRegistry {
     const device = this.#devices.get(deviceId);
     if (!device) throw new Error('unknown_device');
     // A heartbeat cannot override the owner's explicit shutdown.
-    device.online = online === true && device.bridgeEnabled;
+    const nextOnline = online === true && device.bridgeEnabled;
+    if (device.online && !nextOnline) {
+      // Dispatched jobs cannot be accepted after transport interruption.
+      // Queued work stays pending until its deadline, but the TX must
+      // reconnect and establish a fresh authenticated session.
+      device.sessionEpoch += 1;
+      for (const job of this.#jobs.values()) {
+        if (job.deviceId === deviceId && job.state === 'sent')
+          job.state = 'cancelled';
+      }
+    }
+    device.online = nextOnline;
   }
 
   /** Owner-initiated Bridge switch: not inferred from a dropped connection. */
