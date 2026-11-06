@@ -41,6 +41,14 @@ export class BridgeService {
     return this.registry.getJobStatus({ jobId, receiverId });
   }
 
+  /**
+   * Authenticate a previously enrolled TX and restore online presence.
+   * The device's owner must have enabled Bridge first. Backend-only entrypoint.
+   */
+  connectDevice({ deviceId, deviceSecret }) {
+    return this.sessions.connect({ deviceId, secret: deviceSecret });
+  }
+
   pollDevice({ deviceId, sessionToken }) {
     // Validate BEFORE consuming queue; invalid TX never takes a job.
     const sessionBinding = this.sessions.getDispatchBinding({
