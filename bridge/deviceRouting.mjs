@@ -174,6 +174,17 @@ export class BridgeRegistry {
     return null;
   }
 
+  /**
+   * Resolve receiver identity from the server-owned job, not from a TX payload.
+   * This is an in-process method, NOT a network route.
+   */
+  completeByDevice({ jobId, deviceId }) {
+    const job = this.#jobs.get(jobId);
+    if (!job || job.deviceId !== deviceId)
+      throw new Error('job_not_authorized');
+    return this.complete({ jobId, deviceId, receiverId: job.receiverId });
+  }
+
   complete({ jobId, deviceId, receiverId }) {
     const job = this.#jobs.get(jobId);
     if (!job || job.deviceId !== deviceId || job.receiverId !== receiverId ||
