@@ -45,7 +45,7 @@ test('revoked receiver grant and owner switch block active sessions', () => {
   const { gate, registry, a } = setup();
   const session = gate.open({ deviceId: 'tx-a', secret: a.secret });
   registry.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
-  assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /bridge_not_authorized/);
+  assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /device_session_revoked/);
   registry.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
   registry.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
   // The first denied check already discarded the revoked token.
