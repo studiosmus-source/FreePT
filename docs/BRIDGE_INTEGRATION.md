@@ -40,7 +40,7 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 
 ## Stato del modello di persistenza
 - Il modulo `bridge/deviceRouting.mjs` espone `snapshot()` e `fromTrustedSnapshot()`: serializza dispositivi e associazioni ancora valide.
-- Snapshot e ripristino sono gestiti dal modello in memoria; è disponibile anche `bridge/localSnapshotStore.mjs`, adattatore di prova su file locale. Non esiste ancora persistenza condivisa di produzione, endpoint autenticato o migrazione Supabase. Il filesystem Render non è un database affidabile.
+- Snapshot e ripristino sono gestiti dal modello in memoria; è disponibile anche `bridge/localSnapshotStore.mjs`, adattatore di prova su file locale. Non esiste ancora persistenza condivisa di produzione; le migrazioni Supabase e le RPC proprietario sono predisposte ma non applicate. Il filesystem Render non è un database affidabile.
 - Al ripristino `online` torna `false`, nessun job pendente viene ripristinato e ogni dispositivo deve riconnettersi e autenticarsi al backend.
 - La funzione di ripristino deve accettare esclusivamente dati già validati dal server e provenienti da un archivio attendibile. Non usarla direttamente con input dell'utente.
 - Il prototipo JS non è un sistema di autenticazione: autorizzazioni e revoca richiedono verifica lato backend anche durante stream/trasferimenti in corso.
@@ -60,6 +60,14 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Sia SQL sia `BridgeRegistry` inizializzano un dispositivo con `bridge_enabled=false`. L'attivazione è esplicita nel modello; la transazione autenticata di attivazione lato backend non è ancora implementata.
 - Le tabelle non generano token, non provano il possesso del dispositivo, non implementano audit o trasferimenti. Solo un backend autenticato potrà gestire associazioni e revoche. Non usare una chiave `service_role` nel client.
 - **Questa migrazione non è stata applicata a Supabase e non è stata validata con un database PostgreSQL reale.**
+
+## Comandi proprietario predisposti (non applicati)
+- La migrazione separata `supabase/migrations/20261106_bridge_owner_controls.sql` definisce tre RPC per un dispositivo **già registrato da un backend attendibile**: `bridge_owner_set_enabled`, `bridge_owner_grant` e `bridge_owner_revoke`.
+- Ogni RPC ricava l'identità da `auth.uid()`, richiede un profilo approvato e blocca la riga del dispositivo con `FOR UPDATE` verificando `owner_id`. Gli argomenti non attribuiscono mai il ruolo di proprietario.
+- L'autorizzazione può essere data soltanto a un profilo amministratore approvato. La revoca agisce su una sola coppia dispositivo/ricevitore. I client non ottengono scritture dirette alle tabelle.
+- Sono predisposti tre test statici del contratto RPC, eseguiti nel runner JavaScript adattato. Non sono test d'integrazione PostgreSQL, Supabase o RLS reale.
+- Ancora mancanti: registrazione e autenticazione forte del singolo TX, log/audit, sessioni, annullamento dei trasferimenti in corso, persistenza di presenza e integrazione Android. La sola modifica di `bridge_enabled` nel database non può arrestare un trasferimento già avviato.
+- Nessuna delle migrazioni Bridge è stata eseguita sul database reale. L'attivazione in produzione richiede prima collaudo isolato e verifica completa della catena backend.
 
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
