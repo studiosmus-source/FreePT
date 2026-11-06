@@ -108,3 +108,36 @@ test('sessions cannot start when Bridge is disabled or disconnected', () => {
   registry.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
   assert.throws(() => gate.open({ deviceId: 'tx-a', secret: a.secret }), /bridge_unavailable/);
 });
+
+test('regrant never revives a TX session authorized before revocation', () => {
+  const { gate, registry, a, b } = setup();
+  const oldA = gate.open({ deviceId: 'tx-a', secret: a.secret });
+  const unaffectedB = gate.open({ deviceId: 'tx-b', secret: b.secret });
+  assert.equal(gate.authorize({
+    token: oldA.token, deviceId: 'tx-a', receiverId: 'rx-1'
+  }).deviceId, 'tx-a');
+  registry.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  registry.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.throws(() => gate.authorize({
+    token: oldA.token, deviceId: 'tx-a', receiverId: 'rx-1'
+  }), /device_session_revoked/);
+  const newA = gate.open({ deviceId: 'tx-a', secret: a.secret });
+  assert.equal(gate.authorize({
+    token: newA.token, deviceId: 'tx-a', receiverId: 'rx-1'
+  }).deviceId, 'tx-a');
+  assert.equal(gate.authorize({
+    token: unaffectedB.token, deviceId: 'tx-b', receiverId: 'rx-1'
+  }).deviceId, 'tx-b');
+});
+
+test('repeating a non-active revoke does not invalidate a fresh session', () => {
+  const { gate, registry, a } = setup();
+  registry.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  registry.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  const fresh = gate.open({ deviceId: 'tx-a', secret: a.secret });
+  // This revocation targets no active grant after a prior revoke.
+  registry.revoke({ deviceId: 'tx-a', receiverId: 'missing', approvedByOwnerId: 'owner-a' });
+  assert.equal(gate.authorize({
+    token: fresh.token, deviceId: 'tx-a', receiverId: 'rx-1'
+  }).deviceId, 'tx-a');
+});
