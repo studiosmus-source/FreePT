@@ -28,6 +28,21 @@ export class BridgeDeviceSessionGate {
     this.now = now;
   }
 
+  /**
+   * Bootstrap connection when the TX is initially offline.
+   * Device credentials are verified BEFORE marking presence online;
+   * the owner's Bridge switch must already be enabled.
+   * This is an in-process backend primitive, NOT an exposed network route.
+   */
+  connect({ deviceId, secret }) {
+    if (!this.credentials.authenticate(deviceId, secret))
+      throw new Error('device_not_authenticated');
+    if (!this.registry.isDeviceEnabled(deviceId))
+      throw new Error('bridge_unavailable');
+    this.registry.setOnline(deviceId, true);
+    return this.open({ deviceId, secret });
+  }
+
   /** Starts a short-lived TX-only session after secret verification. */
   open({ deviceId, secret }) {
     if (!this.credentials.authenticate(deviceId, secret))
