@@ -62,7 +62,7 @@ export class BridgeRegistry {
         typeof ownerId !== 'string' || typeof label !== 'string')
       throw new Error('invalid_device');
     if (this.#devices.has(id)) throw new Error('device_already_registered');
-    this.#devices.set(id, { id, ownerId, label, online: false, bridgeEnabled: false });
+    this.#devices.set(id, { id, ownerId, label, online: false, bridgeEnabled: false, sessionEpoch: 0 });
   }
 
   setOnline(deviceId, online) {
@@ -79,11 +79,24 @@ export class BridgeRegistry {
     if (typeof enabled !== 'boolean') throw new Error('invalid_bridge_state');
     device.bridgeEnabled = enabled;
     if (!enabled) {
+      // Any existing authenticated TX session must be renewed after an off/on cycle.
+      device.sessionEpoch += 1;
       device.online = false;
       for (const [id, job] of this.#jobs) {
         if (job.deviceId === deviceId) this.#jobs.delete(id);
       }
     }
+  }
+
+  /**
+   * Backend-only session generation: invalidates old sessions after explicit
+   * owner shutdown, even if Bridge is later re-enabled.
+   * Never expose this as a client authorization decision by itself.
+   */
+  getSessionEpoch(deviceId) {
+    const device = this.#devices.get(deviceId);
+    if (!device) throw new Error('unknown_device');
+    return device.sessionEpoch;
   }
 
   /** Receiver-scoped device state: intentionally closed is not a network outage. */
