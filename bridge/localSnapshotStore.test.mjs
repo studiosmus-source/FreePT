@@ -48,3 +48,30 @@ test('corrupt persisted data fails closed without overwriting original', async (
   await assert.rejects(() => store.load(), /invalid_snapshot/);
   assert.match(await readFile(file, 'utf8'), /ghost/);
 });
+
+test('queued saves preserve invocation order and the latest revocation', async (t) => {
+  const folder = await mkdtemp(join(tmpdir(), 'bridge-snapshot-'));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const store = new LocalBridgeSnapshotStore(join(folder, 'bridge.json'));
+  const r = await store.load();
+  r.registerDevice({ id: 'tx', ownerId: 'owner', label: 'Phone' });
+  r.grant({ deviceId: 'tx', receiverId: 'rx', approvedByOwnerId: 'owner' });
+  const first = store.save(r);
+  r.revoke({ deviceId: 'tx', receiverId: 'rx', approvedByOwnerId: 'owner' });
+  const second = store.save(r);
+  await Promise.all([first, second]);
+  assert.equal((await store.load()).listApproved('rx').length, 0);
+});
+
+test('a load immediately after save waits for its pending write', async (t) => {
+  const folder = await mkdtemp(join(tmpdir(), 'bridge-snapshot-'));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const store = new LocalBridgeSnapshotStore(join(folder, 'bridge.json'));
+  const r = await store.load();
+  r.registerDevice({ id: 'tx', ownerId: 'owner', label: 'Phone' });
+  r.grant({ deviceId: 'tx', receiverId: 'rx', approvedByOwnerId: 'owner' });
+  const pending = store.save(r);
+  const loaded = await store.load();
+  await pending;
+  assert.equal(loaded.listApproved('rx').length, 1);
+});
