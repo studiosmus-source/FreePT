@@ -36,14 +36,15 @@ export class BridgeDeviceSessionGate {
     if (!verifier) throw new Error('device_not_authenticated');
     const token = randomBytes(32).toString('hex');
     const tokenHash = hashToken(token);
+    const expiresAt = this.now() + MAX_AGE_MS;
     this.#sessions.set(tokenHash.toString('hex'), {
       deviceId,
       verifier: verifier.verifier,
-      expiresAt: this.now() + MAX_AGE_MS
+      expiresAt
     });
     // This bearer token must travel only over authenticated TLS and
     // must never be logged or stored in a client-accessible database.
-    return { token, expiresAt: this.now() + MAX_AGE_MS };
+    return { token, expiresAt };
   }
 
   /**
