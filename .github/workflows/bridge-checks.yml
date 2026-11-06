@@ -6,11 +6,15 @@ on:
       - feature/bridge-admin-foundation-20261106
     paths:
       - 'bridge/**'
+      - 'supabase/migrations/20261106_bridge_*.sql'
+      - 'supabase/bridge_preflight.sql'
       - 'package.json'
       - '.github/workflows/bridge-checks.yml'
   pull_request:
     paths:
       - 'bridge/**'
+      - 'supabase/migrations/20261106_bridge_*.sql'
+      - 'supabase/bridge_preflight.sql'
       - 'package.json'
       - '.github/workflows/bridge-checks.yml'
 
