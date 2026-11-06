@@ -132,7 +132,7 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Il prototipo separa il primo collegamento dalla semplice apertura di una sessione già online. `BridgeDeviceSessionGate.connect`, richiamabile da `BridgeService.connectDevice`, verifica il segreto individuale e che il proprietario abbia esplicitamente attivato Bridge **prima** di impostare la presenza online.
 - Questo elimina la dipendenza circolare che richiedeva a un telefono appena avviato di risultare online prima dell'autenticazione. Restano invariati il blocco del consenso OFF, le credenziali distinte, la revoca delle sessioni vecchie e la scadenza dei token.
 - La primitiva resta interna a un unico processo e **non** è un endpoint HTTP. Occorrono un backend autenticato, persistenza affidabile e collegamento al servizio Android prima di poterla usare con telefoni reali.
-- Aggiunti quattro test di sessione e due test di servizio per avvio offline, credenziali non valide, OFF del proprietario, riavvio e flusso fino al completamento. L'esito della suite nativa deve essere verificato nei log GitHub Actions della nuova revisione.
+- Aggiunti quattro test di sessione e due test di servizio per avvio offline, credenziali non valide, OFF del proprietario, riavvio e flusso fino al completamento. Il workflow nativo GitHub Actions `42249686124`, eseguito sul commit `d442f6e476b9db8bae03ed758508f684d237fca1`, è terminato con **73 test superati su 73**, zero fallimenti e controlli di sintassi superati.
 
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
