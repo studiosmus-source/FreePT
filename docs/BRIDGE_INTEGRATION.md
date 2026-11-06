@@ -161,5 +161,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - GitHub Actions run `42273879607` (commit `a5c5065109872bbe110e050d934e101bfff0d3f1`): **100/100 test Node.js nativi superati**, zero errori e controlli sintattici riusciti.
 - Queste prove restano in loopback con modelli e utenti simulati: non certificano HTTPS pubblico, autenticazione Supabase reale, database persistente, due telefoni Android fisici o trasferimento file. L'attivazione fuori dallo staging richiede consenso verificato, protezioni anti-abuso e prove specifiche su dispositivi reali.
 
+## Limitazione dei tentativi di autenticazione TX (solo prototipo locale)
+- `bridge/txRequestHandler.mjs` applica un limite ai tentativi di connessione falliti: predefiniti **5 errori in 60 secondi**, seguiti da **60 secondi di sospensione** per l'ID dispositivo dichiarato. Le risposte durante la sospensione sono `429 tx_rate_limited` e non interrogano nuovamente le credenziali. Una connessione riuscita cancella i fallimenti registrati.
+- I contatori sono separati per ID dispositivo e limitati a 1000 voci per processo; i valori e l'orologio sono iniettabili per i test. Non esistono archiviazione persistente, sincronizzazione distribuita o blocchi permanenti.
+- **Limite di sicurezza:** un aggressore che conosce un ID potrebbe causare temporaneamente il blocco del relativo telefono: questa misura non basta per un servizio pubblico. Lo staging richiederà limiti per provenienza verificata, gestione anti-DoS, segnali affidabili di rete e persistenza condivisa. È vietato considerare questa sola protezione pronta per Internet.
+- Quattro regressioni verificano cooldown, isolamento tra due TX, memoria limitata e opzioni non valide. GitHub Actions run `42274396956` sul commit `566f419a2d8cb89f310c03b94826ce822ee01a4a`: **104 test Node.js su 104 superati**, zero errori, controlli sintattici superati.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
