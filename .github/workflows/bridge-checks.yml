@@ -76,3 +76,5 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-tests.sql
       - name: Assert transaction blocks concurrent claim during owner shutdown
         run: bash bridge/postgres-ci-concurrency.sh
+      - name: Run Node adapter against real disposable PostgreSQL RPCs
+        run: node --test bridge/postgresJobsLive.integration.mjs
