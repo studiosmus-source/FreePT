@@ -76,10 +76,10 @@ test('owner OFF serialized before completion blocks result even if local session
 test('shared lock can serialize a revocation after earlier work but prevent later work',async ()=>{
   const f=fixture();
   const token=f.service.connectDevice({deviceId:TX,deviceSecret:f.secret}).token;
-  const first=f.service.requestList({authContext:'verified',deviceId:TX,jobId:'first'});
-  const revoke=f.locked(()=>{f.state.grant=false;});
-  await first;
-  await revoke;
+  // Admin authentication is asynchronous: ensure the first operation has
+  // completed before scheduling a revocation behind it on the shared lock.
+  await f.service.requestList({authContext:'verified',deviceId:TX,jobId:'first'});
+  await f.locked(()=>{f.state.grant=false;});
   await assert.rejects(()=>f.service.requestList({
     authContext:'verified',deviceId:TX,jobId:'second'
   }),/bridge_authority_denied/);
