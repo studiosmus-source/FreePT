@@ -250,3 +250,33 @@ test('invalid limits and unsupported operations fail closed', () => {
     jobId:'bad', deviceId:'tx-a', receiverId:'rx-1', operation:'delete'
   }), /invalid_job/);
 });
+
+test('final states cannot dispatch, complete again, or reuse an active job ID', () => {
+  let now = 100;
+  const r = new BridgeRegistry({ now: () => now, jobLifetimeMs: 200, maxJobs: 1 });
+  r.registerDevice({ id:'tx', ownerId:'owner', label:'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'done', deviceId:'tx', receiverId:'rx', operation:'list' });
+  r.takeNext('tx');
+  assert.equal(r.completeByDevice({jobId:'done',deviceId:'tx'}).state,'done');
+  assert.equal(r.getJobStatus({jobId:'done',receiverId:'rx'}).state,'done');
+  assert.equal(r.takeNext('tx'), null);
+  assert.throws(() => r.completeByDevice({jobId:'done',deviceId:'tx'}), /job_not_authorized/);
+  assert.throws(() => r.enqueue({jobId:'done',deviceId:'tx',receiverId:'rx',operation:'list'}), /duplicate_job/);
+  // A terminal record doesn't block active queue capacity.
+  r.enqueue({jobId:'next',deviceId:'tx',receiverId:'rx',operation:'list'});
+  assert.equal(r.takeNext('tx').jobId,'next');
+  now=300;
+  assert.throws(() => r.getJobStatus({jobId:'done',receiverId:'rx'}), /job_not_authorized/);
+});
+
+test('cancelled status is visible and cannot be revived', () => {
+  const r = paired();
+  r.enqueue({jobId:'cancelled',deviceId:'tx-a',receiverId:'rx-1',operation:'list'});
+  r.cancelJob({jobId:'cancelled',receiverId:'rx-1'});
+  assert.equal(r.getJobStatus({jobId:'cancelled',receiverId:'rx-1'}).state,'cancelled');
+  assert.throws(() => r.cancelJob({jobId:'cancelled',receiverId:'rx-1'}), /job_already_final/);
+  assert.equal(r.takeNext('tx-a'),null);
+});
