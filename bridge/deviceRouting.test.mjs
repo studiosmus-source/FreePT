@@ -280,3 +280,26 @@ test('cancelled status is visible and cannot be revived', () => {
   assert.throws(() => r.cancelJob({jobId:'cancelled',receiverId:'rx-1'}), /job_already_final/);
   assert.equal(r.takeNext('tx-a'),null);
 });
+
+test('disconnect cancels sent work but leaves queued work available after reauthentication', () => {
+  const r = paired();
+  r.enqueue({ jobId:'sent-disconnect', deviceId:'tx-a', receiverId:'rx-1', operation:'list' });
+  r.enqueue({ jobId:'queued-disconnect', deviceId:'tx-a', receiverId:'rx-1', operation:'list' });
+  assert.equal(r.takeNext('tx-a').jobId, 'sent-disconnect');
+  const epoch = r.getSessionEpoch('tx-a');
+  r.setOnline('tx-a', false);
+  assert.equal(r.getSessionEpoch('tx-a'), epoch + 1);
+  assert.equal(r.getJobStatus({ jobId:'sent-disconnect', receiverId:'rx-1' }).state, 'cancelled');
+  assert.equal(r.getJobStatus({ jobId:'queued-disconnect', receiverId:'rx-1' }).state, 'queued');
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a').jobId, 'queued-disconnect');
+  assert.throws(() => r.completeByDevice({ jobId:'sent-disconnect', deviceId:'tx-a' }), /job_not_authorized/);
+});
+
+test('repeated offline notifications do not invalidate multiple session generations', () => {
+  const r = paired();
+  r.setOnline('tx-a', false);
+  const epoch = r.getSessionEpoch('tx-a');
+  r.setOnline('tx-a', false);
+  assert.equal(r.getSessionEpoch('tx-a'), epoch);
+});
