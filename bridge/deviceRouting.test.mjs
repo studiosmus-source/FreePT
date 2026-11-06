@@ -70,3 +70,17 @@ test('revocation prevents completion of a command already dispatched', () => {
   assert.throws(() => r.complete({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
   assert.equal(r.listApproved('rx-1').some(x => x.id === 'tx-a'), false);
 });
+
+test('punctuation in IDs cannot reuse authorization for another device', () => {
+  const r = new BridgeRegistry();
+  r.registerDevice({ id: 'a:b', ownerId: 'owner-1', label: 'Telefono 1' });
+  r.registerDevice({ id: 'a', ownerId: 'owner-2', label: 'Telefono 2' });
+  r.setOnline('a:b', true);
+  r.setOnline('a', true);
+  r.grant({ deviceId: 'a:b', receiverId: 'c', approvedByOwnerId: 'owner-1' });
+  assert.deepEqual(r.listApproved('c').map(x => x.id), ['a:b']);
+  assert.deepEqual(r.listApproved('b:c').map(x => x.id), []);
+  assert.throws(() => r.enqueue({
+    jobId: 'bad', deviceId: 'a', receiverId: 'b:c', operation: 'list'
+  }), /not_authorized/);
+});
