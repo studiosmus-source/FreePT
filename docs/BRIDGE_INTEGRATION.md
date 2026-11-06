@@ -180,5 +180,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Quattro regressioni aggiunte per limite, recupero dopo scadenza, pulizia delle sessioni sostituite e rifiuto di opzioni non valide. Dopo aver allineato due asserzioni precedenti alla nuova pulizia, il run GitHub Actions `42275683971` (commit `bac9f0b2be3110e0db4605dff3986717cc150f54`) ha confermato **111 test Node.js su 111 superati**, zero fallimenti e controllo sintattico superato.
 - Restano da definire gestione di più istanze server, sincronizzazione di presenza e credenziali, recupero dalla capacità esaurita e limiti anti-DoS distribuiti; non usare direttamente questa tabella in memoria come stato di autenticazione di produzione.
 
+## Collaudo di riavvio locale Bridge
+- `bridge/recoveryIntegration.test.mjs` riutilizza `LocalBridgeSnapshotStore` e le primitive esistenti, senza introdurre nuovi strati di persistenza o modificare i contratti di produzione.
+- Il test principale salva il registro prima di simulare la perdita del processo. Dopo il ripristino tramite nuovo oggetto `LocalBridgeSnapshotStore`, verifica che dispositivi, consenso attivo e switch del proprietario sopravvivano, ma **stato online, token TX e lavori `sent`/`queued` no**. La vecchia sessione non può autorizzare operazioni; il TX autenticato nuovamente può ricevere soltanto nuovi lavori.
+- Il test usa un verifier TX importato tramite `importTrustedVerifier` da un valore mantenuto nel fixture attendibile **in memoria**: non implementa ancora il salvataggio delle credenziali TX in PostgreSQL né prova l'accessibilità di un database reale.
+- Ulteriori prove coprono switch OFF, revoca permanente e rifiuto di stato salvato corrotto. GitHub Actions run `42276269989` sul commit `e54a123596e622a00993a15fccdac96a1f47bb3d`: **114/114 test Node.js superati**, zero fallimenti, sintassi superata.
+- Questa verifica riguarda il riavvio del modello locale, non un failover multiistanza, il riavvio di Render o la ripresa di una connessione Android reale.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
