@@ -43,19 +43,18 @@ export class BridgeService {
 
   pollDevice({ deviceId, sessionToken }) {
     // Validate BEFORE consuming queue; invalid TX never takes a job.
-    this.sessions.assertDeviceSession({ token: sessionToken, deviceId });
-    const job = this.registry.takeNext(deviceId);
-    if (!job) return null;
-    this.sessions.authorize({
-      token: sessionToken, deviceId, receiverId: job.receiverId
+    const sessionBinding = this.sessions.getDispatchBinding({
+      token: sessionToken, deviceId
     });
-    return job;
+    return this.registry.takeNext(deviceId, sessionBinding);
   }
 
   completeDevice({ deviceId, sessionToken, jobId }) {
     // TX can only complete a job already bound to this device. Receiver
     // identity is resolved from the server-owned job, never TX input.
-    this.sessions.assertDeviceSession({ token: sessionToken, deviceId });
-    return this.registry.completeByDevice({ jobId, deviceId });
+    const sessionBinding = this.sessions.getDispatchBinding({
+      token: sessionToken, deviceId
+    });
+    return this.registry.completeByDevice({ jobId, deviceId, sessionBinding });
   }
 }
