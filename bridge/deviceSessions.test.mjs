@@ -195,7 +195,7 @@ test('authenticated reconnect supersedes an earlier session for the same device'
   assert.equal(registry.getSessionEpoch('tx-a'), epoch + 1);
   assert.throws(() => gate.authorize({
     token:oldA.token,deviceId:'tx-a',receiverId:'rx-1'
-  }), /device_session_revoked/);
+  }), /invalid_device_session/);
   assert.equal(gate.authorize({
     token:fresh.token,deviceId:'tx-a',receiverId:'rx-1'
   }).deviceId,'tx-a');
