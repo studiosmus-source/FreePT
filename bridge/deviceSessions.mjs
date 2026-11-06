@@ -39,6 +39,11 @@ export class BridgeDeviceSessionGate {
       throw new Error('device_not_authenticated');
     if (!this.registry.isDeviceEnabled(deviceId))
       throw new Error('bridge_unavailable');
+    // A new authenticated connection supersedes the previous connection.
+    // Invalidate its session epoch and cancel in-flight jobs before issuing
+    // a fresh token. Do not revoke owner consent or cancel queued work.
+    if (this.registry.isDeviceReady(deviceId))
+      this.registry.setOnline(deviceId, false);
     this.registry.setOnline(deviceId, true);
     return this.open({ deviceId, secret });
   }
