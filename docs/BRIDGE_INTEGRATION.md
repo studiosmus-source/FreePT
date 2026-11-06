@@ -201,5 +201,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - GitHub Actions `42281552765`, commit `22964436a779a3976ea20fc3967464fadbc0474d`: **128 test Node.js su 128 superati**, 0 fallimenti, sintassi verificata.
 - **Limite critico:** la verifica autorevole e la mutazione della coda restano due passaggi separati in memoria. Una revoca contemporanea fra il completamento della lettura e la mutazione può ancora produrre una race. È necessario un meccanismo di fencing/transazione persistente sul database per la produzione. Nessun database Supabase reale o dispositivo Android è stato coinvolto.
 
+## Mutazioni sotto lock autorevole (modello transazionale isolato)
+- `bridge/transactionalAuthority.mjs` introduce `BridgeTransactionalAuthority`: richiede un'implementazione trusted di `withLockedAuthorization` che controlli consenso e approvazione e mantenga la stessa sezione critica mentre richiama **una sola volta** la mutazione. Non permette mutazioni asincrone, rinviate o replicate e nega richieste se il callback transazionale manca o il backend fallisce.
+- `BridgeService` può utilizzare `authority.runAuthorized` per accodamento, dispatch e completion. Mantiene il precedente percorso `assertAuthorized` per compatibilità con i test esistenti. Gli handler HTTP restano invariati e attendono già i risultati asincroni.
+- Sette test con lock serializzato simulano revoca prima del dispatch, OFF prima della completion, revoca dopo un lavoro già accodato, indisponibilità del backend, callback ripetuti/differiti e mutazioni non valide. GitHub Actions `42282409085` (commit `a44992300254e5f7ce6724893b0108d41dfe11c8`): **135 test Node.js su 135 superati**, 0 errori, sintassi superata.
+- **Nessuna garanzia distribuita ancora:** il lock testato è in memoria e modifica `BridgeRegistry` locale. Per ottenere reale atomicità tra server, la verifica del consenso, il lock sulle righe e la modifica del record del lavoro dovranno avvenire **nella stessa transazione PostgreSQL**. Il callback non è una soluzione sufficiente se l'autorizzazione è nel DB ma la coda resta nella memoria di un processo. Non sono state eseguite migrazioni Supabase né modifiche in Render.
+- Le code e le sessioni attuali rimangono modelli locali; non utilizzare questo prototipo come backend pubblico.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
