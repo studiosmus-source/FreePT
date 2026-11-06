@@ -43,3 +43,14 @@ html,body,#app{min-height:100%;height:100%}
 .chat-actions-box .danger{background:#b42318}
 .chat-actions-box .secondary{background:#e8edf1;color:#18202d}
 .chat-actions-box .error{overflow-wrap:anywhere;color:#b42318}
+
+/* Bridge: administrator-only panel. No changes to user chat layout. */
+.bridge-admin-shade{position:fixed;inset:0;z-index:700;background:rgba(16,24,39,.58);display:flex;align-items:center;justify-content:center;padding:16px}
+.bridge-admin-panel{width:min(100%,480px);max-height:90dvh;overflow:auto;background:#fff;color:#18202d;border-radius:16px;padding:18px;box-shadow:0 20px 55px rgba(0,0,0,.3)}
+.bridge-admin-panel header{display:flex;align-items:center;gap:12px;justify-content:space-between}
+.bridge-admin-panel h2{margin:0;font-size:20px}
+.bridge-admin-panel nav{display:flex;gap:8px;margin:18px 0}
+.bridge-admin-panel nav button{flex:1;background:#e8edf1;color:#18202d}
+.bridge-admin-panel nav button[aria-pressed=true]{background:#164b70;color:#fff}
+.bridge-admin-panel h3{font-size:16px}
+.bridge-admin-panel p{font-size:14px;line-height:1.5;color:#475569}
