@@ -216,7 +216,10 @@ export class BridgeRegistry {
     return { jobId, deviceId: job.deviceId, state: job.state };
   }
 
-  takeNext(deviceId) {
+  takeNext(deviceId, sessionBinding = null) {
+    if (sessionBinding !== null &&
+        (typeof sessionBinding !== 'string' || !/^[0-9a-f]{64}$/.test(sessionBinding)))
+      throw new Error('invalid_session_binding');
     this.#pruneJobs();
     // A pending job must not be delivered to a disconnected or revoked TX.
     if (!this.#devices.get(deviceId)?.online || !this.#devices.get(deviceId)?.bridgeEnabled) return null;
@@ -227,7 +230,9 @@ export class BridgeRegistry {
         continue;
       }
       job.state = 'sent';
-      return { ...job };
+      job.sessionBinding = sessionBinding;
+      const { sessionBinding: _private, ...publicJob } = job;
+      return { ...publicJob };
     }
     return null;
   }
@@ -236,9 +241,10 @@ export class BridgeRegistry {
    * Resolve receiver identity from the server-owned job, not from a TX payload.
    * This is an in-process method, NOT a network route.
    */
-  completeByDevice({ jobId, deviceId }) {
+  completeByDevice({ jobId, deviceId, sessionBinding = null }) {
     const job = this.#jobs.get(jobId);
-    if (!job || job.deviceId !== deviceId)
+    if (!job || job.deviceId !== deviceId ||
+        job.sessionBinding !== sessionBinding)
       throw new Error('job_not_authorized');
     return this.complete({ jobId, deviceId, receiverId: job.receiverId });
   }
@@ -252,6 +258,7 @@ export class BridgeRegistry {
         !this.#grants.get(this.#grantKey(deviceId, receiverId))?.active)
       throw new Error('job_not_authorized');
     job.state = 'done';
-    return { ...job };
+    const { sessionBinding: _private, ...publicJob } = job;
+    return { ...publicJob };
   }
 }
