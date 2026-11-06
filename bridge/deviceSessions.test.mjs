@@ -184,3 +184,35 @@ test('cold restored registry connects only after device authentication', () => {
   const session = gate.connect({deviceId:'tx-a',secret:a.secret});
   assert.equal(gate.authorize({token:session.token,deviceId:'tx-a',receiverId:'rx-1'}).deviceId,'tx-a');
 });
+
+test('authenticated reconnect supersedes an earlier session for the same device', () => {
+  const { gate, registry, a, b } = setup();
+  const oldA = gate.connect({ deviceId:'tx-a', secret:a.secret });
+  const other = gate.connect({ deviceId:'tx-b', secret:b.secret });
+  const epoch = registry.getSessionEpoch('tx-a');
+  const fresh = gate.connect({ deviceId:'tx-a', secret:a.secret });
+  assert.notEqual(fresh.token, oldA.token);
+  assert.equal(registry.getSessionEpoch('tx-a'), epoch + 1);
+  assert.throws(() => gate.authorize({
+    token:oldA.token,deviceId:'tx-a',receiverId:'rx-1'
+  }), /device_session_revoked/);
+  assert.equal(gate.authorize({
+    token:fresh.token,deviceId:'tx-a',receiverId:'rx-1'
+  }).deviceId,'tx-a');
+  assert.equal(gate.authorize({
+    token:other.token,deviceId:'tx-b',receiverId:'rx-1'
+  }).deviceId,'tx-b');
+});
+
+test('invalid reconnect secret does not invalidate an active TX connection', () => {
+  const { gate, registry, a, b } = setup();
+  const current = gate.connect({ deviceId:'tx-a', secret:a.secret });
+  const epoch = registry.getSessionEpoch('tx-a');
+  assert.throws(() => gate.connect({
+    deviceId:'tx-a',secret:b.secret
+  }), /device_not_authenticated/);
+  assert.equal(registry.getSessionEpoch('tx-a'), epoch);
+  assert.equal(gate.authorize({
+    token:current.token,deviceId:'tx-a',receiverId:'rx-1'
+  }).deviceId,'tx-a');
+});
