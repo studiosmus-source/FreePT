@@ -13,6 +13,12 @@ function fixture() {
     if(name==='bridge_server_enqueue_list')return {data:args.p_job_id,error:null};
     if(name==='bridge_server_claim_list')return {data:JOB,error:null};
     if(name==='bridge_server_complete_list')return {data:true,error:null};
+    if(name==='bridge_server_job_status')return {data:{
+      jobId:args.p_job_id,deviceId:DEVICE,state:'queued'
+    },error:null};
+    if(name==='bridge_server_cancel_job')return {data:{
+      jobId:args.p_job_id,deviceId:DEVICE,state:'cancelled'
+    },error:null};
     throw Error('unexpected rpc');
   }};
   const sessions={getDispatchBinding:({deviceId,token})=>{
@@ -117,6 +123,61 @@ test('staging adapter never assumes local registry job persistence',async ()=>{
   const f=fixture();
   assert.equal('registry' in f.service,false);
   assert.equal('connectDevice' in f.service,false);
-  assert.equal('cancelRequest' in f.service,false);
-  assert.equal('getRequestStatus' in f.service,false);
+  assert.equal(typeof f.service.cancelRequest,'function');
+  assert.equal(typeof f.service.getRequestStatus,'function');
+});
+
+test('verified requesting admin queries and cancels its DB job without TX token',async ()=>{
+  const f=fixture();
+  assert.deepEqual(await f.service.getRequestStatus({
+    authContext:'verified-admin',jobId:JOB
+  }),{jobId:JOB,deviceId:DEVICE,state:'queued'});
+  assert.deepEqual(await f.service.cancelRequest({
+    authContext:'verified-admin',jobId:JOB
+  }),{jobId:JOB,deviceId:DEVICE,state:'cancelled'});
+  assert.deepEqual(f.calls,[
+    {name:'bridge_server_job_status',args:{p_job_id:JOB,p_receiver_id:ADMIN}},
+    {name:'bridge_server_cancel_job',args:{p_job_id:JOB,p_receiver_id:ADMIN}}
+  ]);
+});
+
+test('unapproved admin cannot inspect or cancel a job through RPC',async ()=>{
+  const f=fixture();
+  await assert.rejects(()=>f.service.getRequestStatus({
+    authContext:'invalid',jobId:JOB
+  }),/bridge_admin_required/);
+  await assert.rejects(()=>f.service.cancelRequest({
+    authContext:'invalid',jobId:JOB
+  }),/bridge_admin_required/);
+  assert.equal(f.calls.length,0);
+});
+
+test('malformed status or cancellation data is rejected without trusting DB output',async ()=>{
+  const f=fixture();
+  for(const data of [
+    null,[],{}, {jobId:JOB,deviceId:'invalid',state:'queued'},
+    {jobId:DEVICE,deviceId:DEVICE,state:'queued'},
+    {jobId:JOB,deviceId:DEVICE,state:'garbage'},
+    {jobId:JOB,deviceId:DEVICE,state:'queued',token:'leak'}
+  ]) {
+    f.db.rpc=async ()=>({data,error:null});
+    await assert.rejects(()=>f.service.getRequestStatus({
+      authContext:'verified-admin',jobId:JOB
+    }),/bridge_jobs_invalid_response/);
+  }
+  f.db.rpc=async ()=>({data:{jobId:JOB,deviceId:DEVICE,state:'done'},error:null});
+  await assert.rejects(()=>f.service.cancelRequest({
+    authContext:'verified-admin',jobId:JOB
+  }),/bridge_jobs_invalid_response/);
+});
+
+test('database cancellation and status failure cannot fall back to local state',async ()=>{
+  const f=fixture();
+  f.db.rpc=async ()=>({data:null,error:{code:'42501'}});
+  await assert.rejects(()=>f.service.cancelRequest({
+    authContext:'verified-admin',jobId:JOB
+  }),/bridge_jobs_database_unavailable/);
+  await assert.rejects(()=>f.service.getRequestStatus({
+    authContext:'verified-admin',jobId:JOB
+  }),/bridge_jobs_database_unavailable/);
 });
