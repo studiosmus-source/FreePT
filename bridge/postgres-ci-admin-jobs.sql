@@ -51,10 +51,15 @@ begin
    raise exception 'sent job claim failed';
  end if;
  perform public.bridge_owner_revoke(d,admin_id);
- -- Owner revocation must NOT prevent the requesting admin from cancelling
- -- already queued/sent work. It must not grant new TX access either.
- status:=public.bridge_server_cancel_job(sent,admin_id);
- if status->>'state'<>'cancelled' then raise exception 'revoked-job cancel failed'; end if;
+ -- Revocation now atomically cancels sent work and clears its binding.
+ -- The requester retains read access to their already-cancelled work.
+ status:=public.bridge_server_job_status(sent,admin_id);
+ if status->>'state'<>'cancelled' then raise exception 'revoked sent job still active'; end if;
+ begin
+   perform public.bridge_server_cancel_job(sent,admin_id);
+   raise exception 'revoked job cancelled twice';
+ exception when sqlstate '23514' then null;
+ end;
  begin
    perform public.bridge_server_complete_list(sent,d,repeat('a',64));
    raise exception 'cancelled sent job completed';
