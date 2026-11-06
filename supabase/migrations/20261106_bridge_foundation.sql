@@ -49,14 +49,14 @@ create policy "bridge devices owner read"
 -- This function only answers for the authenticated approved admin account.
 create or replace function public.bridge_admin_has_active_grant(p_device_id uuid)
 returns boolean language sql stable security definer set search_path = ''
-as $
+as $$
   select (select public.freept_is_admin()) and exists (
     select 1 from public.bridge_grants g
     where g.device_id=p_device_id
       and g.receiver_id=(select auth.uid())
       and g.revoked_at is null
   );
-$;
+$$;
 revoke all on function public.bridge_admin_has_active_grant(uuid) from public, anon;
 grant execute on function public.bridge_admin_has_active_grant(uuid) to authenticated;
 
