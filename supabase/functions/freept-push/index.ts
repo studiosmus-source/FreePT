@@ -56,19 +56,24 @@ Deno.serve(async req=>{
   const expected=Deno.env.get('FREEPT_WEBHOOK_KEY')||'';
   if(!equalSecret(req.headers.get('x-freept-webhook-key')||'',expected))
     return json({error:'Unauthorized'},401);
+  let stage='parse_webhook';
   try{
+    console.info('freept-push: webhook authenticated');
     const event=await req.json() as Hook;
     if(event.type!=='INSERT'||event.schema!=='public'||event.table!=='messages'||!event.record?.id)
       return json({ignored:true});
+    stage='read_message';
     const {data:msg,error:msgError}=await db.from('messages')
       .select('id,user_id,sender_id').eq('id',event.record.id).maybeSingle();
     if(msgError)throw msgError;
     if(!msg||msg.user_id!==event.record.user_id||msg.sender_id!==event.record.sender_id)
       return json({ignored:true});
+    stage='read_sender';
     const {data:sender,error:senderError}=await db.from('profiles')
       .select('id,role,status').eq('id',msg.sender_id).maybeSingle();
     if(senderError)throw senderError;
     if(sender?.status!=='approved')return json({ignored:true});
+    stage='select_recipients';
     let recipients:string[]=[];
     if(sender.role==='admin'){
       const {data:user,error}=await db.from('profiles').select('id,status,role')
@@ -84,16 +89,20 @@ Deno.serve(async req=>{
     }
     recipients=recipients.filter(id=>id!==msg.sender_id);
     if(recipients.length===0)return json({delivered:0});
+    stage='read_devices';
     const {data:devices,error:devicesError}=await db.from('push_devices')
       .select('token,user_id').in('user_id',recipients).limit(500);
     if(devicesError)throw devicesError;
     if(!devices?.length)return json({delivered:0});
+    stage='parse_firebase_credentials';
     const credentials=JSON.parse(Deno.env.get('FCM_SERVICE_ACCOUNT_JSON')||'null');
     if(!credentials?.client_email||!credentials?.private_key||!credentials?.project_id)
       throw Error('Missing FCM service account secret');
+    stage='google_oauth';
     const oauthToken=await googleAccessToken(credentials);
     const endpoint='https://fcm.googleapis.com/v1/projects/'+encodeURIComponent(credentials.project_id)+'/messages:send';
     let sent=0,failed=0;
+    stage='fcm_delivery';
     for(const device of devices){
       const response=await fetch(endpoint,{
         method:'POST',headers:{
@@ -113,11 +122,18 @@ Deno.serve(async req=>{
       if(/UNREGISTERED|registration-token-not-registered/i.test(errorText)){
         await db.from('push_devices').delete().eq('token',device.token).eq('user_id',device.user_id);
       }
-      console.error('FCM send failed:',response.status,errorText.slice(0,300));
+      // Do not log the token or raw provider body; errors may contain secrets.
+      console.error('freept-push: fcm_delivery_failed',{httpStatus:response.status,expired:/UNREGISTERED|registration-token-not-registered/i.test(errorText)});
     }
+    console.info('freept-push: delivery_summary',{delivered:sent,failed});
     return json({delivered:sent,failed});
   }catch(e){
-    console.error('FreePT push delivery error:',String(e));
-    return json({error:'Delivery failed'},500);
+    // Classify failures without leaking credentials, FCM tokens or message text.
+    const errorCode=(e&&typeof e==='object'&&'code' in e&&typeof (e as {code?:unknown}).code==='string')
+      ?(e as {code:string}).code.slice(0,60):'unspecified';
+    const httpStatus=(e&&typeof e==='object'&&'status' in e&&typeof (e as {status?:unknown}).status==='number')
+      ?(e as {status:number}).status:null;
+    console.error('freept-push: processing_failed',{stage,errorCode,httpStatus});
+    return json({error:'Delivery failed',stage},500);
   }
 });
