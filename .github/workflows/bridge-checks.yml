@@ -1,0 +1,33 @@
+name: Bridge isolated checks
+
+on:
+  push:
+    branches:
+      - feature/bridge-admin-foundation-20261106
+    paths:
+      - 'bridge/**'
+      - 'package.json'
+      - '.github/workflows/bridge-checks.yml'
+  pull_request:
+    paths:
+      - 'bridge/**'
+      - 'package.json'
+      - '.github/workflows/bridge-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Bridge model tests
+        run: npm run test:bridge
+      - name: Syntax check Bridge and FreePT entrypoint
+        run: |
+          node --check bridge/deviceRouting.mjs
+          node --check src/main.js
