@@ -44,6 +44,18 @@ with checks as (
     and not coalesce(has_function_privilege(
       'anon', to_regprocedure('public.bridge_owner_revoke(uuid,uuid)'), 'EXECUTE'
     ), false)
+  union all select 'Credenziali per dispositivo presenti',
+    to_regclass('public.bridge_device_verifiers') is not null
+  union all select 'Credenziali Bridge con RLS',
+    coalesce((select relrowsecurity from pg_class
+      where oid=to_regclass('public.bridge_device_verifiers')), false)
+  union all select 'Credenziali negate ai client',
+    case when to_regclass('public.bridge_device_verifiers') is null then false
+      else not has_table_privilege('authenticated','public.bridge_device_verifiers','SELECT')
+        and not has_table_privilege('authenticated','public.bridge_device_verifiers','INSERT')
+        and not has_table_privilege('authenticated','public.bridge_device_verifiers','UPDATE')
+        and not has_table_privilege('authenticated','public.bridge_device_verifiers','DELETE')
+    end
   union all select 'Audit Bridge presente',
     to_regclass('public.bridge_audit_events') is not null
   union all select 'Audit Bridge RLS attiva',
