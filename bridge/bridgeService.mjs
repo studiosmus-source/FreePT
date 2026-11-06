@@ -7,12 +7,15 @@
  * Device registration/consent happens separately and is never automatic here.
  */
 export class BridgeService {
-  constructor({ registry, sessions, authenticateAdmin }) {
+  constructor({ registry, sessions, authenticateAdmin, authority = null }) {
     if (!registry || !sessions || typeof authenticateAdmin !== 'function')
       throw new Error('invalid_bridge_service_dependencies');
     this.registry = registry;
     this.sessions = sessions;
+    if (authority !== null && typeof authority.assertAuthorized !== 'function')
+      throw new Error('invalid_bridge_authority_dependency');
     this.authenticateAdmin = authenticateAdmin;
+    this.authority = authority;
   }
 
   async #requireAdmin(authContext) {
@@ -26,6 +29,9 @@ export class BridgeService {
 
   async requestList({ authContext, deviceId, jobId }) {
     const receiverId = await this.#requireAdmin(authContext);
+    // Authoritative check, when enabled, is mandatory and fail-closed.
+    if (this.authority)
+      await this.authority.assertAuthorized({deviceId,receiverId});
     // Only folder-listing jobs; no arbitrary remote file or shell operations.
     this.registry.enqueue({ jobId, deviceId, receiverId, operation: 'list' });
     return { jobId, deviceId, state: 'queued' };
@@ -54,7 +60,23 @@ export class BridgeService {
     const sessionBinding = this.sessions.getDispatchBinding({
       token: sessionToken, deviceId
     });
-    return this.registry.takeNext(deviceId, sessionBinding);
+    if (!this.authority)
+      return this.registry.takeNext(deviceId, sessionBinding);
+    const pending = this.registry.peekNextReceiver(deviceId);
+    if (!pending) return Promise.resolve(null);
+    return this.authority.assertAuthorized({
+      deviceId, receiverId:pending.receiverId
+    }).then(() => {
+      // Another request may have changed the queue while the authority read
+      // was pending. Never dispatch a different receiver under this approval.
+      const current = this.registry.peekNextReceiver(deviceId);
+      if (!current || current.jobId !== pending.jobId ||
+          current.receiverId !== pending.receiverId)
+        throw new Error('bridge_authority_retry');
+      // TX session may also have been revoked while awaiting the shared read.
+      this.sessions.assertDeviceSession({token:sessionToken,deviceId});
+      return this.registry.takeNext(deviceId,sessionBinding);
+    });
   }
 
   completeDevice({ deviceId, sessionToken, jobId }) {
@@ -63,6 +85,14 @@ export class BridgeService {
     const sessionBinding = this.sessions.getDispatchBinding({
       token: sessionToken, deviceId
     });
-    return this.registry.completeByDevice({ jobId, deviceId, sessionBinding });
+    if (!this.authority)
+      return this.registry.completeByDevice({jobId,deviceId,sessionBinding});
+    const receiverId = this.registry.lookupDeviceJobReceiver({jobId,deviceId});
+    return this.authority.assertAuthorized({deviceId,receiverId}).then(() => {
+      this.sessions.assertDeviceSession({token:sessionToken,deviceId});
+      if (this.registry.lookupDeviceJobReceiver({jobId,deviceId}) !== receiverId)
+        throw new Error('bridge_authority_retry');
+      return this.registry.completeByDevice({jobId,deviceId,sessionBinding});
+    });
   }
 }
