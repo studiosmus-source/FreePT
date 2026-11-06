@@ -38,9 +38,9 @@ export class BridgeRegistry {
     const registry = new BridgeRegistry();
     for (const device of snapshot.devices) {
       registry.registerDevice(device);
-      if (device.bridgeEnabled === false) {
-        registry.setBridgeEnabled({ deviceId: device.id, ownerId: device.ownerId, enabled: false });
-      } else if (device.bridgeEnabled !== true && device.bridgeEnabled !== undefined) {
+      if (device.bridgeEnabled === true) {
+        registry.setBridgeEnabled({ deviceId: device.id, ownerId: device.ownerId, enabled: true });
+      } else if (device.bridgeEnabled !== false && device.bridgeEnabled !== undefined) {
         throw new Error('invalid_snapshot');
       }
     }
@@ -62,7 +62,7 @@ export class BridgeRegistry {
         typeof ownerId !== 'string' || typeof label !== 'string')
       throw new Error('invalid_device');
     if (this.#devices.has(id)) throw new Error('device_already_registered');
-    this.#devices.set(id, { id, ownerId, label, online: false, bridgeEnabled: true });
+    this.#devices.set(id, { id, ownerId, label, online: false, bridgeEnabled: false });
   }
 
   setOnline(deviceId, online) {
