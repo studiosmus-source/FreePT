@@ -13,6 +13,7 @@ test('snapshot survives local process restart; online and jobs never persist', a
   const store = new LocalBridgeSnapshotStore(path);
   const registry = await store.load();
   registry.registerDevice({ id: 'tx-1', ownerId: 'owner-1', label: 'Telefono 1' });
+  registry.setBridgeEnabled({ deviceId: 'tx-1', ownerId: 'owner-1', enabled: true });
   registry.setOnline('tx-1', true);
   registry.grant({ deviceId: 'tx-1', receiverId: 'admin', approvedByOwnerId: 'owner-1' });
   registry.enqueue({ jobId: 'old-job', deviceId: 'tx-1', receiverId: 'admin', operation: 'list' });
