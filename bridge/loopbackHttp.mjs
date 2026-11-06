@@ -32,20 +32,25 @@ async function parseBody(req) {
     throw new Error('invalid_json');
   }
 }
-export function createBridgeLoopbackTestServer({ handler }) {
-  if (typeof handler !== 'function') throw new Error('invalid_http_handler');
+export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
+  if (typeof handler !== 'function' ||
+      (txHandler !== null && typeof txHandler !== 'function'))
+    throw new Error('invalid_http_handler');
   const server = createServer(async (req, res) => {
     try {
       if (req.method !== 'POST') {
         reply(res, 405, {error:'method_not_allowed'});
         return;
       }
-      if (!['/bridge/admin/list','/bridge/admin/status','/bridge/admin/cancel'].includes(req.url)) {
+      const adminPaths = ['/bridge/admin/list','/bridge/admin/status','/bridge/admin/cancel'];
+      const txPaths = ['/bridge/tx/connect','/bridge/tx/poll','/bridge/tx/complete'];
+      const txRoute = txPaths.includes(req.url);
+      if (!adminPaths.includes(req.url) && !(txHandler && txRoute)) {
         reply(res, 404, {error:'not_found'});
         return;
       }
       const body = await parseBody(req);
-      const response = await handler({
+      const response = await (txRoute ? txHandler : handler)({
         method:req.method, path:req.url,
         headers:{authorization:req.headers.authorization}, body
       });
