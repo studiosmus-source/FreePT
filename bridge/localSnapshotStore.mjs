@@ -15,13 +15,17 @@ export class LocalBridgeSnapshotStore {
     if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('invalid_path');
     this.filePath = filePath;
     this.#queue = Promise.resolve();
+    this.#lastSaveError = null;
   }
 
   #queue;
+  #lastSaveError;
 
   async load() {
     // A read in the same instance must observe all completed queued saves.
     await this.#queue;
+    // A failed write might have been a revocation: never serve stale grants.
+    if (this.#lastSaveError) throw new Error('bridge_store_write_failed');
     let raw;
     try {
       raw = await readFile(this.filePath, 'utf8');
@@ -53,7 +57,16 @@ export class LocalBridgeSnapshotStore {
         throw error;
       }
     };
-    const pending = this.#queue.then(operation);
+    const pending = this.#queue.then(async () => {
+      try {
+        await operation();
+        this.#lastSaveError = null;
+      } catch (error) {
+        this.#lastSaveError = error;
+        throw error;
+      }
+    });
+    // Allow later writes to retry while retaining failure state for readers.
     this.#queue = pending.catch(() => {});
     return pending;
   }
