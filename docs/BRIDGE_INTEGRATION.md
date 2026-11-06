@@ -167,5 +167,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - **Limite di sicurezza:** un aggressore che conosce un ID potrebbe causare temporaneamente il blocco del relativo telefono: questa misura non basta per un servizio pubblico. Lo staging richiederà limiti per provenienza verificata, gestione anti-DoS, segnali affidabili di rete e persistenza condivisa. È vietato considerare questa sola protezione pronta per Internet.
 - Quattro regressioni verificano cooldown, isolamento tra due TX, memoria limitata e opzioni non valide. GitHub Actions run `42274396956` sul commit `566f419a2d8cb89f310c03b94826ce822ee01a4a`: **104 test Node.js su 104 superati**, zero errori, controlli sintattici superati.
 
+## Sostituzione delle connessioni TX autenticate
+- `BridgeDeviceSessionGate.connect` tratta una nuova connessione con credenziale valida come sostituzione della precedente: quando il dispositivo risulta già online, applica una disconnessione logica e poi la nuova connessione, riutilizzando il meccanismo esistente di invalidazione `sessionEpoch` senza sovrapporre una seconda implementazione.
+- Lavori già consegnati a quel dispositivo diventano `cancelled` e non sono completabili né dalla vecchia sessione né dalla nuova; i lavori ancora `queued` restano disponibili entro la scadenza originaria. I dispositivi diversi non sono coinvolti.
+- Credenziali sbagliate e consenso OFF vengono verificati **prima** della sostituzione, per non interrompere una connessione valida a seguito di tentativi non autorizzati.
+- Tre test di regressione aggiunti: sessione precedente invalidata, errore credenziali che non altera la sessione attiva, preservazione dei lavori pendenti e isolamento del secondo TX. GitHub Actions run `42274854238` (commit `0ec9ad781510f2f34a308d1e509a815e8038aff0`): **107/107 test Node.js superati**, zero fallimenti, sintassi superata.
+- È ancora un modello in memoria su loopback; il meccanismo di riconnessione effettivo del telefono Android, i tempi di rete e la persistenza distribuita sono da integrare e collaudare separatamente.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
