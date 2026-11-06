@@ -174,5 +174,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Tre test di regressione aggiunti: sessione precedente invalidata, errore credenziali che non altera la sessione attiva, preservazione dei lavori pendenti e isolamento del secondo TX. GitHub Actions run `42274854238` (commit `0ec9ad781510f2f34a308d1e509a815e8038aff0`): **107/107 test Node.js superati**, zero fallimenti, sintassi superata.
 - È ancora un modello in memoria su loopback; il meccanismo di riconnessione effettivo del telefono Android, i tempi di rete e la persistenza distribuita sono da integrare e collaudare separatamente.
 
+## Capacità e pulizia delle sessioni TX (modello isolato)
+- `BridgeDeviceSessionGate` ha ora un limite configurabile `maxSessions` (predefinito **1000**) per le sessioni in memoria. Un nuovo accesso non può far crescere la tabella indefinitamente: se la capacità è esaurita viene rifiutato con `device_session_capacity`, senza emettere un token aggiuntivo.
+- Prima di emettere una sessione nuova vengono rimossi i token scaduti e quelli appartenenti a generazioni di sessione già sostituite. La rimozione di una sessione superata può produrre `invalid_device_session` anziché `device_session_revoked`; entrambi significano che il token è inutilizzabile. I token già attivi e non scaduti restano validi fino alla scadenza, revoca o sostituzione.
+- Quattro regressioni aggiunte per limite, recupero dopo scadenza, pulizia delle sessioni sostituite e rifiuto di opzioni non valide. Dopo aver allineato due asserzioni precedenti alla nuova pulizia, il run GitHub Actions `42275683971` (commit `bac9f0b2be3110e0db4605dff3986717cc150f54`) ha confermato **111 test Node.js su 111 superati**, zero fallimenti e controllo sintattico superato.
+- Restano da definire gestione di più istanze server, sincronizzazione di presenza e credenziali, recupero dalla capacità esaurita e limiti anti-DoS distribuiti; non usare direttamente questa tabella in memoria come stato di autenticazione di produzione.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
