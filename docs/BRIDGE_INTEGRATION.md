@@ -187,5 +187,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Ulteriori prove coprono switch OFF, revoca permanente e rifiuto di stato salvato corrotto. GitHub Actions run `42276269989` sul commit `e54a123596e622a00993a15fccdac96a1f47bb3d`: **114/114 test Node.js superati**, zero fallimenti, sintassi superata.
 - Questa verifica riguarda il riavvio del modello locale, non un failover multiistanza, il riavvio di Render o la ripresa di una connessione Android reale.
 
+## Checkpoint di autorizzazione condivisa (contratto non integrato)
+- `bridge/authorityCheckpoint.mjs` definisce `BridgeAuthorityCheckpoint`: a ogni invocazione richiede una lettura autorevole e aggiornata della coppia dispositivo/amministratore `(deviceId, receiverId)`. Una riga è accettata soltanto se gli ID coincidono, lo switch del proprietario è ON, il grant è attivo e il ricevente è approvato. Risposte mancanti, incomplete o discordanti vengono negate; gli errori di lettura non ripiegano sulle autorizzazioni presenti in memoria.
+- Sei test nativi verificano isolamento fra coppie, revoca vista da due gate con registri locali obsoleti, switch OFF, perdita di approvazione, indisponibilità della fonte e dati malformati. GitHub Actions run `42280376275` sul commit `cefdb7fca1c4fc2303ff9d684153ff326ab90936`: **120/120 test Node.js superati**, zero errori, controlli sintattici superati.
+- **Non è ancora una revoca distribuita funzionante:** il contratto `readAuthorization` è simulato nei test e NON è collegato a `BridgeService.requestList`, `pollDevice` o `completeDevice`. Non esiste una query PostgreSQL reale, e una semplice lettura separata non garantisce l'atomicità fra controllo, consegna del lavoro e revoca. Per lo staging serviranno una lettura transazionale autorevole e un protocollo di fencing/commit dei job sul database.
+- `LocalBridgeSnapshotStore` rimane un supporto soltanto per test locali: non è una fonte attendibile per autorizzazioni multiistanza e non deve essere usato per validare revoche distribuite.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
