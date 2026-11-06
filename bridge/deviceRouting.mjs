@@ -57,11 +57,16 @@ export class BridgeRegistry {
   }
 
   takeNext(deviceId) {
+    // A pending job must not be delivered to a disconnected or revoked TX.
+    if (!this.#devices.get(deviceId)?.online) return null;
     for (const job of this.#jobs.values()) {
-      if (job.deviceId === deviceId && job.state === 'queued') {
-        job.state = 'sent';
-        return { ...job };
+      if (job.deviceId !== deviceId || job.state !== 'queued') continue;
+      if (!this.#grants.get(job.deviceId + ':' + job.receiverId)?.active) {
+        this.#jobs.delete(job.jobId);
+        continue;
       }
+      job.state = 'sent';
+      return { ...job };
     }
     return null;
   }
@@ -69,7 +74,7 @@ export class BridgeRegistry {
   complete({ jobId, deviceId, receiverId }) {
     const job = this.#jobs.get(jobId);
     if (!job || job.deviceId !== deviceId || job.receiverId !== receiverId ||
-        job.state !== 'sent' ||
+        job.state !== 'sent' || !this.#devices.get(deviceId)?.online ||
         !this.#grants.get(deviceId + ':' + receiverId)?.active)
       throw new Error('job_not_authorized');
     this.#jobs.delete(jobId);
