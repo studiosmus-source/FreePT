@@ -88,6 +88,12 @@ export class BridgeRegistry {
     }
   }
 
+  /** Internal transport gate; not a substitute for server caller authentication. */
+  isDeviceReady(deviceId) {
+    const device = this.#devices.get(deviceId);
+    return !!(device?.online && device.bridgeEnabled);
+  }
+
   /**
    * Backend-only session generation: invalidates old sessions after explicit
    * owner shutdown, even if Bridge is later re-enabled.
