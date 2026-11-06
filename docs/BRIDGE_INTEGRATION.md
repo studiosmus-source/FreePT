@@ -98,5 +98,13 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Cinque test di integrazione logica (runner JS adattato) controllano flusso completo, amministratore falso, TX sbagliato, revoca e token invalido.
 - Questo modulo è un prototipo **in-process**: non usa ancora endpoint HTTP, autorizzazione Supabase reale, transazioni database, autorizzazione di cartelle Android, canale streaming o distribuzione multiprocesso. Il modello in memoria non è una garanzia di revoca su servizi remoti.
 
+## Gestione delle richieste Bridge (modello isolato)
+- `BridgeRegistry` ora limita la coda a 100 lavori attivi per istanza e fissa una scadenza di 60 secondi per ciascuna richiesta, compresi i lavori già consegnati. I limiti sono parametrizzabili nei test e la coda viene ripulita prima di aggiunte, prelievi e completamenti.
+- L'unica operazione accettata nel modello è `list`. Non esistono operazioni di accesso arbitrario a file, cancellazione o comandi remoti.
+- `BridgeService.cancelRequest` e `getRequestStatus` richiedono la stessa verifica di identità amministratore di `requestList`. Il proprietario della richiesta è ricavato dall'identità verificata lato server, non dagli argomenti inviati dal TX.
+- Un annullamento rimuove un lavoro anche quando risulta già `sent`, impedendone il completamento nel modello. Le richieste scadute non vengono ritirate né completate, e quelle cancellate non possono riapparire.
+- Cinque test di regressione della coda e due del servizio sono stati aggiunti. Nel runner JS adattato i 38 test relativi a instradamento, sessioni e servizio sono passati, ma la verifica Node.js nativa e l'integrazione reale non sono state ancora effettuate.
+- **Questo è controllo del ciclo di vita nel processo di prova, non un vero sistema distribuito**: la cancellazione deve ancora propagarsi al servizio Android e interrompere eventuali operazioni native in corso, mentre rate limit e identificazione reale delle sessioni richiedono un backend autenticato.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
