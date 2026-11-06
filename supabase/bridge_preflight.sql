@@ -103,6 +103,16 @@ with checks as (
     and not coalesce(has_function_privilege(
       'authenticated',to_regprocedure('public.bridge_server_cancel_job(uuid,uuid)'),'EXECUTE'
     ),false)
+  union all select 'Revoca lavori su cambio consenso',
+    exists(select 1 from pg_trigger
+      where tgrelid=to_regclass('public.bridge_grants')
+        and tgname='bridge_cancel_jobs_on_grant_revoke'
+        and not tgisinternal and tgenabled <> 'D')
+  union all select 'Annullamento lavori su spegnimento',
+    exists(select 1 from pg_trigger
+      where tgrelid=to_regclass('public.bridge_devices')
+        and tgname='bridge_cancel_jobs_on_owner_off'
+        and not tgisinternal and tgenabled <> 'D')
   union all select 'Audit Bridge presente',
     to_regclass('public.bridge_audit_events') is not null
   union all select 'Audit Bridge RLS attiva',
