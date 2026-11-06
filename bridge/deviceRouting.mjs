@@ -221,6 +221,29 @@ export class BridgeRegistry {
     return { jobId, deviceId: job.deviceId, state: job.state };
   }
 
+  /**
+   * Backend-only identity lookup for the next pending TX job. A caller must
+   * authenticate the TX and verify authoritative consent before dispatching.
+   * Never expose this method directly as an HTTP route.
+   */
+  peekNextReceiver(deviceId) {
+    this.#pruneJobs();
+    if (!this.#devices.get(deviceId)?.online ||
+        !this.#devices.get(deviceId)?.bridgeEnabled) return null;
+    const job = [...this.#jobs.values()].find(item =>
+      item.deviceId === deviceId && item.state === 'queued');
+    return job ? {jobId:job.jobId, receiverId:job.receiverId} : null;
+  }
+
+  /** Backend-only receiver lookup for authenticated completion. */
+  lookupDeviceJobReceiver({jobId, deviceId}) {
+    this.#pruneJobs();
+    const job = this.#jobs.get(jobId);
+    if (!job || job.deviceId !== deviceId || job.state !== 'sent')
+      throw new Error('job_not_authorized');
+    return job.receiverId;
+  }
+
   takeNext(deviceId, sessionBinding = null) {
     if (sessionBinding !== null &&
         (typeof sessionBinding !== 'string' || !/^[0-9a-f]{64}$/.test(sessionBinding)))
