@@ -98,3 +98,12 @@ test('credential deletion invalidates live session even with active grant', () =
     token: session.token, deviceId: 'tx-a', receiverId: 'rx-1'
   }), /device_session_revoked/);
 });
+
+test('sessions cannot start when Bridge is disabled or disconnected', () => {
+  const { gate, registry, a } = setup();
+  registry.setOnline('tx-a', false);
+  assert.throws(() => gate.open({ deviceId: 'tx-a', secret: a.secret }), /bridge_unavailable/);
+  registry.setOnline('tx-a', true);
+  registry.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  assert.throws(() => gate.open({ deviceId: 'tx-a', secret: a.secret }), /bridge_unavailable/);
+});
