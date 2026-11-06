@@ -31,7 +31,8 @@ jobs:
           node-version: '22'
       - name: Bridge model tests
         run: npm run test:bridge
-      - name: Syntax check Bridge and FreePT entrypoint
+      - name: Syntax check every Bridge module and FreePT entrypoint
         run: |
-          node --check bridge/deviceRouting.mjs
-          node --check src/main.js
+          for file in bridge/*.mjs src/main.js; do
+            node --check "$file"
+          done
