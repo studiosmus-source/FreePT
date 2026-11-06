@@ -16,11 +16,48 @@ const shape = (value, keys) =>
   !!value && typeof value === 'object' && !Array.isArray(value) &&
   Object.keys(value).length === keys.length &&
   keys.every(key => Object.prototype.hasOwnProperty.call(value,key));
-export function createBridgeTxRequestHandler({service}) {
+export function createBridgeTxRequestHandler({
+  service, now = () => Date.now(), maxFailures = 5,
+  windowMs = 60_000, cooldownMs = 60_000, maxTrackedDevices = 1000
+}) {
   if (!service || typeof service.connectDevice !== 'function' ||
       typeof service.pollDevice !== 'function' ||
       typeof service.completeDevice !== 'function')
     throw new Error('invalid_tx_request_dependencies');
+  if (typeof now !== 'function' || !Number.isSafeInteger(maxFailures) ||
+      maxFailures < 1 || !Number.isSafeInteger(windowMs) || windowMs < 1 ||
+      !Number.isSafeInteger(cooldownMs) || cooldownMs < 1 ||
+      !Number.isSafeInteger(maxTrackedDevices) || maxTrackedDevices < 1)
+    throw new Error('invalid_tx_rate_limits');
+  const failures = new Map();
+  function sweep(time) {
+    for (const [id, state] of failures) {
+      if (time >= state.until && time >= state.start + windowMs)
+        failures.delete(id);
+    }
+  }
+  function blocked(deviceId, time) {
+    const state = failures.get(deviceId);
+    if (!state) return false;
+    if (time < state.until) return true;
+    if (time >= state.start + windowMs) {
+      failures.delete(deviceId);
+      return false;
+    }
+    return false;
+  }
+  function failed(deviceId, time) {
+    const state = failures.get(deviceId);
+    if (!state || time >= state.start + windowMs) {
+      failures.set(deviceId, {
+        count: 1, start: time,
+        until: maxFailures === 1 ? time + cooldownMs : 0
+      });
+      return;
+    }
+    state.count += 1;
+    if (state.count >= maxFailures) state.until = time + cooldownMs;
+  }
   return async function handleBridgeTxRequest(request) {
     if (request?.method !== 'POST') return fail(405,'method_not_allowed');
     const keys = ROUTES[request?.path];
@@ -33,11 +70,22 @@ export function createBridgeTxRequestHandler({service}) {
         (keys.includes('sessionToken') &&
           (typeof body.sessionToken !== 'string' || !HEX.test(body.sessionToken))))
       return fail(400,'invalid_request');
+    const connecting = request.path === '/bridge/tx/connect';
+    if (connecting) {
+      const time = now();
+      sweep(time);
+      if (blocked(body.deviceId,time)) return fail(429,'tx_rate_limited');
+      if (!failures.has(body.deviceId) && failures.size >= maxTrackedDevices)
+        return fail(429,'tx_rate_limited');
+    }
     try {
-      if (request.path === '/bridge/tx/connect')
-        return {status:200,body:service.connectDevice({
+      if (connecting) {
+        const result = await service.connectDevice({
           deviceId:body.deviceId,deviceSecret:body.deviceSecret
-        })};
+        });
+        failures.delete(body.deviceId);
+        return {status:200,body:result};
+      }
       if (request.path === '/bridge/tx/poll')
         return {status:200,body:{job:service.pollDevice({
           deviceId:body.deviceId,sessionToken:body.sessionToken
@@ -47,6 +95,7 @@ export function createBridgeTxRequestHandler({service}) {
       })};
     } catch {
       // Do not disclose whether a device exists or its consent/credential state.
+      if (connecting) failed(body.deviceId,now());
       return fail(403,'tx_denied');
     }
   };
