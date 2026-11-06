@@ -113,6 +113,37 @@ with checks as (
       where tgrelid=to_regclass('public.bridge_devices')
         and tgname='bridge_cancel_jobs_on_owner_off'
         and not tgisinternal and tgenabled <> 'D')
+  union all select 'Sessioni TX persistenti presenti',
+    to_regclass('public.bridge_tx_sessions') is not null
+  union all select 'Sessioni TX con RLS',
+    coalesce((select relrowsecurity from pg_class
+      where oid=to_regclass('public.bridge_tx_sessions')),false)
+  union all select 'Sessioni TX non leggibili dai client',
+    case when to_regclass('public.bridge_tx_sessions') is null then false
+      else not has_table_privilege('authenticated','public.bridge_tx_sessions','SELECT')
+       and not has_table_privilege('authenticated','public.bridge_tx_sessions','UPDATE')
+       and not has_table_privilege('anon','public.bridge_tx_sessions','SELECT')
+    end
+  union all select 'RPC sessione TX aperta solo dal backend',
+    coalesce(has_function_privilege('service_role',
+      to_regprocedure('public.bridge_server_open_tx_session(uuid,text,text)'),'EXECUTE'),false)
+    and not coalesce(has_function_privilege('authenticated',
+      to_regprocedure('public.bridge_server_open_tx_session(uuid,text,text)'),'EXECUTE'),false)
+  union all select 'RPC verifica TX riservata al backend',
+    coalesce(has_function_privilege('service_role',
+      to_regprocedure('public.bridge_server_assert_tx_session(uuid,text)'),'EXECUTE'),false)
+    and not coalesce(has_function_privilege('authenticated',
+      to_regprocedure('public.bridge_server_assert_tx_session(uuid,text)'),'EXECUTE'),false)
+  union all select 'Revoca sessioni TX su spegnimento',
+    exists(select 1 from pg_trigger
+      where tgrelid=to_regclass('public.bridge_devices')
+        and tgname='bridge_drop_session_owner_off'
+        and not tgisinternal and tgenabled <> 'D')
+  union all select 'Revoca sessioni TX su rotazione credenziale',
+    exists(select 1 from pg_trigger
+      where tgrelid=to_regclass('public.bridge_device_verifiers')
+        and tgname='bridge_drop_session_verifier_rotation'
+        and not tgisinternal and tgenabled <> 'D')
   union all select 'Audit Bridge presente',
     to_regclass('public.bridge_audit_events') is not null
   union all select 'Audit Bridge RLS attiva',
