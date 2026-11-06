@@ -87,10 +87,10 @@ export function createBridgeTxRequestHandler({
         return {status:200,body:result};
       }
       if (request.path === '/bridge/tx/poll')
-        return {status:200,body:{job:service.pollDevice({
+        return {status:200,body:{job:await service.pollDevice({
           deviceId:body.deviceId,sessionToken:body.sessionToken
         })}};
-      return {status:200,body:service.completeDevice({
+      return {status:200,body:await service.completeDevice({
         deviceId:body.deviceId,sessionToken:body.sessionToken,jobId:body.jobId
       })};
     } catch {
