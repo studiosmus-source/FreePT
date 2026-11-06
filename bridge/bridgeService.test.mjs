@@ -159,3 +159,29 @@ test('closing claiming session prevents a second TX session completing its work'
     deviceId:'tx-a', sessionToken:second.token, jobId:'closed-claim'
   }), /job_not_authorized/);
 });
+
+test('service authenticates cold TX connect then processes approved admin job', async () => {
+  const {service, registry, a} = setup();
+  registry.setOnline('tx-a', false);
+  assert.equal(registry.getDeviceStatus({deviceId:'tx-a',receiverId:'admin-1'}).state,'offline');
+  assert.throws(() => service.connectDevice({
+    deviceId:'tx-a',deviceSecret:'not-valid'
+  }), /device_not_authenticated/);
+  const session = service.connectDevice({deviceId:'tx-a',deviceSecret:a.secret});
+  await service.requestList({authContext:'verified-admin',deviceId:'tx-a',jobId:'cold-request'});
+  assert.equal(service.pollDevice({
+    deviceId:'tx-a',sessionToken:session.token
+  }).jobId,'cold-request');
+  assert.equal(service.completeDevice({
+    deviceId:'tx-a',sessionToken:session.token,jobId:'cold-request'
+  }).state,'done');
+});
+
+test('owner switch blocks service TX cold connect even with valid secret', () => {
+  const {service,registry,a} = setup();
+  registry.setBridgeEnabled({deviceId:'tx-a',ownerId:'owner-a',enabled:false});
+  assert.throws(() => service.connectDevice({
+    deviceId:'tx-a',deviceSecret:a.secret
+  }), /bridge_unavailable/);
+  assert.equal(registry.getDeviceStatus({deviceId:'tx-a',receiverId:'admin-1'}).state,'closed_by_owner');
+});
