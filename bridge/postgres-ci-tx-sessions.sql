@@ -75,7 +75,8 @@ begin
 
  -- Server-side time determines expiry, never client time.
  update public.bridge_tx_sessions
-   set expires_at=clock_timestamp()-interval '1 second'
+   set created_at=clock_timestamp()-interval '2 seconds',
+       expires_at=clock_timestamp()-interval '1 second'
    where device_id=d;
  begin
    perform public.bridge_server_assert_tx_session(d,token_b);
