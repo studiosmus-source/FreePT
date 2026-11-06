@@ -125,3 +125,64 @@ test('TX routes remain unavailable when test server is instantiated admin-only',
 test('TX request handler fails closed without trusted service',()=>{
   assert.throws(()=>createBridgeTxRequestHandler({}),/invalid_tx_request_dependencies/);
 });
+
+test('repeated invalid TX logins are limited, valid login works after cooldown', async () => {
+  const f = fixture();
+  let clock = 1000;
+  const handler = createBridgeTxRequestHandler({
+    service:f.service, now:()=>clock, maxFailures:2,
+    windowMs:1000, cooldownMs:2000
+  });
+  const request = (secret) => handler({
+    method:'POST', path:'/bridge/tx/connect',
+    body:{deviceId:A,deviceSecret:secret}
+  });
+  assert.equal((await request(f.secrets[B])).status,403);
+  assert.equal((await request(f.secrets[B])).status,403);
+  assert.deepEqual(await request(f.secrets[A]), {
+    status:429, body:{error:'tx_rate_limited'}
+  });
+  assert.equal(f.registry.getDeviceStatus({deviceId:A,receiverId:ADMIN}).state,'offline');
+  clock+=2001;
+  assert.equal((await request(f.secrets[A])).status,200);
+});
+
+test('TX login failures for one phone do not block a separate phone',async ()=>{
+  const f=fixture();
+  let clock=100;
+  const tx=createBridgeTxRequestHandler({
+    service:f.service,now:()=>clock,maxFailures:1,windowMs:1000,cooldownMs:1000
+  });
+  const call=(id,secret)=>tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:id,deviceSecret:secret}});
+  assert.equal((await call(A,f.secrets[B])).status,403);
+  assert.equal((await call(A,f.secrets[A])).status,429);
+  const b=await call(B,f.secrets[B]);
+  assert.equal(b.status,200);
+  assert.match(b.body.token,/^[0-9a-f]{64}$/);
+});
+
+test('bounded rate-limit table denies excess identities and recovers when expired',async ()=>{
+  const f=fixture();
+  let clock=1;
+  const tx=createBridgeTxRequestHandler({
+    service:f.service,now:()=>clock,maxFailures:1,
+    windowMs:100,cooldownMs:100,maxTrackedDevices:1
+  });
+  const call=(id,secret)=>tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:id,deviceSecret:secret}});
+  assert.equal((await call(A,f.secrets[B])).status,403);
+  assert.equal((await call(B,f.secrets[B])).status,429);
+  clock=102;
+  assert.equal((await call(B,f.secrets[B])).status,200);
+});
+
+test('invalid rate-limit options fail before request handling',()=>{
+  const f=fixture();
+  assert.throws(()=>createBridgeTxRequestHandler({
+    service:f.service,maxFailures:0
+  }),/invalid_tx_rate_limits/);
+  assert.throws(()=>createBridgeTxRequestHandler({
+    service:f.service,maxTrackedDevices:0
+  }),/invalid_tx_rate_limits/);
+});
