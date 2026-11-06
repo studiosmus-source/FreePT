@@ -69,5 +69,13 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Ancora mancanti: registrazione e autenticazione forte del singolo TX, log/audit, sessioni, annullamento dei trasferimenti in corso, persistenza di presenza e integrazione Android. La sola modifica di `bridge_enabled` nel database non può arrestare un trasferimento già avviato.
 - Nessuna delle migrazioni Bridge è stata eseguita sul database reale. L'attivazione in produzione richiede prima collaudo isolato e verifica completa della catena backend.
 
+## Audit di consenso e revoca (solo migrazione di prova)
+- `supabase/migrations/20261106_bridge_audit.sql` aggiunge `bridge_audit_events` con eventi `bridge_enabled`, `bridge_disabled`, `access_granted`, `access_revoked`.
+- I trigger SQL sono eseguiti nella stessa transazione che modifica `bridge_devices` o `bridge_grants`; un errore nella scrittura del log causa l'annullamento della modifica.
+- Solo il proprietario approvato può leggere gli eventi relativi ai propri dispositivi. I client non possono inserire, modificare o cancellare direttamente eventi e non hanno EXECUTE sulle funzioni trigger.
+- `supabase/bridge_preflight.sql` verifica anche tabella audit, RLS, privilegi e presenza dei trigger.
+- L'audit registra cambiamenti di consenso e autorizzazione, **non ancora** accessi a file, trasferimenti o provenienza verificata del telefono. La cancellazione di un dispositivo elimina anche i relativi eventi per effetto della chiave esterna CASCADE: non è un archivio immutabile di conservazione.
+- Tre controlli statici aggiuntivi sono passati in runner JS adattato; la migrazione non è stata provata in PostgreSQL e non è stata applicata al database reale.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
