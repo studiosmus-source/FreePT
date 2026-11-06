@@ -44,6 +44,25 @@ with checks as (
     and not coalesce(has_function_privilege(
       'anon', to_regprocedure('public.bridge_owner_revoke(uuid,uuid)'), 'EXECUTE'
     ), false)
+  union all select 'Audit Bridge presente',
+    to_regclass('public.bridge_audit_events') is not null
+  union all select 'Audit Bridge RLS attiva',
+    coalesce((select relrowsecurity from pg_class
+      where oid=to_regclass('public.bridge_audit_events')), false)
+  union all select 'Client non scrive audit',
+    case when to_regclass('public.bridge_audit_events') is null then false
+      else not has_table_privilege('authenticated','public.bridge_audit_events','INSERT')
+        and not has_table_privilege('authenticated','public.bridge_audit_events','UPDATE')
+        and not has_table_privilege('authenticated','public.bridge_audit_events','DELETE')
+    end
+  union all select 'Trigger disattivazione Bridge',
+    exists(select 1 from pg_trigger
+      where tgrelid=to_regclass('public.bridge_devices')
+        and tgname='bridge_audit_device_switch' and not tgisinternal)
+  union all select 'Trigger concessione e revoca',
+    exists(select 1 from pg_trigger
+      where tgrelid=to_regclass('public.bridge_grants')
+        and tgname='bridge_audit_grant_lifecycle' and not tgisinternal)
 )
 select controllo,
   case when superato then 'OK' else 'DA CONFIGURARE' end as esito
