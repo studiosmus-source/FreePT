@@ -117,5 +117,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - I job `sent` del telefono che si disconnette diventano `cancelled` e non possono essere completati successivamente; i job ancora `queued` restano in attesa soltanto fino alla loro scadenza naturale. Eventi offline ripetuti non incrementano inutilmente la generazione della sessione.
 - Due test mirati aggiunti; l'esecuzione nel runner JavaScript adattato di routing/sessioni/servizio ha dato 43/43. L'integrazione effettiva con rete, Supabase e Android resta non collaudata. L'evento `setOnline` potrà essere invocato soltanto da un backend attendibile dopo una connessione autenticata, **mai** su dichiarazione libera del telefono.
 
+## Vincolo dei job alla sessione TX (modello isolato)
+- Ogni lavoro consegnato con `BridgeService.pollDevice` è vincolato a un identificatore crittografico ricavato dal **token della specifica sessione TX** che lo ha ritirato. Il token originale non viene salvato nel job né restituito nelle risposte.
+- `BridgeService.completeDevice` richiede una sessione autenticata con lo stesso identificatore. Un secondo login dello stesso telefono non può completare lavori ritirati da un'altra sessione, neppure se la credenziale del dispositivo è identica.
+- Le API puramente interne di `BridgeRegistry` conservano la possibilità di testare il modello senza legami di sessione; questa modalità non è un'API esposta al telefono.
+- Due regressioni dedicate verificano sessioni parallele e chiusura della sessione che ha ritirato il lavoro. Nel runner adattato routing/sessioni/servizio: **45/45** controlli superati, senza esecuzione nativa Node.js o validazione di rete.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
