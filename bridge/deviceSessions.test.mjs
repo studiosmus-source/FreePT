@@ -216,3 +216,57 @@ test('invalid reconnect secret does not invalidate an active TX connection', () 
     token:current.token,deviceId:'tx-a',receiverId:'rx-1'
   }).deviceId,'tx-a');
 });
+
+test('session cache rejects excess active sessions without invalidating them', () => {
+  const {registry,credentials,a} = setup();
+  const gate = new BridgeDeviceSessionGate({registry,credentials,maxSessions:1});
+  const first = gate.open({deviceId:'tx-a',secret:a.secret});
+  assert.throws(() => gate.open({deviceId:'tx-a',secret:a.secret}),
+    /device_session_capacity/);
+  assert.equal(gate.authorize({
+    token:first.token,deviceId:'tx-a',receiverId:'rx-1'
+  }).deviceId,'tx-a');
+  assert.equal(gate.close(first.token),true);
+  assert.equal(gate.open({deviceId:'tx-a',secret:a.secret}).token.length,64);
+});
+
+test('expired session entries are pruned to make room for a new session', () => {
+  const {registry,credentials,a,advance} = setup();
+  let now=1000;
+  const gate = new BridgeDeviceSessionGate({
+    registry,credentials,maxSessions:1,now:()=>now
+  });
+  const expired=gate.open({deviceId:'tx-a',secret:a.secret});
+  now+=300000;
+  const fresh=gate.open({deviceId:'tx-a',secret:a.secret});
+  assert.notEqual(fresh.token,expired.token);
+  assert.throws(() => gate.assertDeviceSession({
+    token:expired.token,deviceId:'tx-a'
+  }),/invalid_device_session/);
+  assert.equal(gate.authorize({
+    token:fresh.token,deviceId:'tx-a',receiverId:'rx-1'
+  }).deviceId,'tx-a');
+});
+
+test('superseded TX sessions are pruned before capacity enforcement', () => {
+  const {registry,credentials,a} = setup();
+  const gate = new BridgeDeviceSessionGate({registry,credentials,maxSessions:1});
+  const prior=gate.connect({deviceId:'tx-a',secret:a.secret});
+  const next=gate.connect({deviceId:'tx-a',secret:a.secret});
+  assert.notEqual(prior.token,next.token);
+  assert.throws(() => gate.assertDeviceSession({
+    token:prior.token,deviceId:'tx-a'
+  }),/invalid_device_session/);
+  assert.equal(gate.authorize({
+    token:next.token,deviceId:'tx-a',receiverId:'rx-1'
+  }).deviceId,'tx-a');
+});
+
+test('invalid TX session cache limits are rejected at construction', () => {
+  const {registry,credentials} = setup();
+  for (const value of [0,-1,1.5,NaN,Infinity]) {
+    assert.throws(() => new BridgeDeviceSessionGate({
+      registry,credentials,maxSessions:value
+    }),/invalid_session_limits/);
+  }
+});
