@@ -81,7 +81,7 @@ begin
    perform public.bridge_server_assert_tx_session(d,token_b);
    raise exception 'expired session accepted';
  exception when sqlstate '42501' then null;
- end if;
+ end;
  perform public.bridge_server_open_tx_session(d,token_b,verifier_a);
 
  -- Rotation invalidates session even without owner switch.
