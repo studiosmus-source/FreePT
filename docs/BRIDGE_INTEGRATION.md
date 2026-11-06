@@ -84,5 +84,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - L'emissione non verifica ancora il proprietario: **non invocare la primitiva direttamente da un endpoint pubblico**. In produzione servono registrazione con identità Auth verificata, verifica consenso, connessione TLS, archiviazione transazionale, limitazioni dei tentativi, protezione contro il riutilizzo e gestione sicura del segreto nell'Android Keystore.
 - Un bearer secret prova solo il possesso della credenziale, non l'identità fisica del telefono. Non ci sono ancora API online, sessioni autenticabili o transfer sicuri. Le migrazioni restano file GitHub non applicati.
 
+## Sessioni TX a durata limitata (modello isolato)
+- `bridge/deviceSessions.mjs` crea sessioni TX casuali con durata massima di cinque minuti. Il backend deve verificare la credenziale individuale prima dell'apertura e ripetere i controlli di autorizzazione a **ogni operazione**.
+- La verifica controlla dispositivo, verificatore aggiornato, grant del ricevitore e presenza/stato del Ponte. Rotazione e revoca della credenziale invalidano le sessioni precedenti.
+- Il contatore temporaneo `sessionEpoch` nel registro cambia al comando OFF: un token aperto prima dello spegnimento rimane inutilizzabile anche dopo un nuovo ON. Il contatore non è un segreto e non viene persistito: le sessioni esistono soltanto nel processo.
+- L'identità del ricevitore che autorizza un'operazione deve arrivare da un contesto **autenticato dal backend**, mai da un parametro HTTP non verificato. Per ora nessuna API HTTP o connessione Android usa queste funzioni.
+- Sono predisposti otto test delle sessioni, non ancora confermati nel workflow GitHub Actions. Senza un archivio server condiviso, verifica delle richieste, TLS e protezioni contro replay/rate-limit questo modello **non è pronto per l'utilizzo reale**.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
