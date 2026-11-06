@@ -144,3 +144,43 @@ test('repeating a non-active revoke does not invalidate a fresh session', () => 
     token: fresh.token, deviceId: 'tx-a', receiverId: 'rx-1'
   }).deviceId, 'tx-a');
 });
+
+test('authenticated TX connects from offline without a circular online prerequisite', () => {
+  const { gate, registry, a } = setup();
+  registry.setOnline('tx-a', false);
+  assert.equal(registry.getDeviceStatus({ deviceId:'tx-a', receiverId:'rx-1' }).state, 'offline');
+  const connected = gate.connect({ deviceId:'tx-a', secret:a.secret });
+  assert.equal(registry.getDeviceStatus({ deviceId:'tx-a', receiverId:'rx-1' }).state, 'online');
+  assert.equal(gate.authorize({
+    token: connected.token, deviceId:'tx-a', receiverId:'rx-1'
+  }).deviceId, 'tx-a');
+});
+
+test('invalid TX secret never marks an offline device online', () => {
+  const { gate, registry, a, b } = setup();
+  registry.setOnline('tx-a', false);
+  assert.throws(() => gate.connect({deviceId:'tx-a',secret:b.secret}), /device_not_authenticated/);
+  assert.throws(() => gate.connect({deviceId:'tx-a',secret:'invalid'}), /device_not_authenticated/);
+  assert.equal(registry.getDeviceStatus({deviceId:'tx-a',receiverId:'rx-1'}).state, 'offline');
+  assert.equal(gate.connect({deviceId:'tx-a',secret:a.secret}).token.length, 64);
+});
+
+test('owner-disabled Bridge refuses authenticated TX reconnect', () => {
+  const { gate, registry, a } = setup();
+  registry.setBridgeEnabled({deviceId:'tx-a',ownerId:'owner-a',enabled:false});
+  assert.throws(() => gate.connect({deviceId:'tx-a',secret:a.secret}), /bridge_unavailable/);
+  assert.equal(registry.getDeviceStatus({deviceId:'tx-a',receiverId:'rx-1'}).state, 'closed_by_owner');
+  registry.setBridgeEnabled({deviceId:'tx-a',ownerId:'owner-a',enabled:true});
+  const active = gate.connect({deviceId:'tx-a',secret:a.secret});
+  assert.equal(gate.authorize({token:active.token,deviceId:'tx-a',receiverId:'rx-1'}).deviceId,'tx-a');
+});
+
+test('cold restored registry connects only after device authentication', () => {
+  const { registry, credentials, a } = setup();
+  const rebooted = BridgeRegistry.fromTrustedSnapshot(registry.snapshot());
+  const gate = new BridgeDeviceSessionGate({registry: rebooted, credentials});
+  assert.equal(rebooted.getDeviceStatus({deviceId:'tx-a',receiverId:'rx-1'}).state,'offline');
+  assert.throws(() => gate.open({deviceId:'tx-a',secret:a.secret}), /bridge_unavailable/);
+  const session = gate.connect({deviceId:'tx-a',secret:a.secret});
+  assert.equal(gate.authorize({token:session.token,deviceId:'tx-a',receiverId:'rx-1'}).deviceId,'tx-a');
+});
