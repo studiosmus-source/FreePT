@@ -127,3 +127,35 @@ test('completed status is visible to only the verified requesting admin', async 
     authContext:'verified-admin', jobId:'done-visible'
   }), /job_already_final/);
 });
+
+test('two sessions of same TX cannot complete each other dispatched jobs', async () => {
+  const { service, sessions, a } = setup();
+  await service.requestList({ authContext:'verified-admin', deviceId:'tx-a', jobId:'session-bound' });
+  const first = sessions.open({ deviceId:'tx-a', secret:a.secret });
+  const second = sessions.open({ deviceId:'tx-a', secret:a.secret });
+  assert.notEqual(first.token, second.token);
+  const job = service.pollDevice({ deviceId:'tx-a', sessionToken:first.token });
+  assert.equal(job.jobId, 'session-bound');
+  assert.equal('sessionBinding' in job, false);
+  assert.throws(() => service.completeDevice({
+    deviceId:'tx-a', sessionToken:second.token, jobId:'session-bound'
+  }), /job_not_authorized/);
+  assert.equal(service.completeDevice({
+    deviceId:'tx-a', sessionToken:first.token, jobId:'session-bound'
+  }).state, 'done');
+});
+
+test('closing claiming session prevents a second TX session completing its work', async () => {
+  const { service, sessions, a } = setup();
+  await service.requestList({ authContext:'verified-admin', deviceId:'tx-a', jobId:'closed-claim' });
+  const first = sessions.open({ deviceId:'tx-a', secret:a.secret });
+  service.pollDevice({ deviceId:'tx-a', sessionToken:first.token });
+  sessions.close(first.token);
+  const second = sessions.open({ deviceId:'tx-a', secret:a.secret });
+  assert.throws(() => service.completeDevice({
+    deviceId:'tx-a', sessionToken:first.token, jobId:'closed-claim'
+  }), /invalid_device_session/);
+  assert.throws(() => service.completeDevice({
+    deviceId:'tx-a', sessionToken:second.token, jobId:'closed-claim'
+  }), /job_not_authorized/);
+});
