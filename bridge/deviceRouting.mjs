@@ -68,8 +68,8 @@ export class BridgeRegistry {
   setOnline(deviceId, online) {
     const device = this.#devices.get(deviceId);
     if (!device) throw new Error('unknown_device');
-    // Network presence does not alter the owner's intentional Bridge switch.
-    device.online = online === true;
+    // A heartbeat cannot override the owner's explicit shutdown.
+    device.online = online === true && device.bridgeEnabled;
   }
 
   /** Owner-initiated Bridge switch: not inferred from a dropped connection. */
@@ -84,6 +84,19 @@ export class BridgeRegistry {
         if (job.deviceId === deviceId) this.#jobs.delete(id);
       }
     }
+  }
+
+  /** Receiver-scoped device state: intentionally closed is not a network outage. */
+  getDeviceStatus({ deviceId, receiverId }) {
+    const device = this.#devices.get(deviceId);
+    if (!device || !this.#grants.get(this.#grantKey(deviceId, receiverId))?.active)
+      throw new Error('bridge_not_authorized');
+    return {
+      deviceId: device.id,
+      label: device.label,
+      state: !device.bridgeEnabled ? 'closed_by_owner' :
+        device.online ? 'online' : 'offline'
+    };
   }
 
   /** Called only after a backend-validated, explicit owner approval. */
