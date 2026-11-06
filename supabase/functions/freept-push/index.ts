@@ -3,7 +3,7 @@
 // "x-freept-webhook-key": <the private FREEPT_WEBHOOK_KEY>.
 // Deploy with JWT verification disabled, but ALWAYS validate this header.
 // Required Supabase secrets: FREEPT_WEBHOOK_KEY, FCM_SERVICE_ACCOUNT_JSON,
-// SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY. Never put credentials in the APK.
+// SUPABASE_URL, SUPABASE_SECRET_KEYS (or legacy SUPABASE_SERVICE_ROLE_KEY). Never put credentials in the APK.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { importPKCS8, SignJWT } from 'npm:jose@5';
 
@@ -14,7 +14,22 @@ type Hook = {
   record?: { id?: string; user_id?: string; sender_id?: string };
 };
 
-const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{
+// Prefer the current elevated Supabase secret API key. Older projects may
+// still depend on the legacy service_role JWT until migrated.
+function elevatedKey():string {
+  const raw=Deno.env.get('SUPABASE_SECRET_KEYS');
+  if(raw){
+    let values:Record<string,unknown>;
+    try{values=JSON.parse(raw) as Record<string,unknown>}
+    catch{throw Error('Supabase secret key configuration invalid')}
+    if(typeof values.default==='string'&&values.default.startsWith('sb_secret_'))
+      return values.default;
+  }
+  const legacy=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if(legacy)return legacy;
+  throw Error('No Supabase server API key configured');
+}
+const db=createClient(Deno.env.get('SUPABASE_URL')!,elevatedKey(),{
   auth:{persistSession:false,autoRefreshToken:false}
 });
 const json=(body:unknown,code=200)=>new Response(JSON.stringify(body),{
