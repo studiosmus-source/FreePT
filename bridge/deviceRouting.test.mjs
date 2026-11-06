@@ -84,3 +84,32 @@ test('punctuation in IDs cannot reuse authorization for another device', () => {
     jobId: 'bad', deviceId: 'a', receiverId: 'b:c', operation: 'list'
   }), /not_authorized/);
 });
+
+test('durable grants survive restart but online presence and queued jobs do not', () => {
+  const original = paired();
+  original.enqueue({ jobId: 'pending', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  const persisted = JSON.parse(JSON.stringify(original.snapshot()));
+  const rebooted = BridgeRegistry.fromTrustedSnapshot(persisted);
+  assert.deepEqual(rebooted.listApproved('rx-1').map(x => x.id), ['tx-a', 'tx-b']);
+  assert.deepEqual(rebooted.listApproved('rx-1').map(x => x.online), [false, false]);
+  assert.equal(rebooted.takeNext('tx-a'), null);
+  rebooted.setOnline('tx-a', true);
+  assert.equal(rebooted.takeNext('tx-a'), null);
+  assert.throws(() => rebooted.enqueue({
+    jobId: 'fresh', deviceId: 'tx-a', receiverId: 'rx-2', operation: 'list'
+  }), /not_authorized/);
+});
+
+test('revoked grants are absent from saved state', () => {
+  const r = paired();
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  const restored = BridgeRegistry.fromTrustedSnapshot(r.snapshot());
+  assert.deepEqual(restored.listApproved('rx-1').map(x => x.id), ['tx-b']);
+});
+
+test('invalid persisted schema and orphan grants fail closed', () => {
+  assert.throws(() => BridgeRegistry.fromTrustedSnapshot({ version: 2, devices: [], grants: [] }), /invalid_snapshot/);
+  assert.throws(() => BridgeRegistry.fromTrustedSnapshot({
+    version: 1, devices: [], grants: [{ deviceId: 'missing', receiverId: 'rx' }]
+  }), /invalid_snapshot/);
+});
