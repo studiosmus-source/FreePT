@@ -21,8 +21,8 @@ export class BridgeRegistry {
   snapshot() {
     return {
       version: 1,
-      devices: [...this.#devices.values()].map(({ id, ownerId, label }) => ({
-        id, ownerId, label
+      devices: [...this.#devices.values()].map(({ id, ownerId, label, bridgeEnabled }) => ({
+        id, ownerId, label, bridgeEnabled
       })),
       grants: [...this.#grants.values()]
         .filter(grant => grant.active)
@@ -36,7 +36,14 @@ export class BridgeRegistry {
       throw new Error('invalid_snapshot');
 
     const registry = new BridgeRegistry();
-    for (const device of snapshot.devices) registry.registerDevice(device);
+    for (const device of snapshot.devices) {
+      registry.registerDevice(device);
+      if (device.bridgeEnabled === false) {
+        registry.setBridgeEnabled({ deviceId: device.id, ownerId: device.ownerId, enabled: false });
+      } else if (device.bridgeEnabled !== true && device.bridgeEnabled !== undefined) {
+        throw new Error('invalid_snapshot');
+      }
+    }
     for (const grant of snapshot.grants) {
       const device = registry.#devices.get(grant.deviceId);
       if (!device || !grant.receiverId || typeof grant.receiverId !== 'string')
@@ -55,13 +62,28 @@ export class BridgeRegistry {
         typeof ownerId !== 'string' || typeof label !== 'string')
       throw new Error('invalid_device');
     if (this.#devices.has(id)) throw new Error('device_already_registered');
-    this.#devices.set(id, { id, ownerId, label, online: false });
+    this.#devices.set(id, { id, ownerId, label, online: false, bridgeEnabled: true });
   }
 
   setOnline(deviceId, online) {
     const device = this.#devices.get(deviceId);
     if (!device) throw new Error('unknown_device');
+    // Network presence does not alter the owner's intentional Bridge switch.
     device.online = online === true;
+  }
+
+  /** Owner-initiated Bridge switch: not inferred from a dropped connection. */
+  setBridgeEnabled({ deviceId, ownerId, enabled }) {
+    const device = this.#devices.get(deviceId);
+    if (!device || device.ownerId !== ownerId) throw new Error('owner_required');
+    if (typeof enabled !== 'boolean') throw new Error('invalid_bridge_state');
+    device.bridgeEnabled = enabled;
+    if (!enabled) {
+      device.online = false;
+      for (const [id, job] of this.#jobs) {
+        if (job.deviceId === deviceId) this.#jobs.delete(id);
+      }
+    }
   }
 
   /** Called only after a backend-validated, explicit owner approval. */
@@ -94,14 +116,14 @@ export class BridgeRegistry {
     if (!jobId || !deviceId || !receiverId || !operation) throw new Error('invalid_job');
     if (this.#jobs.has(jobId)) throw new Error('duplicate_job');
     const device = this.#devices.get(deviceId);
-    if (!device?.online) throw new Error('device_offline');
+    if (!device?.online || !device.bridgeEnabled) throw new Error('device_offline');
     if (!this.#grants.get(this.#grantKey(deviceId, receiverId))?.active) throw new Error('bridge_not_authorized');
     this.#jobs.set(jobId, { jobId, deviceId, receiverId, operation, state: 'queued' });
   }
 
   takeNext(deviceId) {
     // A pending job must not be delivered to a disconnected or revoked TX.
-    if (!this.#devices.get(deviceId)?.online) return null;
+    if (!this.#devices.get(deviceId)?.online || !this.#devices.get(deviceId)?.bridgeEnabled) return null;
     for (const job of this.#jobs.values()) {
       if (job.deviceId !== deviceId || job.state !== 'queued') continue;
       if (!this.#grants.get(this.#grantKey(job.deviceId, job.receiverId))?.active) {
@@ -118,6 +140,7 @@ export class BridgeRegistry {
     const job = this.#jobs.get(jobId);
     if (!job || job.deviceId !== deviceId || job.receiverId !== receiverId ||
         job.state !== 'sent' || !this.#devices.get(deviceId)?.online ||
+        !this.#devices.get(deviceId)?.bridgeEnabled ||
         !this.#grants.get(this.#grantKey(deviceId, receiverId))?.active)
       throw new Error('job_not_authorized');
     this.#jobs.delete(jobId);
