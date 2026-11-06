@@ -106,5 +106,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Cinque test di regressione della coda e due del servizio sono stati aggiunti. Nel runner JS adattato i 38 test relativi a instradamento, sessioni e servizio sono passati, ma la verifica Node.js nativa e l'integrazione reale non sono state ancora effettuate.
 - **Questo è controllo del ciclo di vita nel processo di prova, non un vero sistema distribuito**: la cancellazione deve ancora propagarsi al servizio Android e interrompere eventuali operazioni native in corso, mentre rate limit e identificazione reale delle sessioni richiedono un backend autenticato.
 
+## Esito consultabile delle richieste (retention temporanea)
+- I lavori `list` completati o annullati restano nel registro **solo fino alla scadenza già prevista** per la richiesta, consentendo a `getRequestStatus` di restituire `done` o `cancelled` all'amministratore autenticato.
+- Durante il periodo di conservazione non è consentito riutilizzare lo stesso `jobId`, reinviare un lavoro finale, completarlo due volte o annullare un lavoro già finale. I record terminati non occupano la capacità riservata ai lavori attivi.
+- Alla scadenza la voce è rimossa; non è un archivio audit né una persistenza riavviabile.
+- Sono stati aggiunti tre test mirati (uno sul servizio, due sul modello). La suite adattata di routing, sessioni e servizio risulta 41/41. **Non è stata ancora eseguita la suite Node.js nativa sul checkout del repository privato.**
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
