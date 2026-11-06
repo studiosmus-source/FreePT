@@ -52,13 +52,16 @@ test('revoked receiver grant and owner switch block active sessions', () => {
   assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /invalid_device_session/);
 });
 
-test('network loss blocks operations without pretending consent was revoked', () => {
+test('network loss invalidates old session but not owner consent', () => {
   const { gate, registry, a } = setup();
   const session = gate.open({ deviceId: 'tx-a', secret: a.secret });
   registry.setOnline('tx-a', false);
-  assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /bridge_unavailable/);
+  assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /device_session_revoked/);
+  assert.equal(registry.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'offline');
   registry.setOnline('tx-a', true);
-  assert.equal(gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }).deviceId, 'tx-a');
+  assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /invalid_device_session/);
+  const fresh = gate.open({ deviceId: 'tx-a', secret: a.secret });
+  assert.equal(gate.authorize({ token: fresh.token, deviceId: 'tx-a', receiverId: 'rx-1' }).deviceId, 'tx-a');
 });
 
 test('sessions expire after five minutes and reject malformed tokens', () => {
