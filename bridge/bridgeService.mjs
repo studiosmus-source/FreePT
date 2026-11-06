@@ -40,10 +40,10 @@ export class BridgeService {
     return job;
   }
 
-  completeDevice({ deviceId, sessionToken, jobId, receiverId }) {
-    // Receiver ID is taken from the server-side queued job in a real backend,
-    // NOT directly from untrusted HTTP. This method is in-process only.
-    this.sessions.authorize({ token: sessionToken, deviceId, receiverId });
-    return this.registry.complete({ jobId, deviceId, receiverId });
+  completeDevice({ deviceId, sessionToken, jobId }) {
+    // TX can only complete a job already bound to this device. Receiver
+    // identity is resolved from the server-owned job, never TX input.
+    this.sessions.assertDeviceSession({ token: sessionToken, deviceId });
+    return this.registry.completeByDevice({ jobId, deviceId });
   }
 }
