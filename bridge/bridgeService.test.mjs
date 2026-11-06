@@ -202,7 +202,7 @@ test('reconnect cancels dispatched work but preserves pending work and other TX'
   })).state,'queued');
   assert.throws(() => service.completeDevice({
     deviceId:'tx-a',sessionToken:txA.token,jobId:'old-sent'
-  }), /device_session_revoked/);
+  }), /invalid_device_session/);
   assert.throws(() => service.completeDevice({
     deviceId:'tx-a',sessionToken:nextA.token,jobId:'old-sent'
   }), /job_not_authorized/);
