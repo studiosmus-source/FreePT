@@ -20,12 +20,26 @@ function hashToken(token) {
 export class BridgeDeviceSessionGate {
   #sessions = new Map();
 
-  constructor({ credentials, registry, now = () => Date.now() }) {
+  constructor({ credentials, registry, now = () => Date.now(), maxSessions = 1000 }) {
     if (!credentials || !registry || typeof now !== 'function')
       throw new Error('invalid_session_dependencies');
+    if (!Number.isSafeInteger(maxSessions) || maxSessions < 1)
+      throw new Error('invalid_session_limits');
     this.credentials = credentials;
     this.registry = registry;
     this.now = now;
+    this.maxSessions = maxSessions;
+  }
+
+  // Expired or superseded tokens must not accumulate indefinitely between
+  // requests. This is a bounded in-process cache, not persistent auth state.
+  #pruneSessions() {
+    const time = this.now();
+    for (const [hash, state] of this.#sessions) {
+      if (time >= state.expiresAt ||
+          state.sessionEpoch !== this.registry.getSessionEpoch(state.deviceId))
+        this.#sessions.delete(hash);
+    }
   }
 
   /**
@@ -56,6 +70,9 @@ export class BridgeDeviceSessionGate {
       throw new Error('bridge_unavailable');
     const verifier = this.credentials.exportVerifier(deviceId);
     if (!verifier) throw new Error('device_not_authenticated');
+    this.#pruneSessions();
+    if (this.#sessions.size >= this.maxSessions)
+      throw new Error('device_session_capacity');
     const token = randomBytes(32).toString('hex');
     const tokenHash = hashToken(token);
     const expiresAt = this.now() + MAX_AGE_MS;
