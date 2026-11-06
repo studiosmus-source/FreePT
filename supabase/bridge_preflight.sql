@@ -56,6 +56,39 @@ with checks as (
         and not has_table_privilege('authenticated','public.bridge_device_verifiers','UPDATE')
         and not has_table_privilege('authenticated','public.bridge_device_verifiers','DELETE')
     end
+  union all select 'Coda lavori Bridge staging presente',
+    to_regclass('public.bridge_jobs') is not null
+  union all select 'Coda lavori con RLS',
+    coalesce((select relrowsecurity from pg_class
+      where oid=to_regclass('public.bridge_jobs')), false)
+  union all select 'Coda lavori negata ai client',
+    case when to_regclass('public.bridge_jobs') is null then false
+      else not has_table_privilege('authenticated','public.bridge_jobs','SELECT')
+        and not has_table_privilege('authenticated','public.bridge_jobs','INSERT')
+        and not has_table_privilege('authenticated','public.bridge_jobs','UPDATE')
+        and not has_table_privilege('authenticated','public.bridge_jobs','DELETE')
+    end
+  union all select 'RPC accoda riservata al backend',
+    coalesce(has_function_privilege(
+      'service_role',to_regprocedure('public.bridge_server_enqueue_list(uuid,uuid,uuid)'),'EXECUTE'
+    ), false)
+    and not coalesce(has_function_privilege(
+      'authenticated',to_regprocedure('public.bridge_server_enqueue_list(uuid,uuid,uuid)'),'EXECUTE'
+    ), false)
+  union all select 'RPC assegnazione riservata al backend',
+    coalesce(has_function_privilege(
+      'service_role',to_regprocedure('public.bridge_server_claim_list(uuid,text)'),'EXECUTE'
+    ), false)
+    and not coalesce(has_function_privilege(
+      'authenticated',to_regprocedure('public.bridge_server_claim_list(uuid,text)'),'EXECUTE'
+    ), false)
+  union all select 'RPC completamento riservata al backend',
+    coalesce(has_function_privilege(
+      'service_role',to_regprocedure('public.bridge_server_complete_list(uuid,uuid,text)'),'EXECUTE'
+    ), false)
+    and not coalesce(has_function_privilege(
+      'authenticated',to_regprocedure('public.bridge_server_complete_list(uuid,uuid,text)'),'EXECUTE'
+    ), false)
   union all select 'Audit Bridge presente',
     to_regclass('public.bridge_audit_events') is not null
   union all select 'Audit Bridge RLS attiva',
