@@ -154,5 +154,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - GitHub Actions run `42264442524` (commit `25996e14574c7c7dd528ca71739553b4c6c2f1e2`) ha eseguito **94 test nativi Node.js, tutti superati, zero fallimenti**, oltre ai controlli sintattici di Bridge e del punto d'ingresso FreePT.
 - I test HTTP sono svolti su loopback con Auth/profili simulati, non dimostrano l'interoperabilità con servizi Supabase/Render reali né con il telefono Android. Il prossimo gate è un backend HTTPS di staging, con autenticazione e consenso realmente persistiti e test di sicurezza e revoca in rete.
 
+## HTTP locale completo amministratore–TX (modello di prova)
+- `bridge/txRequestHandler.mjs` introduce un contratto TX in-process limitato a `POST /bridge/tx/connect`, `/bridge/tx/poll` e `/bridge/tx/complete`, con verifica stretta degli argomenti. Nessun elenco file del sistema, lettura, download, shell, enrollment o trasferimento è disponibile.
+- `bridge/loopbackHttp.mjs` consente di collegare opzionalmente il dispatcher TX nel **solo** server di test locale `127.0.0.1`. Senza `txHandler` le rotte TX restano indisponibili.
+- `bridge/txRequestHandler.test.mjs` aggiunge sei test Node con vere richieste HTTP: autenticazione TX, richiesta amministratore, ritiro e completamento, separazione fra telefoni e sessioni, credenziali e consenso proprietario non validi, payload non ammessi e assenza delle rotte TX nel server admin-only.
+- GitHub Actions run `42273879607` (commit `a5c5065109872bbe110e050d934e101bfff0d3f1`): **100/100 test Node.js nativi superati**, zero errori e controlli sintattici riusciti.
+- Queste prove restano in loopback con modelli e utenti simulati: non certificano HTTPS pubblico, autenticazione Supabase reale, database persistente, due telefoni Android fisici o trasferimento file. L'attivazione fuori dallo staging richiede consenso verificato, protezioni anti-abuso e prove specifiche su dispositivi reali.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
