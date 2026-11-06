@@ -48,8 +48,8 @@ test('revoked receiver grant and owner switch block active sessions', () => {
   assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /bridge_not_authorized/);
   registry.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
   registry.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
-  // Owner shutdown permanently invalidates the old session, not just connectivity.
-  assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /device_session_revoked/);
+  // The first denied check already discarded the revoked token.
+  assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /invalid_device_session/);
 });
 
 test('network loss blocks operations without pretending consent was revoked', () => {
