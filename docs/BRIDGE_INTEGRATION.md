@@ -125,7 +125,7 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 
 ## Verifica automatica Node.js su GitHub Actions
 - Il workflow `.github/workflows/bridge-checks.yml` esegue `npm run test:bridge` su Node.js 22. Nei log del run `42246975535` (commit `96f605245780dec5f600a9e676f6629453a1e67a`) sono presenti **67 test, 67 superati, 0 falliti**: sono test Node reali, non un runner JavaScript adattato.
-- Il workflow è stato esteso per controllare con `node --check` ogni `bridge/*.mjs` e `src/main.js`. La riuscita della nuova versione del workflow va verificata su una sua esecuzione successiva.
+- Il workflow è stato esteso per controllare con `node --check` ogni `bridge/*.mjs` e `src/main.js`. Il run `42248727349` sul commit `57cf98e557c9c4a19ab28abb7c2e2e7abf1228c5` è **riuscito**: 67 test Node nativi superati, zero fallimenti, e controllo sintattico di tutti i moduli Bridge e del punto d'ingresso FreePT completato.
 - Le prove confermano il comportamento dei moduli e i contratti statici SQL; **non** equivalgono a test PostgreSQL, Supabase, connessioni Android, trasferimenti o controllo di sicurezza di un sistema distribuito.
 
 ## Stato
