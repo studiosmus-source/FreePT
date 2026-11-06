@@ -84,6 +84,15 @@ export class BridgeDeviceSessionGate {
   }
 
   /**
+   * Opaque per-session dispatch binding. Rechecks TX authentication;
+   * the original bearer token is never stored in a job record.
+   */
+  getDispatchBinding({ token, deviceId }) {
+    this.assertDeviceSession({ token, deviceId });
+    return hashToken(token).toString('hex');
+  }
+
+  /**
    * The receiver identity is a TRUSTED backend context, never a plain
    * unverified HTTP parameter. Recheck grant, TX state and token rotation.
    */
