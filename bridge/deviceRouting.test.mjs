@@ -177,3 +177,16 @@ test('new devices start with Bridge disabled even when network announces online'
   const rebooted = BridgeRegistry.fromTrustedSnapshot(r.snapshot());
   assert.equal(rebooted.getDeviceStatus({ deviceId: 'fresh', receiverId: 'rx' }).state, 'closed_by_owner');
 });
+
+test('active revocation advances the TX session generation exactly once', () => {
+  const r = paired();
+  const first = r.getSessionEpoch('tx-a');
+  const other = r.getSessionEpoch('tx-b');
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.equal(r.getSessionEpoch('tx-a'), first + 1);
+  assert.equal(r.getSessionEpoch('tx-b'), other);
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.equal(r.getSessionEpoch('tx-a'), first + 1);
+  r.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.equal(r.getSessionEpoch('tx-a'), first + 1);
+});
