@@ -131,7 +131,13 @@ export class BridgeRegistry {
     const device = this.#devices.get(deviceId);
     if (!device || device.ownerId !== approvedByOwnerId) throw new Error('owner_required');
     const grant = this.#grants.get(this.#grantKey(deviceId, receiverId));
-    if (grant) grant.active = false;
+    if (grant?.active) {
+      grant.active = false;
+      // A subsequent grant must not revive any session opened before this
+      // revocation. Conservative per-device invalidation also affects other
+      // receivers: they must authenticate a fresh TX session.
+      device.sessionEpoch += 1;
+    }
     for (const [id, job] of this.#jobs) {
       if (job.deviceId === deviceId && job.receiverId === receiverId) this.#jobs.delete(id);
     }
