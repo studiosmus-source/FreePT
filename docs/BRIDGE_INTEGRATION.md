@@ -50,7 +50,8 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - `setBridgeEnabled({deviceId, ownerId, enabled})` impone l'identità del proprietario, cancella le richieste in coda e impedisce nuove consegne quando il Ponte è disattivato.
 - Lo stato di disattivazione è incluso nello snapshot e resta valido dopo un riavvio; la presenza in rete è separata dall'intenzione di chiudere il Ponte.
 - Il comando è **solo una funzione del modello logico**: non interrompe ancora la sessione chat FreePT, il servizio Android o le notifiche e non informa ancora l'amministratore. Serve l'integrazione autenticata lato server e Android.
-- Sono presenti 12 test del modello e 6 test per lo store su file. I 12 test del modello sono stati eseguiti con un runner JavaScript adattato.
+- Sono presenti 13 test del modello e 6 test per lo store su file. I 13 test del modello sono stati eseguiti con un runner JavaScript adattato.
+- `getDeviceStatus` distingue `online`, `offline` e `closed_by_owner`; un heartbeat ricevuto mentre il Ponte è chiuso non lo riattiva. La riattivazione richiede una nuova presenza di rete autenticata (da integrare nel backend).
 
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
