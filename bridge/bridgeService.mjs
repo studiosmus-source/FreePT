@@ -12,7 +12,8 @@ export class BridgeService {
       throw new Error('invalid_bridge_service_dependencies');
     this.registry = registry;
     this.sessions = sessions;
-    if (authority !== null && typeof authority.assertAuthorized !== 'function')
+    if (authority !== null && typeof authority.assertAuthorized !== 'function' &&
+        typeof authority.runAuthorized !== 'function')
       throw new Error('invalid_bridge_authority_dependency');
     this.authenticateAdmin = authenticateAdmin;
     this.authority = authority;
@@ -29,7 +30,14 @@ export class BridgeService {
 
   async requestList({ authContext, deviceId, jobId }) {
     const receiverId = await this.#requireAdmin(authContext);
-    // Authoritative check, when enabled, is mandatory and fail-closed.
+    // When supplied, runAuthorized must hold the same authoritative lock
+    // over consent validation and mutation. This local Map is still not a
+    // distributed transaction; persistent jobs must use the DB as well.
+    if (this.authority?.runAuthorized)
+      return this.authority.runAuthorized({deviceId,receiverId}, () => {
+        this.registry.enqueue({jobId,deviceId,receiverId,operation:'list'});
+        return {jobId,deviceId,state:'queued'};
+      });
     if (this.authority)
       await this.authority.assertAuthorized({deviceId,receiverId});
     // Only folder-listing jobs; no arbitrary remote file or shell operations.
@@ -64,6 +72,17 @@ export class BridgeService {
       return this.registry.takeNext(deviceId, sessionBinding);
     const pending = this.registry.peekNextReceiver(deviceId);
     if (!pending) return Promise.resolve(null);
+    if (this.authority.runAuthorized)
+      return this.authority.runAuthorized({
+        deviceId,receiverId:pending.receiverId
+      }, () => {
+        const current=this.registry.peekNextReceiver(deviceId);
+        if (!current || current.jobId !== pending.jobId ||
+            current.receiverId !== pending.receiverId)
+          throw new Error('bridge_authority_retry');
+        this.sessions.assertDeviceSession({token:sessionToken,deviceId});
+        return this.registry.takeNext(deviceId,sessionBinding);
+      });
     return this.authority.assertAuthorized({
       deviceId, receiverId:pending.receiverId
     }).then(() => {
@@ -88,6 +107,13 @@ export class BridgeService {
     if (!this.authority)
       return this.registry.completeByDevice({jobId,deviceId,sessionBinding});
     const receiverId = this.registry.lookupDeviceJobReceiver({jobId,deviceId});
+    if (this.authority.runAuthorized)
+      return this.authority.runAuthorized({deviceId,receiverId}, () => {
+        this.sessions.assertDeviceSession({token:sessionToken,deviceId});
+        if (this.registry.lookupDeviceJobReceiver({jobId,deviceId}) !== receiverId)
+          throw new Error('bridge_authority_retry');
+        return this.registry.completeByDevice({jobId,deviceId,sessionBinding});
+      });
     return this.authority.assertAuthorized({deviceId,receiverId}).then(() => {
       this.sessions.assertDeviceSession({token:sessionToken,deviceId});
       if (this.registry.lookupDeviceJobReceiver({jobId,deviceId}) !== receiverId)
