@@ -7,6 +7,25 @@ export class BridgeRegistry {
   #grants = new Map();
   #jobs = new Map();
 
+  constructor({ now = () => Date.now(), maxJobs = 100, jobLifetimeMs = 60_000 } = {}) {
+    if (typeof now !== 'function' || !Number.isSafeInteger(maxJobs) || maxJobs < 1 ||
+        !Number.isSafeInteger(jobLifetimeMs) || jobLifetimeMs < 1)
+      throw new Error('invalid_job_limits');
+    this.now = now;
+    this.maxJobs = maxJobs;
+    this.jobLifetimeMs = jobLifetimeMs;
+  }
+
+  #isExpired(job) {
+    return this.now() >= job.createdAt + this.jobLifetimeMs;
+  }
+
+  #pruneJobs() {
+    for (const [id, job] of this.#jobs) {
+      if (this.#isExpired(job)) this.#jobs.delete(id);
+    }
+  }
+
   // Collision-free key: user-controlled IDs may contain punctuation.
   #grantKey(deviceId, receiverId) {
     return JSON.stringify([deviceId, receiverId]);
@@ -151,15 +170,40 @@ export class BridgeRegistry {
 
   /** No implicit default TX. Job is bound to exactly one device and receiver. */
   enqueue({ jobId, deviceId, receiverId, operation }) {
-    if (!jobId || !deviceId || !receiverId || !operation) throw new Error('invalid_job');
+    if (typeof jobId !== 'string' || !jobId || jobId.length > 128 ||
+        typeof deviceId !== 'string' || !deviceId ||
+        typeof receiverId !== 'string' || !receiverId || operation !== 'list')
+      throw new Error('invalid_job');
+    this.#pruneJobs();
     if (this.#jobs.has(jobId)) throw new Error('duplicate_job');
+    if (this.#jobs.size >= this.maxJobs) throw new Error('job_queue_full');
     const device = this.#devices.get(deviceId);
     if (!device?.online || !device.bridgeEnabled) throw new Error('device_offline');
     if (!this.#grants.get(this.#grantKey(deviceId, receiverId))?.active) throw new Error('bridge_not_authorized');
-    this.#jobs.set(jobId, { jobId, deviceId, receiverId, operation, state: 'queued' });
+    this.#jobs.set(jobId, {
+      jobId, deviceId, receiverId, operation, state: 'queued', createdAt: this.now()
+    });
+  }
+
+  /** Called after the backend verifies the admin; never trust receiverId from TX. */
+  cancelJob({ jobId, receiverId }) {
+    this.#pruneJobs();
+    const job = this.#jobs.get(jobId);
+    if (!job || job.receiverId !== receiverId) throw new Error('job_not_authorized');
+    this.#jobs.delete(jobId);
+    return { jobId, deviceId: job.deviceId, state: 'cancelled' };
+  }
+
+  /** Owner/admin-facing status, only after verified authorization at the API boundary. */
+  getJobStatus({ jobId, receiverId }) {
+    this.#pruneJobs();
+    const job = this.#jobs.get(jobId);
+    if (!job || job.receiverId !== receiverId) throw new Error('job_not_authorized');
+    return { jobId, deviceId: job.deviceId, state: job.state };
   }
 
   takeNext(deviceId) {
+    this.#pruneJobs();
     // A pending job must not be delivered to a disconnected or revoked TX.
     if (!this.#devices.get(deviceId)?.online || !this.#devices.get(deviceId)?.bridgeEnabled) return null;
     for (const job of this.#jobs.values()) {
@@ -186,6 +230,7 @@ export class BridgeRegistry {
   }
 
   complete({ jobId, deviceId, receiverId }) {
+    this.#pruneJobs();
     const job = this.#jobs.get(jobId);
     if (!job || job.deviceId !== deviceId || job.receiverId !== receiverId ||
         job.state !== 'sent' || !this.#devices.get(deviceId)?.online ||
