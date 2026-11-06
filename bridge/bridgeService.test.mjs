@@ -78,3 +78,35 @@ test('invalid TX token cannot consume a pending job', async () => {
   const txA = sessions.open({ deviceId:'tx-a', secret:a.secret });
   assert.equal(service.pollDevice({ deviceId:'tx-a', sessionToken:txA.token }).jobId, 'job-5');
 });
+
+test('only verified requesting admin can see or cancel a job', async () => {
+  const { service, sessions, a } = setup();
+  await service.requestList({ authContext:'verified-admin', deviceId:'tx-a', jobId:'cancel-1' });
+  assert.equal((await service.getRequestStatus({
+    authContext:'verified-admin', jobId:'cancel-1'
+  })).state, 'queued');
+  await assert.rejects(() => service.cancelRequest({
+    authContext:{ id:'admin-1', role:'admin', approved:true }, jobId:'cancel-1'
+  }), /bridge_admin_required/);
+  assert.equal((await service.cancelRequest({
+    authContext:'verified-admin', jobId:'cancel-1'
+  })).state, 'cancelled');
+  const tx = sessions.open({ deviceId:'tx-a', secret:a.secret });
+  assert.equal(service.pollDevice({ deviceId:'tx-a', sessionToken:tx.token }), null);
+  await assert.rejects(() => service.getRequestStatus({
+    authContext:'verified-admin', jobId:'cancel-1'
+  }), /job_not_authorized/);
+});
+
+test('request cancellation works on a sent job and prevents completion', async () => {
+  const { service, sessions, a } = setup();
+  await service.requestList({ authContext:'verified-admin', deviceId:'tx-a', jobId:'cancel-2' });
+  const tx = sessions.open({ deviceId:'tx-a', secret:a.secret });
+  assert.equal(service.pollDevice({ deviceId:'tx-a', sessionToken:tx.token }).state, 'sent');
+  assert.equal((await service.cancelRequest({
+    authContext:'verified-admin', jobId:'cancel-2'
+  })).state, 'cancelled');
+  assert.throws(() => service.completeDevice({
+    deviceId:'tx-a', sessionToken:tx.token, jobId:'cancel-2'
+  }), /job_not_authorized/);
+});
