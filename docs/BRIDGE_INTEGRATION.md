@@ -46,5 +46,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Il prototipo JS non è un sistema di autenticazione: autorizzazioni e revoca richiedono verifica lato backend anche durante stream/trasferimenti in corso.
 - Sono presenti dieci test del modello e sei test dell'archivio locale. Non è ancora confermato l'esito del workflow CI del repository.
 
+## Interruttore Bridge nel modello
+- `setBridgeEnabled({deviceId, ownerId, enabled})` impone l'identità del proprietario, cancella le richieste in coda e impedisce nuove consegne quando il Ponte è disattivato.
+- Lo stato di disattivazione è incluso nello snapshot e resta valido dopo un riavvio; la presenza in rete è separata dall'intenzione di chiudere il Ponte.
+- Il comando è **solo una funzione del modello logico**: non interrompe ancora la sessione chat FreePT, il servizio Android o le notifiche e non informa ancora l'amministratore. Serve l'integrazione autenticata lato server e Android.
+- Sono presenti 12 test del modello e 6 test per lo store su file. I 12 test del modello sono stati eseguiti con un runner JavaScript adattato.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
