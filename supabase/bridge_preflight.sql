@@ -23,6 +23,27 @@ with checks as (
     end
   union all select 'Funzione admin grant limitata',
     to_regprocedure('public.bridge_admin_has_active_grant(uuid)') is not null
+  union all select 'Attivazione Bridge disponibile',
+    coalesce(has_function_privilege(
+      'authenticated', to_regprocedure('public.bridge_owner_set_enabled(uuid,boolean)'), 'EXECUTE'
+    ), false)
+    and not coalesce(has_function_privilege(
+      'anon', to_regprocedure('public.bridge_owner_set_enabled(uuid,boolean)'), 'EXECUTE'
+    ), false)
+  union all select 'Autorizzazione Bridge disponibile',
+    coalesce(has_function_privilege(
+      'authenticated', to_regprocedure('public.bridge_owner_grant(uuid,uuid)'), 'EXECUTE'
+    ), false)
+    and not coalesce(has_function_privilege(
+      'anon', to_regprocedure('public.bridge_owner_grant(uuid,uuid)'), 'EXECUTE'
+    ), false)
+  union all select 'Revoca Bridge disponibile',
+    coalesce(has_function_privilege(
+      'authenticated', to_regprocedure('public.bridge_owner_revoke(uuid,uuid)'), 'EXECUTE'
+    ), false)
+    and not coalesce(has_function_privilege(
+      'anon', to_regprocedure('public.bridge_owner_revoke(uuid,uuid)'), 'EXECUTE'
+    ), false)
 )
 select controllo,
   case when superato then 'OK' else 'DA CONFIGURARE' end as esito
