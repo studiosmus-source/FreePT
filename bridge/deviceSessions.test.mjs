@@ -76,3 +76,25 @@ test('explicit session close makes the token unusable', () => {
   assert.equal(gate.close(session.token), false);
   assert.throws(() => gate.authorize({ token: session.token, deviceId: 'tx-a', receiverId: 'rx-1' }), /invalid_device_session/);
 });
+
+test('off then on never resurrects an earlier device session', () => {
+  const { gate, registry, a } = setup();
+  const previous = gate.open({ deviceId: 'tx-a', secret: a.secret });
+  registry.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  registry.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  registry.setOnline('tx-a', true);
+  assert.throws(() => gate.authorize({
+    token: previous.token, deviceId: 'tx-a', receiverId: 'rx-1'
+  }), /device_session_revoked/);
+  const fresh = gate.open({ deviceId: 'tx-a', secret: a.secret });
+  assert.equal(gate.authorize({ token: fresh.token, deviceId: 'tx-a', receiverId: 'rx-1' }).deviceId, 'tx-a');
+});
+
+test('credential deletion invalidates live session even with active grant', () => {
+  const { gate, credentials, a } = setup();
+  const session = gate.open({ deviceId: 'tx-a', secret: a.secret });
+  credentials.revoke('tx-a');
+  assert.throws(() => gate.authorize({
+    token: session.token, deviceId: 'tx-a', receiverId: 'rx-1'
+  }), /device_session_revoked/);
+});
