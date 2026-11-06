@@ -113,3 +113,31 @@ test('invalid persisted schema and orphan grants fail closed', () => {
     version: 1, devices: [], grants: [{ deviceId: 'missing', receiverId: 'rx' }]
   }), /invalid_snapshot/);
 });
+
+test('owner can disable Bridge without confusing network loss with closure', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'pending', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  r.setOnline('tx-a', false);
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a').jobId, 'pending');
+  r.enqueue({ jobId: 'cancel', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  assert.throws(() => r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-b', enabled: false }), /owner_required/);
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a'), null);
+  assert.throws(() => r.enqueue({ jobId: 'blocked', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' }), /device_offline/);
+  assert.throws(() => r.complete({ jobId: 'pending', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
+  assert.equal(r.listApproved('rx-1').find(x => x.id === 'tx-a').bridgeEnabled, false);
+});
+
+test('disabled Bridge survives restart and requires owner reactivation', () => {
+  const r = paired();
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  const restarted = BridgeRegistry.fromTrustedSnapshot(r.snapshot());
+  assert.equal(restarted.listApproved('rx-1').find(x => x.id === 'tx-a').bridgeEnabled, false);
+  restarted.setOnline('tx-a', true);
+  assert.throws(() => restarted.enqueue({ jobId: 'job', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' }), /device_offline/);
+  restarted.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  restarted.enqueue({ jobId: 'job', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  assert.equal(restarted.takeNext('tx-a').jobId, 'job');
+});
