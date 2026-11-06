@@ -112,5 +112,10 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Alla scadenza la voce è rimossa; non è un archivio audit né una persistenza riavviabile.
 - Sono stati aggiunti tre test mirati (uno sul servizio, due sul modello). La suite adattata di routing, sessioni e servizio risulta 41/41. **Non è stata ancora eseguita la suite Node.js nativa sul checkout del repository privato.**
 
+## Disconnessione e riconnessione TX (solo modello in-process)
+- La transizione online→offline incrementa `sessionEpoch` e invalida il token TX precedente. La riconnessione non è un'autenticazione: serve aprire una sessione nuova; il permesso dato dal proprietario rimane distinto dalla disponibilità di rete.
+- I job `sent` del telefono che si disconnette diventano `cancelled` e non possono essere completati successivamente; i job ancora `queued` restano in attesa soltanto fino alla loro scadenza naturale. Eventi offline ripetuti non incrementano inutilmente la generazione della sessione.
+- Due test mirati aggiunti; l'esecuzione nel runner JavaScript adattato di routing/sessioni/servizio ha dato 43/43. L'integrazione effettiva con rete, Supabase e Android resta non collaudata. L'evento `setOnline` potrà essere invocato soltanto da un backend attendibile dopo una connessione autenticata, **mai** su dichiarazione libera del telefono.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
