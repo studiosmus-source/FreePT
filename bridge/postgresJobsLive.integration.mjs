@@ -59,7 +59,7 @@ function rpcClient() {
     try {
       const raw=await query(command.sql,args);
       if(raw==='__EMPTY__')return {data:null,error:null};
-      return {data:raw==='t'?true:raw==='f'?false:raw,error:null};
+      return {data:(raw==='t'||raw==='true')?true:(raw==='f'||raw==='false')?false:raw,error:null};
     } catch {
       return {data:null,error:{code:'db_denied_or_unavailable'}};
     }
