@@ -32,6 +32,8 @@ export class BridgeDeviceSessionGate {
   open({ deviceId, secret }) {
     if (!this.credentials.authenticate(deviceId, secret))
       throw new Error('device_not_authenticated');
+    if (!this.registry.isDeviceReady(deviceId))
+      throw new Error('bridge_unavailable');
     const verifier = this.credentials.exportVerifier(deviceId);
     if (!verifier) throw new Error('device_not_authenticated');
     const token = randomBytes(32).toString('hex');
