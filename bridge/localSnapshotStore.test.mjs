@@ -75,3 +75,14 @@ test('a load immediately after save waits for its pending write', async (t) => {
   await pending;
   assert.equal(loaded.listApproved('rx').length, 1);
 });
+
+test('failed write makes reads fail closed rather than returning stale permissions', async (t) => {
+  const folder = await mkdtemp(join(tmpdir(), 'bridge-snapshot-'));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  // An existing directory cannot be replaced with a JSON file.
+  const store = new LocalBridgeSnapshotStore(folder);
+  const registry = new BridgeRegistry();
+  registry.registerDevice({ id: 'tx', ownerId: 'owner', label: 'Phone' });
+  await assert.rejects(() => store.save(registry));
+  await assert.rejects(() => store.load(), /bridge_store_write_failed/);
+});
