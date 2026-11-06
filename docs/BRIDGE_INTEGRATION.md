@@ -147,5 +147,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - **Manca il listener HTTPS reale** che impone TLS, limiti al corpo, rate limiting, controllo degli header e separazione dei ruoli TX/admin. Il dispatcher non è da esporre così com'è direttamente a Internet; gli adattatori Supabase e il modello in memoria non costituiscono ancora un backend pronto alla produzione.
 - Nove test di contratto sono stati aggiunti e verificati nel workflow GitHub Actions `42258875940` (commit `cd6751ef7ad6dbe2357e8faf37d335d094e7eb99`): **89 test Node.js superati su 89, 0 falliti**, controlli sintattici superati. Nessuna connessione reale a Supabase, Render o Android è stata effettuata.
 
+## Adattatore HTTP locale di prova (Node.js)
+- `bridge/loopbackHttp.mjs` aggiunge un listener di collaudo limitato a `127.0.0.1`, con porta scelta dal sistema operativo. Il server accetta soltanto i tre percorsi amministrativi già previsti dal contratto `adminRequestHandler`. Richiede JSON e limita il corpo a 2048 byte; risponde con JSON senza cache e senza accessi al filesystem.
+- **Non è un server di produzione**: non configura TLS, autenticazione Supabase reale, rate limit o bilanciamento. Non espone alcuna rotta per enrolment TX, accesso ai file Android o trasferimenti. Il listener di prova viene aperto e chiuso esclusivamente dai test.
+- `bridge/loopbackHttp.test.mjs` contiene cinque test con richieste HTTP reali tramite `fetch` Node: flusso amministratore→coda→TX simulato→completamento→status, diniego credenziali/ruolo, richieste malformate o troppo grandi, blocco di rotte non previste e verifica del bind locale.
+- GitHub Actions run `42264442524` (commit `25996e14574c7c7dd528ca71739553b4c6c2f1e2`) ha eseguito **94 test nativi Node.js, tutti superati, zero fallimenti**, oltre ai controlli sintattici di Bridge e del punto d'ingresso FreePT.
+- I test HTTP sono svolti su loopback con Auth/profili simulati, non dimostrano l'interoperabilità con servizi Supabase/Render reali né con il telefono Android. Il prossimo gate è un backend HTTPS di staging, con autenticazione e consenso realmente persistiti e test di sicurezza e revoca in rete.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
