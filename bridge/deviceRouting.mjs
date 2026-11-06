@@ -7,6 +7,11 @@ export class BridgeRegistry {
   #grants = new Map();
   #jobs = new Map();
 
+  // Collision-free key: user-controlled IDs may contain punctuation.
+  #grantKey(deviceId, receiverId) {
+    return JSON.stringify([deviceId, receiverId]);
+  }
+
   registerDevice({ id, ownerId, label }) {
     if (!id || !ownerId || !label || typeof id !== 'string' ||
         typeof ownerId !== 'string' || typeof label !== 'string')
@@ -27,13 +32,13 @@ export class BridgeRegistry {
     if (!device) throw new Error('unknown_device');
     if (device.ownerId !== approvedByOwnerId || !receiverId)
       throw new Error('approval_required');
-    this.#grants.set(deviceId + ':' + receiverId, { deviceId, receiverId, active: true });
+    this.#grants.set(this.#grantKey(deviceId, receiverId), { deviceId, receiverId, active: true });
   }
 
   revoke({ deviceId, receiverId, approvedByOwnerId }) {
     const device = this.#devices.get(deviceId);
     if (!device || device.ownerId !== approvedByOwnerId) throw new Error('owner_required');
-    const grant = this.#grants.get(deviceId + ':' + receiverId);
+    const grant = this.#grants.get(this.#grantKey(deviceId, receiverId));
     if (grant) grant.active = false;
     for (const [id, job] of this.#jobs) {
       if (job.deviceId === deviceId && job.receiverId === receiverId) this.#jobs.delete(id);
@@ -42,7 +47,7 @@ export class BridgeRegistry {
 
   listApproved(receiverId) {
     return [...this.#devices.values()]
-      .filter(device => this.#grants.get(device.id + ':' + receiverId)?.active)
+      .filter(device => this.#grants.get(this.#grantKey(device.id, receiverId))?.active)
       .map(device => ({ ...device }));
   }
 
@@ -52,7 +57,7 @@ export class BridgeRegistry {
     if (this.#jobs.has(jobId)) throw new Error('duplicate_job');
     const device = this.#devices.get(deviceId);
     if (!device?.online) throw new Error('device_offline');
-    if (!this.#grants.get(deviceId + ':' + receiverId)?.active) throw new Error('bridge_not_authorized');
+    if (!this.#grants.get(this.#grantKey(deviceId, receiverId))?.active) throw new Error('bridge_not_authorized');
     this.#jobs.set(jobId, { jobId, deviceId, receiverId, operation, state: 'queued' });
   }
 
@@ -61,7 +66,7 @@ export class BridgeRegistry {
     if (!this.#devices.get(deviceId)?.online) return null;
     for (const job of this.#jobs.values()) {
       if (job.deviceId !== deviceId || job.state !== 'queued') continue;
-      if (!this.#grants.get(job.deviceId + ':' + job.receiverId)?.active) {
+      if (!this.#grants.get(this.#grantKey(job.deviceId, job.receiverId))?.active) {
         this.#jobs.delete(job.jobId);
         continue;
       }
@@ -75,7 +80,7 @@ export class BridgeRegistry {
     const job = this.#jobs.get(jobId);
     if (!job || job.deviceId !== deviceId || job.receiverId !== receiverId ||
         job.state !== 'sent' || !this.#devices.get(deviceId)?.online ||
-        !this.#grants.get(deviceId + ':' + receiverId)?.active)
+        !this.#grants.get(this.#grantKey(deviceId, receiverId))?.active)
       throw new Error('job_not_authorized');
     this.#jobs.delete(jobId);
     return { ...job, state: 'done' };
