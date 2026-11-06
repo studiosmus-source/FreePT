@@ -77,5 +77,12 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - L'audit registra cambiamenti di consenso e autorizzazione, **non ancora** accessi a file, trasferimenti o provenienza verificata del telefono. La cancellazione di un dispositivo elimina anche i relativi eventi per effetto della chiave esterna CASCADE: non è un archivio immutabile di conservazione.
 - Tre controlli statici aggiuntivi sono passati in runner JS adattato; la migrazione non è stata provata in PostgreSQL e non è stata applicata al database reale.
 
+## Credenziali individuali TX (prototipo non connesso)
+- `bridge/deviceCredentials.mjs` introduce segreti casuali da 256 bit, uno per ciascun dispositivo. Una rotazione invalida il segreto precedente nella stessa istanza, e la revoca non coinvolge gli altri TX.
+- Il modello conserva un verificatore SHA-256 con salt individuale e confronto a tempo costante. Il segreto viene restituito una sola volta all'atto dell'emissione/rotazione e **non** compare nello snapshot di `BridgeRegistry`.
+- `supabase/migrations/20261106_bridge_device_verifiers.sql` prepara una tabella privata per i verificatori con RLS e nessun privilegio client; `supabase/bridge_preflight.sql` include i controlli di visibilità.
+- L'emissione non verifica ancora il proprietario: **non invocare la primitiva direttamente da un endpoint pubblico**. In produzione servono registrazione con identità Auth verificata, verifica consenso, connessione TLS, archiviazione transazionale, limitazioni dei tentativi, protezione contro il riutilizzo e gestione sicura del segreto nell'Android Keystore.
+- Un bearer secret prova solo il possesso della credenziale, non l'identità fisica del telefono. Non ci sono ancora API online, sessioni autenticabili o transfer sicuri. Le migrazioni restano file GitHub non applicati.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
