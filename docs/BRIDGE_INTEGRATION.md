@@ -128,5 +128,11 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Il workflow è stato esteso per controllare con `node --check` ogni `bridge/*.mjs` e `src/main.js`. Il run `42248727349` sul commit `57cf98e557c9c4a19ab28abb7c2e2e7abf1228c5` è **riuscito**: 67 test Node nativi superati, zero fallimenti, e controllo sintattico di tutti i moduli Bridge e del punto d'ingresso FreePT completato.
 - Le prove confermano il comportamento dei moduli e i contratti statici SQL; **non** equivalgono a test PostgreSQL, Supabase, connessioni Android, trasferimenti o controllo di sicurezza di un sistema distribuito.
 
+## Prima connessione TX autenticata (modello isolato)
+- Il prototipo separa il primo collegamento dalla semplice apertura di una sessione già online. `BridgeDeviceSessionGate.connect`, richiamabile da `BridgeService.connectDevice`, verifica il segreto individuale e che il proprietario abbia esplicitamente attivato Bridge **prima** di impostare la presenza online.
+- Questo elimina la dipendenza circolare che richiedeva a un telefono appena avviato di risultare online prima dell'autenticazione. Restano invariati il blocco del consenso OFF, le credenziali distinte, la revoca delle sessioni vecchie e la scadenza dei token.
+- La primitiva resta interna a un unico processo e **non** è un endpoint HTTP. Occorrono un backend autenticato, persistenza affidabile e collegamento al servizio Android prima di poterla usare con telefoni reali.
+- Aggiunti quattro test di sessione e due test di servizio per avvio offline, credenziali non valide, OFF del proprietario, riavvio e flusso fino al completamento. L'esito della suite nativa deve essere verificato nei log GitHub Actions della nuova revisione.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
