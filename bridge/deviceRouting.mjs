@@ -118,6 +118,11 @@ export class BridgeRegistry {
     }
   }
 
+  /** Backend-only owner switch check used before authenticated TX connection. */
+  isDeviceEnabled(deviceId) {
+    return this.#devices.get(deviceId)?.bridgeEnabled === true;
+  }
+
   /** Internal transport gate; not a substitute for server caller authentication. */
   isDeviceReady(deviceId) {
     const device = this.#devices.get(deviceId);
