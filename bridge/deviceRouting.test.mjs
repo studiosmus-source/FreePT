@@ -190,3 +190,63 @@ test('active revocation advances the TX session generation exactly once', () => 
   r.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
   assert.equal(r.getSessionEpoch('tx-a'), first + 1);
 });
+
+test('queued work expires and is never dispatched after deadline', () => {
+  let now = 10;
+  const r = new BridgeRegistry({ now: () => now, jobLifetimeMs: 50 });
+  r.registerDevice({ id: 'tx', ownerId: 'owner', label: 'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'expired', deviceId:'tx', receiverId:'rx', operation:'list' });
+  now += 50;
+  assert.equal(r.takeNext('tx'), null);
+  assert.throws(() => r.getJobStatus({ jobId:'expired', receiverId:'rx' }), /job_not_authorized/);
+});
+
+test('in-flight job expires and can no longer be completed', () => {
+  let now = 100;
+  const r = new BridgeRegistry({ now: () => now, jobLifetimeMs: 25 });
+  r.registerDevice({ id:'tx', ownerId:'owner', label:'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'sent', deviceId:'tx', receiverId:'rx', operation:'list' });
+  assert.equal(r.takeNext('tx').jobId, 'sent');
+  now += 26;
+  assert.throws(() => r.completeByDevice({ jobId:'sent', deviceId:'tx' }), /job_not_authorized/);
+});
+
+test('job queue is bounded and expired entries release capacity', () => {
+  let now = 1;
+  const r = new BridgeRegistry({ now: () => now, maxJobs: 1, jobLifetimeMs: 10 });
+  r.registerDevice({ id:'tx', ownerId:'owner', label:'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'first', deviceId:'tx', receiverId:'rx', operation:'list' });
+  assert.throws(() => r.enqueue({
+    jobId:'second', deviceId:'tx', receiverId:'rx', operation:'list'
+  }), /job_queue_full/);
+  now = 11;
+  r.enqueue({ jobId:'second', deviceId:'tx', receiverId:'rx', operation:'list' });
+  assert.equal(r.takeNext('tx').jobId, 'second');
+});
+
+test('only the correct receiver can cancel or see a queued job', () => {
+  const r = paired();
+  r.enqueue({ jobId:'private', deviceId:'tx-a', receiverId:'rx-1', operation:'list' });
+  assert.throws(() => r.cancelJob({ jobId:'private', receiverId:'stranger' }), /job_not_authorized/);
+  assert.throws(() => r.getJobStatus({ jobId:'private', receiverId:'stranger' }), /job_not_authorized/);
+  assert.equal(r.getJobStatus({ jobId:'private', receiverId:'rx-1' }).state, 'queued');
+  assert.equal(r.cancelJob({ jobId:'private', receiverId:'rx-1' }).state, 'cancelled');
+  assert.equal(r.takeNext('tx-a'), null);
+});
+
+test('invalid limits and unsupported operations fail closed', () => {
+  assert.throws(() => new BridgeRegistry({ maxJobs:0 }), /invalid_job_limits/);
+  const r = paired();
+  assert.throws(() => r.enqueue({
+    jobId:'bad', deviceId:'tx-a', receiverId:'rx-1', operation:'delete'
+  }), /invalid_job/);
+});
