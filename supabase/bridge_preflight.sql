@@ -89,6 +89,20 @@ with checks as (
     and not coalesce(has_function_privilege(
       'authenticated',to_regprocedure('public.bridge_server_complete_list(uuid,uuid,text)'),'EXECUTE'
     ), false)
+  union all select 'RPC stato lavoro riservata al backend',
+    coalesce(has_function_privilege(
+      'service_role',to_regprocedure('public.bridge_server_job_status(uuid,uuid)'),'EXECUTE'
+    ),false)
+    and not coalesce(has_function_privilege(
+      'authenticated',to_regprocedure('public.bridge_server_job_status(uuid,uuid)'),'EXECUTE'
+    ),false)
+  union all select 'RPC annullamento riservata al backend',
+    coalesce(has_function_privilege(
+      'service_role',to_regprocedure('public.bridge_server_cancel_job(uuid,uuid)'),'EXECUTE'
+    ),false)
+    and not coalesce(has_function_privilege(
+      'authenticated',to_regprocedure('public.bridge_server_cancel_job(uuid,uuid)'),'EXECUTE'
+    ),false)
   union all select 'Audit Bridge presente',
     to_regclass('public.bridge_audit_events') is not null
   union all select 'Audit Bridge RLS attiva',
