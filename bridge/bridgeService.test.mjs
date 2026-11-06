@@ -185,3 +185,35 @@ test('owner switch blocks service TX cold connect even with valid secret', () =>
   }), /bridge_unavailable/);
   assert.equal(registry.getDeviceStatus({deviceId:'tx-a',receiverId:'admin-1'}).state,'closed_by_owner');
 });
+
+test('reconnect cancels dispatched work but preserves pending work and other TX', async () => {
+  const {service,registry,a,b} = setup();
+  const txA = service.connectDevice({deviceId:'tx-a',deviceSecret:a.secret});
+  const txB = service.connectDevice({deviceId:'tx-b',deviceSecret:b.secret});
+  await service.requestList({authContext:'verified-admin',deviceId:'tx-a',jobId:'old-sent'});
+  await service.requestList({authContext:'verified-admin',deviceId:'tx-a',jobId:'still-queued'});
+  assert.equal(service.pollDevice({deviceId:'tx-a',sessionToken:txA.token}).jobId,'old-sent');
+  const nextA = service.connectDevice({deviceId:'tx-a',deviceSecret:a.secret});
+  assert.equal((await service.getRequestStatus({
+    authContext:'verified-admin',jobId:'old-sent'
+  })).state,'cancelled');
+  assert.equal((await service.getRequestStatus({
+    authContext:'verified-admin',jobId:'still-queued'
+  })).state,'queued');
+  assert.throws(() => service.completeDevice({
+    deviceId:'tx-a',sessionToken:txA.token,jobId:'old-sent'
+  }), /device_session_revoked/);
+  assert.throws(() => service.completeDevice({
+    deviceId:'tx-a',sessionToken:nextA.token,jobId:'old-sent'
+  }), /job_not_authorized/);
+  assert.equal(service.pollDevice({
+    deviceId:'tx-a',sessionToken:nextA.token
+  }).jobId,'still-queued');
+  assert.equal(service.completeDevice({
+    deviceId:'tx-a',sessionToken:nextA.token,jobId:'still-queued'
+  }).state,'done');
+  assert.equal(registry.getDeviceStatus({
+    deviceId:'tx-b',receiverId:'admin-1'
+  }).state,'online');
+  assert.equal(service.pollDevice({deviceId:'tx-b',sessionToken:txB.token}),null);
+});
