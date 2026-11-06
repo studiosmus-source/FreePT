@@ -6,6 +6,8 @@ function paired() {
   const r = new BridgeRegistry();
   r.registerDevice({ id: 'tx-a', ownerId: 'owner-a', label: 'Telefono A' });
   r.registerDevice({ id: 'tx-b', ownerId: 'owner-b', label: 'Telefono B' });
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  r.setBridgeEnabled({ deviceId: 'tx-b', ownerId: 'owner-b', enabled: true });
   r.setOnline('tx-a', true);
   r.setOnline('tx-b', true);
   r.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
@@ -47,6 +49,7 @@ test('offline and missing approvals fail closed', () => {
   r.registerDevice({ id: 'tx', ownerId: 'owner', label: 'Tel' });
   assert.throws(() => r.grant({ deviceId: 'tx', receiverId: 'rx', approvedByOwnerId: 'stranger' }), /approval_required/);
   assert.throws(() => r.enqueue({ jobId: 'j', deviceId: 'tx', receiverId: 'rx', operation: 'list' }), /device_offline/);
+  r.setBridgeEnabled({ deviceId: 'tx', ownerId: 'owner', enabled: true });
   r.setOnline('tx', true);
   assert.throws(() => r.enqueue({ jobId: 'j', deviceId: 'tx', receiverId: 'rx', operation: 'list' }), /not_authorized/);
 });
@@ -75,6 +78,8 @@ test('punctuation in IDs cannot reuse authorization for another device', () => {
   const r = new BridgeRegistry();
   r.registerDevice({ id: 'a:b', ownerId: 'owner-1', label: 'Telefono 1' });
   r.registerDevice({ id: 'a', ownerId: 'owner-2', label: 'Telefono 2' });
+  r.setBridgeEnabled({ deviceId: 'a:b', ownerId: 'owner-1', enabled: true });
+  r.setBridgeEnabled({ deviceId: 'a', ownerId: 'owner-2', enabled: true });
   r.setOnline('a:b', true);
   r.setOnline('a', true);
   r.grant({ deviceId: 'a:b', receiverId: 'c', approvedByOwnerId: 'owner-1' });
@@ -159,4 +164,16 @@ test('status distinguishes intentional closure from temporary network outage', (
   assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'offline');
   r.setOnline('tx-a', true);
   assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'online');
+});
+
+test('new devices start with Bridge disabled even when network announces online', () => {
+  const r = new BridgeRegistry();
+  r.registerDevice({ id: 'fresh', ownerId: 'owner', label: 'Fresh' });
+  r.grant({ deviceId: 'fresh', receiverId: 'rx', approvedByOwnerId: 'owner' });
+  r.setOnline('fresh', true);
+  assert.equal(r.getDeviceStatus({ deviceId: 'fresh', receiverId: 'rx' }).state, 'closed_by_owner');
+  assert.equal(r.listApproved('rx')[0].online, false);
+  assert.throws(() => r.enqueue({ jobId: 'j', deviceId: 'fresh', receiverId: 'rx', operation: 'list' }), /device_offline/);
+  const rebooted = BridgeRegistry.fromTrustedSnapshot(r.snapshot());
+  assert.equal(rebooted.getDeviceStatus({ deviceId: 'fresh', receiverId: 'rx' }).state, 'closed_by_owner');
 });
