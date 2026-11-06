@@ -38,5 +38,13 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Test di assenza di regressioni chat e upload grandi, più verifica delle notifiche e batteria su Android 15/16 e ColorOS.
 - Prima della merge, build APK, firma stabile e test funzionali reali.
 
+## Stato del modello di persistenza
+- Il modulo `bridge/deviceRouting.mjs` espone `snapshot()` e `fromTrustedSnapshot()`: serializza dispositivi e associazioni ancora valide.
+- Snapshot e ripristino operano **solo in memoria**: non è presente alcun repository database, adapter disk, API di scrittura o migrazione Supabase.
+- Al ripristino `online` torna `false`, nessun job pendente viene ripristinato e ogni dispositivo deve riconnettersi e autenticarsi al backend.
+- La funzione di ripristino deve accettare esclusivamente dati già validati dal server e provenienti da un archivio attendibile. Non usarla direttamente con input dell'utente.
+- Il prototipo JS non è un sistema di autenticazione: autorizzazioni e revoca richiedono verifica lato backend anche durante stream/trasferimenti in corso.
+- Sono presenti dieci test per il modello, eseguiti anche in runner JavaScript adattato; il workflow CI definito nel repository non risulta ancora verificato.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
