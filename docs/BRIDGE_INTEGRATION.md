@@ -123,5 +123,10 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - Le API puramente interne di `BridgeRegistry` conservano la possibilità di testare il modello senza legami di sessione; questa modalità non è un'API esposta al telefono.
 - Due regressioni dedicate verificano sessioni parallele e chiusura della sessione che ha ritirato il lavoro. Nel runner adattato routing/sessioni/servizio: **45/45** controlli superati, senza esecuzione nativa Node.js o validazione di rete.
 
+## Verifica automatica Node.js su GitHub Actions
+- Il workflow `.github/workflows/bridge-checks.yml` esegue `npm run test:bridge` su Node.js 22. Nei log del run `42246975535` (commit `96f605245780dec5f600a9e676f6629453a1e67a`) sono presenti **67 test, 67 superati, 0 falliti**: sono test Node reali, non un runner JavaScript adattato.
+- Il workflow è stato esteso per controllare con `node --check` ogni `bridge/*.mjs` e `src/main.js`. La riuscita della nuova versione del workflow va verificata su una sua esecuzione successiva.
+- Le prove confermano il comportamento dei moduli e i contratti statici SQL; **non** equivalgono a test PostgreSQL, Supabase, connessioni Android, trasferimenti o controllo di sicurezza di un sistema distribuito.
+
 ## Stato
 Scaffold admin nel ramo di lavoro: pulsante Bridge e schede Approvazioni/File, senza backend Bridge, senza implementazione nativa e senza accesso remoto. Ogni eventuale collegamento presentato in UI deve essere fondato su dati server reali.
