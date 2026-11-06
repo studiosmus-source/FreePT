@@ -217,9 +217,32 @@ async function refreshOnVisible(){
   }
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
 }
+function showAdminBridge(){
+  if(profile?.role!=='admin'||!adminUnlocked)return;
+  document.getElementById('adminBridgePanel')?.remove();
+  const panel=document.createElement('div');
+  panel.id='adminBridgePanel';
+  panel.className='bridge-admin-shade';
+  panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Bridge">'+
+    '<header><h2>Bridge</h2><button type="button" id="closeAdminBridge">Chiudi</button></header>'+
+    '<nav><button type="button" data-bridge-view="approvals">Approvazioni</button><button type="button" data-bridge-view="files">File</button></nav>'+
+    '<div id="bridgeAdminContent" aria-live="polite"></div></section>';
+  document.body.appendChild(panel);
+  const show=view=>{
+    const content=panel.querySelector('#bridgeAdminContent');
+    content.innerHTML=view==='approvals'
+      ?'<h3>Dispositivi autorizzati</h3><p>Il collegamento Bridge non è ancora configurato. Nessun dispositivo disponibile.</p>'
+      :'<h3>File</h3><p>Attiva prima un collegamento Bridge autorizzato per esplorare i file condivisi.</p>';
+    panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.bridgeView===view)));
+  };
+  panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.onclick=()=>show(b.dataset.bridgeView));
+  panel.querySelector('#closeAdminBridge').onclick=()=>panel.remove();
+  show('approvals');
+}
+
 function renderLayout(){
   const admin=profile.role==='admin';
-  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button id="logout">Esci</button>':'')+
+  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button type="button" id="adminBridge">Bridge</button><button id="logout">Esci</button>':'')+
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
@@ -231,6 +254,7 @@ function renderLayout(){
     '<p id="status" class="hint"></p></section></div></div>';
   if(admin){
     document.getElementById('logout').onclick=logout;
+    document.getElementById('adminBridge').onclick=showAdminBridge;
     renderPeople();
     document.getElementById('back').onclick=()=>{
       document.getElementById('chat').classList.add('off');
