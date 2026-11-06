@@ -50,3 +50,23 @@ test('offline and missing approvals fail closed', () => {
   r.setOnline('tx', true);
   assert.throws(() => r.enqueue({ jobId: 'j', deviceId: 'tx', receiverId: 'rx', operation: 'list' }), /not_authorized/);
 });
+
+test('offline TX does not accept queued jobs and cannot complete an in-flight request', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'queued', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  r.setOnline('tx-a', false);
+  assert.equal(r.takeNext('tx-a'), null);
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a').jobId, 'queued');
+  r.setOnline('tx-a', false);
+  assert.throws(() => r.complete({ jobId: 'queued', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
+});
+
+test('revocation prevents completion of a command already dispatched', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'read' });
+  assert.equal(r.takeNext('tx-a').jobId, 'sent');
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.throws(() => r.complete({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
+  assert.equal(r.listApproved('rx-1').some(x => x.id === 'tx-a'), false);
+});
