@@ -74,3 +74,5 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_jobs_staging.sql
       - name: Assert PostgreSQL permissions and real Bridge job transitions
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-tests.sql
+      - name: Assert transaction blocks concurrent claim during owner shutdown
+        run: bash bridge/postgres-ci-concurrency.sh
