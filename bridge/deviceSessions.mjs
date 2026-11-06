@@ -40,6 +40,7 @@ export class BridgeDeviceSessionGate {
     this.#sessions.set(tokenHash.toString('hex'), {
       deviceId,
       verifier: verifier.verifier,
+      sessionEpoch: this.registry.getSessionEpoch(deviceId),
       expiresAt
     });
     // This bearer token must travel only over authenticated TLS and
@@ -75,6 +76,10 @@ export class BridgeDeviceSessionGate {
       throw new Error('device_session_revoked');
     }
 
+    if (state.sessionEpoch !== this.registry.getSessionEpoch(deviceId)) {
+      this.#sessions.delete(tokenHash);
+      throw new Error('device_session_revoked');
+    }
     const device = this.registry.getDeviceStatus({ deviceId, receiverId });
     if (device.state !== 'online') throw new Error('bridge_unavailable');
     return { deviceId, receiverId };
