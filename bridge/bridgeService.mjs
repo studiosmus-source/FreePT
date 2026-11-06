@@ -15,18 +15,30 @@ export class BridgeService {
     this.authenticateAdmin = authenticateAdmin;
   }
 
-  async requestList({ authContext, deviceId, jobId }) {
-    // Identity comes exclusively from a trusted server authenticator.
+  async #requireAdmin(authContext) {
+    // The callback must validate caller identity server-side, not trust body fields.
     const admin = await this.authenticateAdmin(authContext);
     if (!admin || admin.role !== 'admin' || admin.approved !== true ||
         typeof admin.id !== 'string' || !admin.id)
       throw new Error('bridge_admin_required');
-    // Strictly limit first prototype to folder listing requests; no arbitrary
-    // file paths or direct remote file reads until Android scoped-share exists.
-    this.registry.enqueue({
-      jobId, deviceId, receiverId: admin.id, operation: 'list'
-    });
+    return admin.id;
+  }
+
+  async requestList({ authContext, deviceId, jobId }) {
+    const receiverId = await this.#requireAdmin(authContext);
+    // Only folder-listing jobs; no arbitrary remote file or shell operations.
+    this.registry.enqueue({ jobId, deviceId, receiverId, operation: 'list' });
     return { jobId, deviceId, state: 'queued' };
+  }
+
+  async cancelRequest({ authContext, jobId }) {
+    const receiverId = await this.#requireAdmin(authContext);
+    return this.registry.cancelJob({ jobId, receiverId });
+  }
+
+  async getRequestStatus({ authContext, jobId }) {
+    const receiverId = await this.#requireAdmin(authContext);
+    return this.registry.getJobStatus({ jobId, receiverId });
   }
 
   pollDevice({ deviceId, sessionToken }) {
