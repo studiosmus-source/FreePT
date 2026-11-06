@@ -50,14 +50,14 @@ Stato: progettazione; nessun trasferimento remoto implementato. Base verificata:
 - `setBridgeEnabled({deviceId, ownerId, enabled})` impone l'identità del proprietario, cancella le richieste in coda e impedisce nuove consegne quando il Ponte è disattivato.
 - Lo stato di disattivazione è incluso nello snapshot e resta valido dopo un riavvio; la presenza in rete è separata dall'intenzione di chiudere il Ponte.
 - Il comando è **solo una funzione del modello logico**: non interrompe ancora la sessione chat FreePT, il servizio Android o le notifiche e non informa ancora l'amministratore. Serve l'integrazione autenticata lato server e Android.
-- Sono presenti 13 test del modello e 6 test per lo store su file. I 13 test del modello sono stati eseguiti con un runner JavaScript adattato.
+- Sono presenti 14 test del modello, 6 test per lo store su file e 3 controlli del contratto SQL. I 14 test del modello sono stati eseguiti con un runner JavaScript adattato; l'esecuzione Node.js/CI completa resta da verificare.
 - `getDeviceStatus` distingue `online`, `offline` e `closed_by_owner`; un heartbeat ricevuto mentre il Ponte è chiuso non lo riattiva. La riattivazione richiede una nuova presenza di rete autenticata (da integrare nel backend).
 
 ## Migrazione server predisposta (non applicata)
 - `supabase/migrations/20261106_bridge_foundation.sql` crea due tabelle isolate: `bridge_devices` e `bridge_grants`, con chiavi esterne a `profiles`, RLS e scritture negate ai client.
 - `supabase/bridge_preflight.sql` verifica in sola lettura tabelle, RLS e privilegi dopo l'applicazione in un **progetto di prova**.
 - L'amministratore approvato può leggere soltanto dispositivi collegati a una sua autorizzazione ancora attiva; il proprietario approvato vede i propri. I client non possono concedere o revocare diritti con scritture dirette.
-- La tabella SQL parte con `bridge_enabled=false` (impostazione prudente), mentre `BridgeRegistry` è ancora un prototipo che inizializza un nuovo dispositivo con `true` per i test. Prima dell'integrazione reale occorre unificare questi default e introdurre la transazione di attivazione esplicita.
+- Sia SQL sia `BridgeRegistry` inizializzano un dispositivo con `bridge_enabled=false`. L'attivazione è esplicita nel modello; la transazione autenticata di attivazione lato backend non è ancora implementata.
 - Le tabelle non generano token, non provano il possesso del dispositivo, non implementano audit o trasferimenti. Solo un backend autenticato potrà gestire associazioni e revoche. Non usare una chiave `service_role` nel client.
 - **Questa migrazione non è stata applicata a Supabase e non è stata validata con un database PostgreSQL reale.**
 
