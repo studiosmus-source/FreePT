@@ -241,8 +241,9 @@ async function loadAdminBridgeDevices(panel){
   // No service-role credential, device presence claim or direct mutation.
   let data,error;
   try {
-    ({data,error}=await db.from('bridge_devices')
-      .select('id,label,bridge_enabled').order('label',{ascending:true}).limit(100));
+    ({data,error}=await db.from('bridge_grants')
+      .select('device_id,bridge_devices!inner(id,label,bridge_enabled)')
+      .eq('receiver_id',me.id).is('revoked_at',null).limit(100));
   } catch {
     error={code:'bridge_network_unavailable'};
   }
@@ -263,10 +264,14 @@ async function loadAdminBridgeDevices(panel){
   }
   content.innerHTML='<h3>Dispositivi autorizzati</h3>'+
     '<p>Elenco in sola lettura. La disponibilità online non è ancora verificata.</p>'+
-    '<ul class="bridge-device-list">'+data.map(d=>
-      '<li><strong>'+esc(d.label||'Dispositivo')+'</strong> · '+
-      (d.bridge_enabled?'Bridge attivato dal proprietario':'Bridge disattivato')+
-      '</li>').join('')+'</ul>'+
+    '<ul class="bridge-device-list">'+data.map(grant=>{
+      const d=grant.bridge_devices;
+      return d && typeof d==='object'
+        ? '<li><strong>'+esc(d.label||'Dispositivo')+'</strong> · '+
+          (d.bridge_enabled?'Bridge attivato dal proprietario':'Bridge disattivato')+
+          '</li>'
+        : '';
+    }).join('')+'</ul>'+
     (data.length===100?'<p>Visualizzati i primi 100 dispositivi autorizzati.</p>':'');
 }
 
