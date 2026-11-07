@@ -87,3 +87,7 @@ jobs:
         run: bash bridge/postgres-ci-concurrency.sh
       - name: Run Node adapter against real disposable PostgreSQL RPCs
         run: node --test bridge/postgresJobsLive.integration.mjs
+      - name: Enforce shared TX session inside PostgreSQL claim and completion
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_job_session_fence.sql
+      - name: Assert atomic TX session fencing for real database jobs
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-atomic-session-jobs.sql
