@@ -230,6 +230,37 @@ function closeAdminOverlays(){
   document.getElementById('chatActions')?.remove();
 }
 
+async function loadAdminBridgeDevices(panel){
+  const content=panel.querySelector('#bridgeAdminContent');
+  if(!content || !panel.isConnected || profile?.role!=='admin' || !adminUnlocked)return;
+  content.textContent='Caricamento dispositivi autorizzati…';
+  // RLS only exposes devices this approved account may read.
+  // No service-role credential, device presence claim or direct mutation.
+  const {data,error}=await db.from('bridge_devices')
+    .select('id,label,bridge_enabled').order('label',{ascending:true}).limit(100);
+  if(!panel.isConnected || profile?.role!=='admin' || !adminUnlocked ||
+      panel.querySelector('[data-bridge-view="approvals"]')?.getAttribute('aria-pressed')!=='true')return;
+  if(error){
+    const missing=/42P01|PGRST205|PGRST204|does not exist|schema cache/i.test(
+      String(error.code||'')+' '+String(error.message||''));
+    content.textContent=missing
+      ?'Bridge non configurato: la migrazione dei dispositivi non è disponibile.'
+      :'Impossibile leggere i dispositivi Bridge autorizzati.';
+    return;
+  }
+  if(!data?.length){
+    content.textContent='Nessun dispositivo Bridge autorizzato disponibile.';
+    return;
+  }
+  content.innerHTML='<h3>Dispositivi autorizzati</h3>'+
+    '<p>Elenco in sola lettura. La disponibilità online non è ancora verificata.</p>'+
+    '<ul class="bridge-device-list">'+data.map(d=>
+      '<li><strong>'+esc(d.label||'Dispositivo')+'</strong> · '+
+      (d.bridge_enabled?'Bridge attivato dal proprietario':'Bridge disattivato')+
+      '</li>').join('')+'</ul>'+
+    (data.length===100?'<p>Visualizzati i primi 100 dispositivi autorizzati.</p>':'');
+}
+
 function showAdminBridge(){
   if(profile?.role!=='admin'||!adminUnlocked)return;
   document.getElementById('adminBridgePanel')?.remove();
@@ -243,10 +274,9 @@ function showAdminBridge(){
   document.body.appendChild(panel);
   const show=view=>{
     const content=panel.querySelector('#bridgeAdminContent');
-    content.innerHTML=view==='approvals'
-      ?'<h3>Dispositivi autorizzati</h3><p>Il collegamento Bridge non è ancora configurato. Nessun dispositivo disponibile.</p>'
-      :'<h3>File</h3><p>Attiva prima un collegamento Bridge autorizzato per esplorare i file condivisi.</p>';
     panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.bridgeView===view)));
+    if(view==='approvals')void loadAdminBridgeDevices(panel);
+    else content.textContent='La consultazione dei file richiede un collegamento Bridge autorizzato e verificato dal backend. Non è ancora disponibile.';
   };
   panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.onclick=()=>show(b.dataset.bridgeView));
   panel.querySelector('#closeAdminBridge').onclick=()=>panel.remove();
