@@ -156,10 +156,17 @@ test('Composed Bridge backend exercises persistent sessions and jobs against Pos
    assert.equal(status.status,200);
    assert.equal(status.body.state,'done');
    assert.equal(await query(`select state from public.bridge_jobs where id='${HTTP_JOB}';`),'done');
+   const disconnect=await post('/bridge/tx/disconnect',{
+     deviceId:D,sessionToken:b.token
+   });
+   assert.equal(disconnect.status,200);
+   assert.deepEqual(disconnect.body,{closed:true});
+   assert.equal((await post('/bridge/tx/poll',{
+     deviceId:D,sessionToken:b.token
+   })).status,403);
  } finally {
    await http.stop();
  }
- assert.equal(await bridge.closeDeviceSession({deviceId:D,token:b.token}),true);
  await assert.rejects(()=>bridge.pollDevice({
    deviceId:D,sessionToken:b.token
  }),/bridge_session_database_unavailable/);
