@@ -86,7 +86,7 @@ export class BridgePostgresJobsAdapter {
 
   async pollDevice({deviceId,sessionToken}) {
     requireId(deviceId);
-    const binding=this.sessions.getDispatchBinding({deviceId,token:sessionToken});
+    const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
     if (!BINDING.test(binding)) throw new Error('bridge_invalid_session_binding');
     const data=await this.#rpc('bridge_server_claim_list',{
       p_device_id:deviceId,p_session_binding_hex:binding
@@ -100,7 +100,7 @@ export class BridgePostgresJobsAdapter {
   async completeDevice({deviceId,sessionToken,jobId}) {
     requireId(deviceId);
     requireId(jobId);
-    const binding=this.sessions.getDispatchBinding({deviceId,token:sessionToken});
+    const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
     if (!BINDING.test(binding)) throw new Error('bridge_invalid_session_binding');
     const result=await this.#rpc('bridge_server_complete_list',{
       p_job_id:jobId,p_device_id:deviceId,p_session_binding_hex:binding
