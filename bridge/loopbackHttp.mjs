@@ -54,7 +54,7 @@ export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
         return;
       }
       const adminPaths = ['/bridge/admin/list','/bridge/admin/status','/bridge/admin/cancel'];
-      const txPaths = ['/bridge/tx/connect','/bridge/tx/poll','/bridge/tx/complete'];
+      const txPaths = ['/bridge/tx/connect','/bridge/tx/poll','/bridge/tx/complete','/bridge/tx/disconnect'];
       const txRoute = txPaths.includes(req.url);
       if (!adminPaths.includes(req.url) && !(txHandler && txRoute)) {
         reply(res, 404, {error:'not_found'});
