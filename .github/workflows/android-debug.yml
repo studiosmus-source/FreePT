@@ -59,7 +59,7 @@ jobs:
               raise SystemExit('Unexpected base appId; refusing experimental build')
           data['appId'] = 'it.freept.bridge'
           data['appName'] = 'FreePT Bridge Test'
-          config.write_text(json.dumps(data, indent=2) + '\\n')
+          config.write_text(json.dumps(data, indent=2) + '\n')
           assert json.loads(config.read_text())['appId'] == 'it.freept.bridge'
           PY
       - name: Generate and synchronize Android project
