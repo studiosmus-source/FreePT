@@ -32,8 +32,34 @@ jobs:
         run: npm run test:bridge
       - name: JavaScript syntax check
         run: node --check src/main.js
+      - name: Require isolated Supabase test project for Bridge APK
+        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          url = os.environ.get('VITE_SUPABASE_URL', '')
+          key = os.environ.get('VITE_SUPABASE_PUBLISHABLE_KEY', '')
+          parsed = urlparse(url)
+          if (parsed.scheme != 'https' or not parsed.hostname or
+              parsed.hostname != parsed.hostname.lower() or
+              parsed.username or parsed.password or parsed.query or parsed.fragment or
+              parsed.path not in ('', '/')):
+              raise SystemExit('Bridge test Supabase URL missing or invalid')
+          if parsed.hostname == 'cpopqsvzzxfjgnlawlvc.supabase.co':
+              raise SystemExit('Refusing production Supabase for experimental Bridge APK')
+          if not key.startswith('sb_publishable_') or len(key) < 30:
+              raise SystemExit('Bridge test Supabase publishable key missing or invalid')
+          print('Bridge test Supabase configuration present; production project rejected')
+          PY
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
         run: |
           set -euo pipefail
           echo "Node: $(node --version) / npm: $(npm --version)"
