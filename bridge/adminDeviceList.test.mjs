@@ -74,3 +74,30 @@ test('closed panel or revoked admin session cannot display late result',async()=
   await denied.context.load(denied.panel);
   assert.equal(denied.calls.length,0);
 });
+
+test('network rejection displays safe error instead of unhandled promise',async()=>{
+  const h=makeHarness(null);
+  h.context.db.from=()=>({select:()=>({order:()=>({limit:()=>Promise.reject(
+    new Error('private host and credential detail'))})})});
+  await assert.doesNotReject(()=>h.context.load(h.panel));
+  assert.match(h.content.textContent,/Impossibile leggere/);
+  assert.doesNotMatch(h.content.textContent,/credential/);
+});
+
+test('older network responses cannot overwrite a newer Bridge device refresh',async()=>{
+  let finishFirst;
+  let calls=0;
+  const h=makeHarness(null);
+  h.context.db.from=()=>({select:()=>({order:()=>({limit:()=>{
+    calls++;
+    if(calls===1)return new Promise(resolve=>{finishFirst=resolve});
+    return Promise.resolve({data:[{label:'Nuovo',bridge_enabled:true}],error:null});
+  }})})});
+  const first=h.context.load(h.panel);
+  const second=h.context.load(h.panel);
+  await second;
+  finishFirst({data:[{label:'Vecchio',bridge_enabled:true}],error:null});
+  await first;
+  assert.match(h.content.innerHTML,/Nuovo/);
+  assert.doesNotMatch(h.content.innerHTML,/Vecchio/);
+});
