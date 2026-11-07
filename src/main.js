@@ -3,10 +3,15 @@ import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
+import {createBridgeAdminClient} from './bridgeAdminClient.js';
 
 const URL = import.meta.env.VITE_SUPABASE_URL || 'https://cpopqsvzzxfjgnlawlvc.supabase.co';
 const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Q74UCgQUXO6f_7vZhXcbyg_2KRl2OSN';
 const db = createClient(URL, KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+// No production fallback. Only an explicitly configured HTTPS test backend.
+const bridgeClient=createBridgeAdminClient({
+  baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,auth:db.auth
+});
 const el = document.getElementById('app');
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
 let messageRequest = 0;
@@ -269,10 +274,48 @@ async function loadAdminBridgeDevices(panel){
       return d && typeof d==='object'
         ? '<li><strong>'+esc(d.label||'Dispositivo')+'</strong> · '+
           (d.bridge_enabled?'Bridge attivato dal proprietario':'Bridge disattivato')+
-          '</li>'
+          (bridgeClient&&d.bridge_enabled
+            ? ' <button type="button" data-bridge-request="'+esc(d.id)+'">Richiedi elenco</button>'
+            : '')+'</li>'
         : '';
     }).join('')+'</ul>'+
     (data.length===100?'<p>Visualizzati i primi 100 dispositivi autorizzati.</p>':'');
+  if(bridgeClient)content.querySelectorAll('[data-bridge-request]').forEach(button=>{
+    button.onclick=()=>void requestAdminBridgeList(panel,button);
+  });
+}
+
+async function requestAdminBridgeList(panel,button){
+  if(!bridgeClient||!panel.isConnected||profile?.role!=='admin'||
+     !adminUnlocked||!me||button.disabled)return;
+  const deviceId=button.dataset.bridgeRequest;
+  button.disabled=true;
+  const result=document.createElement('p');
+  result.setAttribute('role','status');
+  button.parentElement.appendChild(result);
+  result.textContent='Invio richiesta Bridge…';
+  try{
+    const job=await bridgeClient.requestList(deviceId);
+    if(!panel.isConnected||profile?.role!=='admin'||!adminUnlocked)return;
+    result.textContent='Richiesta '+job.state+' (ID '+job.jobId+').';
+    const statusButton=document.createElement('button');
+    statusButton.type='button';
+    statusButton.textContent='Controlla stato';
+    statusButton.onclick=async()=>{
+      if(!panel.isConnected||profile?.role!=='admin'||!adminUnlocked)return;
+      statusButton.disabled=true;
+      try{
+        const updated=await bridgeClient.getStatus(job.jobId);
+        if(panel.isConnected&&profile?.role==='admin'&&adminUnlocked)
+          result.textContent='Richiesta '+updated.state+' (ID '+job.jobId+').';
+      }catch{
+        if(panel.isConnected)result.textContent='Stato Bridge non disponibile.';
+      }finally{statusButton.disabled=false;}
+    };
+    if(panel.isConnected)button.parentElement.appendChild(statusButton);
+  }catch{
+    if(panel.isConnected)result.textContent='Richiesta Bridge non disponibile.';
+  }finally{button.disabled=false;}
 }
 
 function showAdminBridge(){
