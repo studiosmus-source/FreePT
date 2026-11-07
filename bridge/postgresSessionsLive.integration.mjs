@@ -96,7 +96,7 @@ test('Composed Bridge backend exercises persistent sessions and jobs against Pos
  const authenticateDevice=createPostgresDeviceAuthenticator({verifiersClient});
  const bridge=createBridgePostgresService({
    rpcClient,authenticateDevice,authenticateAdmin:async ctx=>
-     (ctx==='verified-admin'||ctx?.accessToken==='verified-admin')?
+     (ctx==='verified-admin'||ctx?.accessToken==='verified-admin-bridge-ci-token')?
      {id:ADMIN,role:'admin',approved:true}:null
  });
  const a=await bridge.connectDevice({deviceId:D,deviceSecret:SECRET});
@@ -139,7 +139,7 @@ test('Composed Bridge backend exercises persistent sessions and jobs against Pos
    };
    const refused=await post('/bridge/admin/list',{deviceId:D});
    assert.equal(refused.status,401);
-   const queued=await post('/bridge/admin/list',{deviceId:D},'verified-admin');
+   const queued=await post('/bridge/admin/list',{deviceId:D},'verified-admin-bridge-ci-token');
    assert.equal(queued.status,202);
    assert.equal(queued.body.jobId,HTTP_JOB);
    const polled=await post('/bridge/tx/poll',{
@@ -152,10 +152,10 @@ test('Composed Bridge backend exercises persistent sessions and jobs against Pos
    });
    assert.equal(completed.status,200);
    assert.equal(completed.body.state,'done');
-   const status=await post('/bridge/admin/status',{jobId:HTTP_JOB},'verified-admin');
+   const status=await post('/bridge/admin/status',{jobId:HTTP_JOB},'verified-admin-bridge-ci-token');
    assert.equal(status.status,200);
    assert.equal(status.body.state,'done');
-   assert.equal(await query(`select state from public.bridge_jobs where id='${HTTP_JOB}'`),'done');
+   assert.equal(await query(`select state from public.bridge_jobs where id='${HTTP_JOB}';`),'done');
  } finally {
    await http.stop();
  }
