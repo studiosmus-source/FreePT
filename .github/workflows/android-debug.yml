@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main]
+    branches: [main, feature/bridge-admin-foundation-20261106]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,6 +27,9 @@ jobs:
           ls "$ANDROID_HOME/build-tools"
       - name: Install web dependencies
         run: npm install --no-audit --no-fund
+      - name: Bridge unit regression tests (development branch only)
+        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        run: npm run test:bridge
       - name: JavaScript syntax check
         run: node --check src/main.js
       - name: Build web bundle (3-minute diagnostic timeout)
@@ -84,7 +87,7 @@ jobs:
       - name: Upload APK verification report
         uses: actions/upload-artifact@v4
         with:
-          name: FreePT-apk-report
+          name: ${{ github.ref_name == 'main' && 'FreePT-apk-report' || 'FreePT-bridge-experimental-apk-report' }}
           path: |
             android-apk-info.txt
             android-apk-sha256.txt
@@ -92,6 +95,6 @@ jobs:
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: FreePT-debug-apk
+          name: ${{ github.ref_name == 'main' && 'FreePT-debug-apk' || 'FreePT-bridge-experimental-debug-apk' }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
