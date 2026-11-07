@@ -11,6 +11,8 @@ import {createTrustedBridgeBackend} from './trustedBackend.mjs';
 import {createBridgeLoopbackTestServer} from './loopbackHttp.mjs';
 
 const PRODUCTION_HOST='cpopqsvzzxfjgnlawlvc.supabase.co';
+// Only a validated configuration is allowed to reach privileged clients.
+const validatedConfigs=new WeakSet();
 const PUBLISHABLE=/^sb_publishable_[A-Za-z0-9_-]{16,}$/;
 const SERVICE_ROLE=/^(?:sb_secret_[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{50,})$/;
 
@@ -30,12 +32,14 @@ export function validateBridgeStagingConfig(env) {
      typeof serviceKey!=='string'||!SERVICE_ROLE.test(serviceKey)||
      publishable===serviceKey)
     throw Error('bridge_staging_credentials_invalid');
-  return Object.freeze({url:url.origin,publishable,serviceKey});
+  const config=Object.freeze({url:url.origin,publishable,serviceKey});
+  validatedConfigs.add(config);
+  return config;
 }
 
 export function createBridgeStagingServer({config,createClientFn=createClient}){
-  if(!config||typeof createClientFn!=='function'||
-     !config.url||!config.publishable||!config.serviceKey)
+  if(!config||!validatedConfigs.has(config)||
+     typeof createClientFn!=='function')
     throw Error('bridge_staging_dependencies_invalid');
   // The public key is used only to verify user access tokens. Service role is
   // confined to the server-controlled SQL RPCs and narrow table lookups.
