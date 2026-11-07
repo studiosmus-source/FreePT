@@ -239,3 +239,23 @@ test('TX login serialization releases lock on success and allows another device'
   assert.equal((await again).status,200);
   assert.deepEqual(calls,[A,B,A]);
 });
+
+test('many distinct in-flight TX logins cannot bypass global tracked-device bound',async()=>{
+  const awaiting=[];
+  let calls=0;
+  const service={
+    connectDevice:()=>{calls++;return new Promise((resolve,reject)=>{
+      awaiting.push(()=>reject(Error('not_authorized')));
+    });},
+    pollDevice:async()=>null,completeDevice:async()=>null
+  };
+  const tx=createBridgeTxRequestHandler({service,maxTrackedDevices:1});
+  const first=tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:A,deviceSecret:'a'.repeat(64)}});
+  const second=await tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:B,deviceSecret:'b'.repeat(64)}});
+  assert.equal(second.status,429);
+  assert.equal(calls,1);
+  awaiting[0]();
+  assert.equal((await first).status,403);
+});
