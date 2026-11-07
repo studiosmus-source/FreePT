@@ -57,3 +57,18 @@ test('staging runtime builds separate public-auth and privileged clients',async(
     assert.equal(response.status,401);
   }finally{await server.stop();}
 });
+
+test('direct staging factory refuses unchecked or forged production configurations',()=>{
+  const fakeClient=()=>{throw Error('should_not_create_clients')};
+  for(const config of [
+    {url:'https://cpopqsvzzxfjgnlawlvc.supabase.co',
+     publishable:good.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY,
+     serviceKey:good.FREEPT_BRIDGE_TEST_SUPABASE_SERVICE_ROLE_KEY},
+    {url:good.FREEPT_BRIDGE_TEST_SUPABASE_URL,
+     publishable:good.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY,
+     serviceKey:good.FREEPT_BRIDGE_TEST_SUPABASE_SERVICE_ROLE_KEY},
+    {...validateBridgeStagingConfig(good)},null
+  ]) assert.throws(()=>createBridgeStagingServer({
+    config,createClientFn:fakeClient
+  }),/bridge_staging_dependencies_invalid/);
+});
