@@ -9,7 +9,8 @@ const HEX = /^[0-9a-f]{64}$/;
 const ROUTES = {
   '/bridge/tx/connect': ['deviceId', 'deviceSecret'],
   '/bridge/tx/poll': ['deviceId', 'sessionToken'],
-  '/bridge/tx/complete': ['deviceId', 'sessionToken', 'jobId']
+  '/bridge/tx/complete': ['deviceId', 'sessionToken', 'jobId'],
+  '/bridge/tx/disconnect': ['deviceId', 'sessionToken']
 };
 const fail = (status, code) => ({status, body:{error:code}});
 const shape = (value, keys) =>
@@ -61,7 +62,9 @@ export function createBridgeTxRequestHandler({
   return async function handleBridgeTxRequest(request) {
     if (request?.method !== 'POST') return fail(405,'method_not_allowed');
     const keys = ROUTES[request?.path];
-    if (!keys) return fail(404,'not_found');
+    if (!keys || (request.path === '/bridge/tx/disconnect' &&
+        typeof service.closeDeviceSession !== 'function'))
+      return fail(404,'not_found');
     const body = request?.body;
     if (!shape(body,keys) || !UUID.test(body.deviceId) ||
         (keys.includes('jobId') && !UUID.test(body.jobId)) ||
@@ -85,6 +88,12 @@ export function createBridgeTxRequestHandler({
         });
         failures.delete(body.deviceId);
         return {status:200,body:result};
+      }
+      if (request.path === '/bridge/tx/disconnect') {
+        const closed=await service.closeDeviceSession({
+          deviceId:body.deviceId,token:body.sessionToken
+        });
+        return closed===true ? {status:200,body:{closed:true}} : fail(403,'tx_denied');
       }
       if (request.path === '/bridge/tx/poll')
         return {status:200,body:{job:await service.pollDevice({
