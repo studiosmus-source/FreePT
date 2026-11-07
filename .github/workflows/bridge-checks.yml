@@ -9,6 +9,8 @@ on:
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
       - 'package.json'
+      - 'src/**'
+      - 'index.html'
       - '.github/workflows/bridge-checks.yml'
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
       - 'package.json'
+      - 'src/**'
+      - 'index.html'
       - '.github/workflows/bridge-checks.yml'
 
 permissions:
@@ -36,6 +40,21 @@ jobs:
           for file in bridge/*.mjs src/main.js; do
             node --check "$file"
           done
+
+  freept-web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install FreePT dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build FreePT web bundle
+        run: npm run build
+      - name: Verify generated entrypoint
+        run: test -s dist/index.html
 
   bridge-postgres:
     runs-on: ubuntu-latest
