@@ -47,6 +47,21 @@ jobs:
           name: FreePT-vite-build-diagnostic
           path: vite-build.log
           if-no-files-found: warn
+      - name: Isolate experimental Bridge APK identity
+        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config = Path('capacitor.config.json')
+          data = json.loads(config.read_text())
+          if data.get('appId') != 'it.freept.app':
+              raise SystemExit('Unexpected base appId; refusing experimental build')
+          data['appId'] = 'it.freept.bridge'
+          data['appName'] = 'FreePT Bridge Test'
+          config.write_text(json.dumps(data, indent=2) + '\\n')
+          assert json.loads(config.read_text())['appId'] == 'it.freept.bridge'
+          PY
       - name: Generate and synchronize Android project
         shell: bash
         run: |
@@ -82,7 +97,13 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee android-apk-info.txt
-          grep -q "package: name='it.freept.app'" android-apk-info.txt
+          if [[ "$GITHUB_REF" == "refs/heads/feature/bridge-admin-foundation-20261106" ]]; then
+            EXPECTED_ID=it.freept.bridge
+          else
+            EXPECTED_ID=it.freept.app
+          fi
+          grep -Fq "package: name='$EXPECTED_ID'" android-apk-info.txt
+          echo "Verified application ID: $EXPECTED_ID"
           sha256sum "$APK" | tee android-apk-sha256.txt
       - name: Upload APK verification report
         uses: actions/upload-artifact@v4
