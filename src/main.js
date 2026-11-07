@@ -44,7 +44,12 @@ function configureFileInput(input){
 async function unlockAdmin(){
   if(adminUnlocked)return true;
   if(adminUnlocking)return false;
-  if(!Capacitor.isNativePlatform())return true; // Lo sblocco nativo funziona soltanto nell'APK.
+  if(!Capacitor.isNativePlatform()){
+    // Browser admin login was verified by Supabase; no native biometrics here.
+    // Keep the UI lock state consistent with the successful authentication.
+    adminUnlocked=true;
+    return true;
+  }
   adminUnlocking=true;
   try{
     const available=await NativeBiometric.isAvailable();
