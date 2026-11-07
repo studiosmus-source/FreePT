@@ -88,7 +88,7 @@ test('server-only composition completes admin enqueue and authenticated TX job',
   assert.equal(status.body.state,'done');
   assert.ok(f.requests.some(x=>x.name==='bridge_server_assert_tx_session'));
   const opened=f.requests.find(x=>x.name==='bridge_server_open_tx_session');
-  const digest=createHash('sha256').update('freept-bridge-session-v1\\0')
+  const digest=createHash('sha256').update('freept-bridge-session-v1\0')
     .update(connected.body.token).digest('hex');
   assert.equal(opened.args.p_token_hash_hex,digest);
   assert.equal(JSON.stringify(f.requests).includes(connected.body.token),false);
