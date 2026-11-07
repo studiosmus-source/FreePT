@@ -55,11 +55,31 @@ jobs:
               raise SystemExit('Bridge test Supabase publishable key missing or invalid')
           print('Bridge test Supabase configuration present; production project rejected')
           PY
+      - name: Validate optional experimental HTTPS Bridge backend endpoint
+        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        env:
+          VITE_BRIDGE_TEST_API_URL: ${{ vars.FREEPT_BRIDGE_TEST_API_URL }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          value=os.environ.get('VITE_BRIDGE_TEST_API_URL','')
+          if not value:
+              print('No external Bridge endpoint configured: admin stays read-only')
+          else:
+              url=urlparse(value)
+              if (url.scheme!='https' or not url.hostname or url.hostname=='cpopqsvzzxfjgnlawlvc.supabase.co' or
+                  url.username or url.password or url.port or url.path not in ('','/') or
+                  url.query or url.fragment):
+                  raise SystemExit('Unsafe Bridge test endpoint refused')
+              print('Optional HTTPS Bridge test endpoint validated')
+          PY
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
         env:
           VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
+          VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_API_URL || '' }}
         run: |
           set -euo pipefail
           echo "Node: $(node --version) / npm: $(npm --version)"
