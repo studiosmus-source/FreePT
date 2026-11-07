@@ -19,6 +19,11 @@ function fixture() {
     }
     if(name==='bridge_server_assert_tx_session')
       return {data:args.p_token_hash_hex===sessionHash?sessionHash:null,error:null};
+    if(name==='bridge_server_close_tx_session'){
+      const matched=args.p_token_hash_hex===sessionHash;
+      if(matched)sessionHash=null;
+      return {data:matched,error:null};
+    }
     if(name==='bridge_server_claim_list'){state='sent';return {data:JOB,error:null};}
     if(name==='bridge_server_complete_list'){state='done';return {data:true,error:null};}
     if(name==='bridge_server_job_status')
@@ -91,4 +96,42 @@ test('server-only request wiring rejects absent trusted adapters',()=>{
     rpcClient:{rpc(){}},authenticateAdmin:()=>null,authenticateDevice:()=>null,
     newJobId:null
   }),/invalid_bridge_request_dependencies/);
+});
+
+test('TX disconnect revokes the active session and blocks later polling over local HTTP',async t=>{
+  const f=fixture();
+  const server=createBridgeLoopbackTestServer({
+    handler:f.handlers.admin,txHandler:f.handlers.tx
+  });
+  const url=await server.start();
+  t.after(()=>server.stop());
+  const login=await post(url,'/bridge/tx/connect',{
+    deviceId:DEVICE,deviceSecret:SECRET
+  });
+  assert.equal(login.status,200);
+  const token=login.body.token;
+  const disconnect=await post(url,'/bridge/tx/disconnect',{
+    deviceId:DEVICE,sessionToken:token
+  });
+  assert.equal(disconnect.status,200);
+  assert.deepEqual(disconnect.body,{closed:true});
+  assert.ok(f.calls.includes('bridge_server_close_tx_session'));
+  const stale=await post(url,'/bridge/tx/poll',{
+    deviceId:DEVICE,sessionToken:token
+  });
+  assert.equal(stale.status,403);
+  const repeated=await post(url,'/bridge/tx/disconnect',{
+    deviceId:DEVICE,sessionToken:token
+  });
+  assert.equal(repeated.status,403);
+  assert.equal(JSON.stringify(disconnect.body).includes(token),false);
+});
+
+test('TX disconnect refuses wrong authenticated session',async()=>{
+  const f=fixture();
+  const wrong=await f.handlers.tx({
+    method:'POST',path:'/bridge/tx/disconnect',
+    body:{deviceId:DEVICE,sessionToken:'a'.repeat(64)}
+  });
+  assert.equal(wrong.status,403);
 });
