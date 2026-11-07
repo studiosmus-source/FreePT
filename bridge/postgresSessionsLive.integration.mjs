@@ -4,6 +4,9 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createPostgresDeviceAuthenticator} from './postgresDeviceAuth.mjs';
 import {createBridgePostgresService} from './postgresBridgeService.mjs';
+import {createBridgeAdminRequestHandler} from './adminRequestHandler.mjs';
+import {createBridgeTxRequestHandler} from './txRequestHandler.mjs';
+import {createBridgeLoopbackTestServer} from './loopbackHttp.mjs';
 
 // Test-only allowlisted SQL bridge, never used outside disposable CI.
 const D='cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
@@ -12,6 +15,7 @@ const ADMIN='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const JOB='91919191-9191-4191-8191-919191919191';
 const NEXT='92929292-9292-4292-8292-929292929292';
 const CANCEL='93939393-9393-4393-8393-939393939393';
+const HTTP_JOB='94949494-9494-4494-8494-949494949494';
 const SECRET='e'.repeat(64),SALT='b'.repeat(32);
 const VERIFIER=createHash('sha256').update('freept-bridge-device-v1\0')
   .update(D).update('\0').update(SALT).update(SECRET).digest('hex');
@@ -91,7 +95,8 @@ test('Composed Bridge backend exercises persistent sessions and jobs against Pos
  }};
  const authenticateDevice=createPostgresDeviceAuthenticator({verifiersClient});
  const bridge=createBridgePostgresService({
-   rpcClient,authenticateDevice,authenticateAdmin:async ctx=>ctx==='verified-admin'?
+   rpcClient,authenticateDevice,authenticateAdmin:async ctx=>
+     (ctx==='verified-admin'||ctx?.accessToken==='verified-admin')?
      {id:ADMIN,role:'admin',approved:true}:null
  });
  const a=await bridge.connectDevice({deviceId:D,deviceSecret:SECRET});
@@ -113,6 +118,47 @@ test('Composed Bridge backend exercises persistent sessions and jobs against Pos
  assert.equal((await bridge.cancelRequest({authContext:'verified-admin',jobId:CANCEL})).state,'cancelled');
  assert.equal((await bridge.getRequestStatus({authContext:'verified-admin',jobId:CANCEL})).state,'cancelled');
  assert.equal(await bridge.pollDevice({deviceId:D,sessionToken:b.token}),null);
+ // Real PostgreSQL, through local HTTP routes and shared backend service.
+ // This listener binds only loopback; there is no deployable public endpoint.
+ const handlers={
+   admin:createBridgeAdminRequestHandler({service:bridge,newJobId:()=>HTTP_JOB}),
+   tx:createBridgeTxRequestHandler({service:bridge})
+ };
+ const http=createBridgeLoopbackTestServer({
+   handler:handlers.admin,txHandler:handlers.tx
+ });
+ const url=await http.start();
+ try {
+   const post=async (path,body,token=null)=>{
+     const headers={'content-type':'application/json'};
+     if(token)headers.authorization='Bearer '+token;
+     const response=await fetch(url+path,{
+       method:'POST',headers,body:JSON.stringify(body)
+     });
+     return {status:response.status,body:await response.json()};
+   };
+   const refused=await post('/bridge/admin/list',{deviceId:D});
+   assert.equal(refused.status,401);
+   const queued=await post('/bridge/admin/list',{deviceId:D},'verified-admin');
+   assert.equal(queued.status,202);
+   assert.equal(queued.body.jobId,HTTP_JOB);
+   const polled=await post('/bridge/tx/poll',{
+     deviceId:D,sessionToken:b.token
+   });
+   assert.equal(polled.status,200);
+   assert.equal(polled.body.job.jobId,HTTP_JOB);
+   const completed=await post('/bridge/tx/complete',{
+     deviceId:D,sessionToken:b.token,jobId:HTTP_JOB
+   });
+   assert.equal(completed.status,200);
+   assert.equal(completed.body.state,'done');
+   const status=await post('/bridge/admin/status',{jobId:HTTP_JOB},'verified-admin');
+   assert.equal(status.status,200);
+   assert.equal(status.body.state,'done');
+   assert.equal(await query(`select state from public.bridge_jobs where id='${HTTP_JOB}'`),'done');
+ } finally {
+   await http.stop();
+ }
  assert.equal(await bridge.closeDeviceSession({deviceId:D,token:b.token}),true);
  await assert.rejects(()=>bridge.pollDevice({
    deviceId:D,sessionToken:b.token
