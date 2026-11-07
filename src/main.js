@@ -233,12 +233,21 @@ function closeAdminOverlays(){
 async function loadAdminBridgeDevices(panel){
   const content=panel.querySelector('#bridgeAdminContent');
   if(!content || !panel.isConnected || profile?.role!=='admin' || !adminUnlocked)return;
+  // Each tab refresh invalidates older responses so stale data cannot
+  // overwrite a newer view after slow network calls.
+  const revision=panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
   content.textContent='Caricamento dispositivi autorizzati…';
   // RLS only exposes devices this approved account may read.
   // No service-role credential, device presence claim or direct mutation.
-  const {data,error}=await db.from('bridge_devices')
-    .select('id,label,bridge_enabled').order('label',{ascending:true}).limit(100);
-  if(!panel.isConnected || profile?.role!=='admin' || !adminUnlocked ||
+  let data,error;
+  try {
+    ({data,error}=await db.from('bridge_devices')
+      .select('id,label,bridge_enabled').order('label',{ascending:true}).limit(100));
+  } catch {
+    error={code:'bridge_network_unavailable'};
+  }
+  if(!panel.isConnected || panel.bridgeLoadRevision!==revision ||
+      profile?.role!=='admin' || !adminUnlocked ||
       panel.querySelector('[data-bridge-view="approvals"]')?.getAttribute('aria-pressed')!=='true')return;
   if(error){
     const missing=/42P01|PGRST205|PGRST204|does not exist|schema cache/i.test(
@@ -276,7 +285,10 @@ function showAdminBridge(){
     const content=panel.querySelector('#bridgeAdminContent');
     panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.bridgeView===view)));
     if(view==='approvals')void loadAdminBridgeDevices(panel);
-    else content.textContent='La consultazione dei file richiede un collegamento Bridge autorizzato e verificato dal backend. Non è ancora disponibile.';
+    else {
+      panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
+      content.textContent='La consultazione dei file richiede un collegamento Bridge autorizzato e verificato dal backend. Non è ancora disponibile.';
+    }
   };
   panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.onclick=()=>show(b.dataset.bridgeView));
   panel.querySelector('#closeAdminBridge').onclick=()=>panel.remove();
