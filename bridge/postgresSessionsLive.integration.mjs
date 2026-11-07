@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {createPostgresDeviceAuthenticator} from './postgresDeviceAuth.mjs';
 import {BridgePostgresTxSessions} from './postgresTxSessions.mjs';
 import {BridgePostgresJobsAdapter} from './postgresJobsAdapter.mjs';
 
@@ -10,7 +12,9 @@ const OWNER='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ADMIN='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const JOB='91919191-9191-4191-8191-919191919191';
 const NEXT='92929292-9292-4292-8292-929292929292';
-const SECRET='e'.repeat(64),VERIFIER='a'.repeat(64),SALT='b'.repeat(32);
+const SECRET='e'.repeat(64),SALT='b'.repeat(32);
+const VERIFIER=createHash('sha256').update('freept-bridge-device-v1\0')
+  .update(D).update('\0').update(SALT).update(SECRET).digest('hex');
 const HEX=/^[0-9a-f]{64}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const commands={
@@ -64,8 +68,24 @@ test('Node shared TX session and jobs adapter use same PostgreSQL authority',asy
   select set_config('request.jwt.claim.sub','${OWNER}',false);
   select public.bridge_owner_grant('${D}','${ADMIN}');
   select public.bridge_owner_set_enabled('${D}',true);`);
- const authenticateDevice=async ({deviceId,deviceSecret})=>
-   deviceId===D&&deviceSecret===SECRET?{verifierHex:VERIFIER}:null;
+ // This fixture reads the real persisted row, not a hardcoded auth result.
+ const verifiersClient={from(table){
+   if(table!=='bridge_device_verifiers')throw Error('unknown_table');
+   return {select(columns){
+     if(columns!=='device_id,salt_hex,verifier_hex')throw Error('unknown_columns');
+     return {eq(key,id){
+       if(key!=='device_id'||!UUID.test(id))throw Error('invalid_identity');
+       return {async maybeSingle(){
+         const result=await query(
+           "select device_id::text||'|'||salt_hex||'|'||verifier_hex from public.bridge_device_verifiers where device_id='"+id+"';");
+         if(!result)return {data:null,error:null};
+         const [device_id,salt_hex,verifier_hex]=result.split('|');
+         return {data:{device_id,salt_hex,verifier_hex},error:null};
+       }};
+     }};
+   }};
+ }};
+ const authenticateDevice=createPostgresDeviceAuthenticator({verifiersClient});
  const sessions=new BridgePostgresTxSessions({rpcClient,authenticateDevice});
  const jobs=new BridgePostgresJobsAdapter({
    rpcClient,sessions,authenticateAdmin:async ctx=>ctx==='verified-admin'?
