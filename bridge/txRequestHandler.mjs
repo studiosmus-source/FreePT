@@ -82,7 +82,8 @@ export function createBridgeTxRequestHandler({
       sweep(time);
       if (blocked(body.deviceId,time) || connectingDevices.has(body.deviceId))
         return fail(429,'tx_rate_limited');
-      if (!failures.has(body.deviceId) && failures.size >= maxTrackedDevices)
+      if (!failures.has(body.deviceId) &&
+          failures.size + connectingDevices.size >= maxTrackedDevices)
         return fail(429,'tx_rate_limited');
       connectingDevices.add(body.deviceId);
     }
