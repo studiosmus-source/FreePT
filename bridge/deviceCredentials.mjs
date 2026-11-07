@@ -28,6 +28,21 @@ function digest(deviceId, salt, secret) {
     .digest();
 }
 
+/**
+ * Verify a device bearer secret against a trusted backend-loaded verifier.
+ * Uses the exact same KDF as BridgeDeviceCredentials; do not fork the hash
+ * algorithm for Postgres. Never pass untrusted verifier records into this.
+ */
+export function verifyTrustedDeviceSecret({deviceId,secret,salt,verifier}) {
+  if(typeof deviceId!=='string'||!deviceId||deviceId.length>128||
+      typeof secret!=='string'||!HEX_64.test(secret)||
+      typeof salt!=='string'||!HEX_32.test(salt)||
+      typeof verifier!=='string'||!HEX_64.test(verifier)) return false;
+  const supplied=Buffer.from(verifier,'hex');
+  const candidate=digest(deviceId,salt,secret);
+  return timingSafeEqual(supplied,candidate);
+}
+
 /** In-memory test fixture; use a transactional persistent backend in production. */
 export class BridgeDeviceCredentials {
   #verifiers = new Map();
