@@ -31,6 +31,9 @@ export function createBridgeTxRequestHandler({
       !Number.isSafeInteger(maxTrackedDevices) || maxTrackedDevices < 1)
     throw new Error('invalid_tx_rate_limits');
   const failures = new Map();
+  // Serialize login attempts per device: parallel requests must not bypass
+  // the failed-attempt counter while device authentication is pending.
+  const connectingDevices = new Set();
   function sweep(time) {
     for (const [id, state] of failures) {
       if (time >= state.until && time >= state.start + windowMs)
@@ -77,9 +80,11 @@ export function createBridgeTxRequestHandler({
     if (connecting) {
       const time = now();
       sweep(time);
-      if (blocked(body.deviceId,time)) return fail(429,'tx_rate_limited');
+      if (blocked(body.deviceId,time) || connectingDevices.has(body.deviceId))
+        return fail(429,'tx_rate_limited');
       if (!failures.has(body.deviceId) && failures.size >= maxTrackedDevices)
         return fail(429,'tx_rate_limited');
+      connectingDevices.add(body.deviceId);
     }
     try {
       if (connecting) {
@@ -106,6 +111,8 @@ export function createBridgeTxRequestHandler({
       // Do not disclose whether a device exists or its consent/credential state.
       if (connecting) failed(body.deviceId,now());
       return fail(403,'tx_denied');
+    } finally {
+      if (connecting) connectingDevices.delete(body.deviceId);
     }
   };
 }
