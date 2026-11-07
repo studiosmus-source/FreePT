@@ -11,6 +11,7 @@ const OWNER='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ADMIN='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const JOB='91919191-9191-4191-8191-919191919191';
 const NEXT='92929292-9292-4292-8292-929292929292';
+const CANCEL='93939393-9393-4393-8393-939393939393';
 const SECRET='e'.repeat(64),SALT='b'.repeat(32);
 const VERIFIER=createHash('sha256').update('freept-bridge-device-v1\0')
   .update(D).update('\0').update(SALT).update(SECRET).digest('hex');
@@ -22,7 +23,9 @@ const commands={
  bridge_server_close_tx_session:['p_device_id','p_token_hash_hex'],
  bridge_server_enqueue_list:['p_job_id','p_device_id','p_receiver_id'],
  bridge_server_claim_list:['p_device_id','p_session_binding_hex'],
- bridge_server_complete_list:['p_job_id','p_device_id','p_session_binding_hex']
+ bridge_server_complete_list:['p_job_id','p_device_id','p_session_binding_hex'],
+ bridge_server_job_status:['p_job_id','p_receiver_id'],
+ bridge_server_cancel_job:['p_job_id','p_receiver_id']
 };
 function query(sql,vars={}) {
  return new Promise((resolve,reject)=>{
@@ -54,11 +57,13 @@ const rpcClient={async rpc(name,args){
  try {
    const raw=await query(sql,args);
    if(raw==='__EMPTY__')return {data:null,error:null};
-   const data=raw==='true'||raw==='t'?true:raw==='false'||raw==='f'?false:raw;
+   const data=raw==='true'||raw==='t'?true:raw==='false'||raw==='f'?false:
+     (name==='bridge_server_job_status'||name==='bridge_server_cancel_job')?
+       JSON.parse(raw):raw;
    return {data,error:null};
  } catch {return {data:null,error:{code:'db_rejected'}};}
 }};
-test('Node shared TX session and jobs adapter use same PostgreSQL authority',async ()=>{
+test('Composed Bridge backend exercises persistent sessions and jobs against PostgreSQL',async ()=>{
  if(process.env.PGDATABASE!=='bridge_test')throw Error('disposable_db_only');
  await query(`insert into public.bridge_devices(id,owner_id,label) values
   ('${D}','${OWNER}','TX persistent CI');
@@ -103,6 +108,11 @@ test('Node shared TX session and jobs adapter use same PostgreSQL authority',asy
  assert.equal((await bridge.completeDevice({
    deviceId:D,sessionToken:b.token,jobId:NEXT
  })).state,'done');
+ await bridge.requestList({authContext:'verified-admin',deviceId:D,jobId:CANCEL});
+ assert.equal((await bridge.getRequestStatus({authContext:'verified-admin',jobId:CANCEL})).state,'queued');
+ assert.equal((await bridge.cancelRequest({authContext:'verified-admin',jobId:CANCEL})).state,'cancelled');
+ assert.equal((await bridge.getRequestStatus({authContext:'verified-admin',jobId:CANCEL})).state,'cancelled');
+ assert.equal(await bridge.pollDevice({deviceId:D,sessionToken:b.token}),null);
  assert.equal(await bridge.closeDeviceSession({deviceId:D,token:b.token}),true);
  await assert.rejects(()=>bridge.pollDevice({
    deviceId:D,sessionToken:b.token
