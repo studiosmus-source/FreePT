@@ -111,4 +111,21 @@ test('Node shared TX session and jobs adapter use same PostgreSQL authority',asy
  }),/bridge_session_database_unavailable/);
  await assert.rejects(()=>sessions.connect({deviceId:D,deviceSecret:'f'.repeat(64)}),
    /device_not_authenticated/);
+ // Rotation uses the same canonical device KDF and a real committed database
+ // update. It must invalidate both an active session and the previous secret.
+ const active=await sessions.connect({deviceId:D,deviceSecret:SECRET});
+ const rotatedSecret='f'.repeat(64), rotatedSalt='c'.repeat(32);
+ const rotatedVerifier=createHash('sha256').update('freept-bridge-device-v1\0')
+   .update(D).update('\0').update(rotatedSalt).update(rotatedSecret).digest('hex');
+ await query(`update public.bridge_device_verifiers set
+   salt_hex='${rotatedSalt}',verifier_hex='${rotatedVerifier}',
+   rotated_at=clock_timestamp() where device_id='${D}';`);
+ await assert.rejects(()=>sessions.getDispatchBinding({
+   deviceId:D,token:active.token
+ }),/bridge_session_database_unavailable/);
+ await assert.rejects(()=>sessions.connect({deviceId:D,deviceSecret:SECRET}),
+   /device_not_authenticated/);
+ const rotated=await sessions.connect({deviceId:D,deviceSecret:rotatedSecret});
+ assert.equal(rotated.token.length,64);
+ assert.equal(await sessions.close({deviceId:D,token:rotated.token}),true);
 });
