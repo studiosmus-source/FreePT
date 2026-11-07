@@ -91,3 +91,5 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_job_session_fence.sql
       - name: Assert atomic TX session fencing for real database jobs
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-atomic-session-jobs.sql
+      - name: Verify Node shared sessions and persistent jobs together
+        run: node --test bridge/postgresSessionsLive.integration.mjs
