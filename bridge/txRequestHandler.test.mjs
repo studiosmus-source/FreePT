@@ -186,3 +186,56 @@ test('invalid rate-limit options fail before request handling',()=>{
     service:f.service,maxTrackedDevices:0
   }),/invalid_tx_rate_limits/);
 });
+
+test('simultaneous TX logins for one device are serialized and counted',async()=>{
+  let resolveAttempt;
+  let authenticateCalls=0;
+  const service={
+    connectDevice:()=>{authenticateCalls++;return new Promise((resolve,reject)=>{
+      resolveAttempt=()=>reject(Error('invalid_credentials'));
+    });},
+    pollDevice:async()=>null,
+    completeDevice:async()=>null
+  };
+  const tx=createBridgeTxRequestHandler({
+    service,maxFailures:1,windowMs:60000,cooldownMs:60000
+  });
+  const req=()=>tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:A,deviceSecret:'a'.repeat(64)}});
+  const first=req();
+  const parallel=await req();
+  assert.equal(parallel.status,429);
+  assert.equal(authenticateCalls,1);
+  resolveAttempt();
+  assert.equal((await first).status,403);
+  assert.equal((await req()).status,429);
+  assert.equal(authenticateCalls,1);
+});
+
+test('TX login serialization releases lock on success and allows another device',async()=>{
+  let release;
+  const calls=[];
+  const service={
+    connectDevice:({deviceId})=>{
+      calls.push(deviceId);
+      if(deviceId===A)return new Promise(resolve=>{release=()=>resolve({token:'x'.repeat(64)})});
+      return Promise.resolve({token:'y'.repeat(64)});
+    },
+    pollDevice:async()=>null,completeDevice:async()=>null
+  };
+  const tx=createBridgeTxRequestHandler({service});
+  const request=deviceId=>tx({
+    method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId,deviceSecret:'a'.repeat(64)}
+  });
+  const first=request(A);
+  assert.equal((await request(A)).status,429);
+  assert.equal((await request(B)).status,200);
+  release();
+  assert.equal((await first).status,200);
+  const again=request(A);
+  assert.equal((await request(A)).status,429);
+  release();
+  assert.equal((await again).status,200);
+  assert.deepEqual(calls,[A,B,A]);
+});
