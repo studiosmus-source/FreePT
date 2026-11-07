@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createPostgresDeviceAuthenticator} from './postgresDeviceAuth.mjs';
-import {BridgePostgresTxSessions} from './postgresTxSessions.mjs';
-import {BridgePostgresJobsAdapter} from './postgresJobsAdapter.mjs';
+import {createBridgePostgresService} from './postgresBridgeService.mjs';
 
 // Test-only allowlisted SQL bridge, never used outside disposable CI.
 const D='cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
@@ -86,46 +85,45 @@ test('Node shared TX session and jobs adapter use same PostgreSQL authority',asy
    }};
  }};
  const authenticateDevice=createPostgresDeviceAuthenticator({verifiersClient});
- const sessions=new BridgePostgresTxSessions({rpcClient,authenticateDevice});
- const jobs=new BridgePostgresJobsAdapter({
-   rpcClient,sessions,authenticateAdmin:async ctx=>ctx==='verified-admin'?
+ const bridge=createBridgePostgresService({
+   rpcClient,authenticateDevice,authenticateAdmin:async ctx=>ctx==='verified-admin'?
      {id:ADMIN,role:'admin',approved:true}:null
  });
- const a=await sessions.connect({deviceId:D,deviceSecret:SECRET});
+ const a=await bridge.connectDevice({deviceId:D,deviceSecret:SECRET});
  assert.equal(a.token.length,64);
- await jobs.requestList({authContext:'verified-admin',deviceId:D,jobId:JOB});
- assert.equal((await jobs.pollDevice({deviceId:D,sessionToken:a.token})).jobId,JOB);
- const b=await sessions.connect({deviceId:D,deviceSecret:SECRET});
- await assert.rejects(()=>jobs.completeDevice({
+ await bridge.requestList({authContext:'verified-admin',deviceId:D,jobId:JOB});
+ assert.equal((await bridge.pollDevice({deviceId:D,sessionToken:a.token})).jobId,JOB);
+ const b=await bridge.connectDevice({deviceId:D,deviceSecret:SECRET});
+ await assert.rejects(()=>bridge.completeDevice({
    deviceId:D,sessionToken:a.token,jobId:JOB
  }),/bridge_session_database_unavailable/);
  assert.equal(await query(`select state from public.bridge_jobs where id='${JOB}'`),'cancelled');
- await jobs.requestList({authContext:'verified-admin',deviceId:D,jobId:NEXT});
- assert.equal((await jobs.pollDevice({deviceId:D,sessionToken:b.token})).jobId,NEXT);
- assert.equal((await jobs.completeDevice({
+ await bridge.requestList({authContext:'verified-admin',deviceId:D,jobId:NEXT});
+ assert.equal((await bridge.pollDevice({deviceId:D,sessionToken:b.token})).jobId,NEXT);
+ assert.equal((await bridge.completeDevice({
    deviceId:D,sessionToken:b.token,jobId:NEXT
  })).state,'done');
- assert.equal(await sessions.close({deviceId:D,token:b.token}),true);
- await assert.rejects(()=>jobs.pollDevice({
+ assert.equal(await bridge.closeDeviceSession({deviceId:D,token:b.token}),true);
+ await assert.rejects(()=>bridge.pollDevice({
    deviceId:D,sessionToken:b.token
  }),/bridge_session_database_unavailable/);
- await assert.rejects(()=>sessions.connect({deviceId:D,deviceSecret:'f'.repeat(64)}),
+ await assert.rejects(()=>bridge.connectDevice({deviceId:D,deviceSecret:'f'.repeat(64)}),
    /device_not_authenticated/);
  // Rotation uses the same canonical device KDF and a real committed database
  // update. It must invalidate both an active session and the previous secret.
- const active=await sessions.connect({deviceId:D,deviceSecret:SECRET});
+ const active=await bridge.connectDevice({deviceId:D,deviceSecret:SECRET});
  const rotatedSecret='f'.repeat(64), rotatedSalt='c'.repeat(32);
  const rotatedVerifier=createHash('sha256').update('freept-bridge-device-v1\0')
    .update(D).update('\0').update(rotatedSalt).update(rotatedSecret).digest('hex');
  await query(`update public.bridge_device_verifiers set
    salt_hex='${rotatedSalt}',verifier_hex='${rotatedVerifier}',
    rotated_at=clock_timestamp() where device_id='${D}';`);
- await assert.rejects(()=>sessions.getDispatchBinding({
-   deviceId:D,token:active.token
+ await assert.rejects(()=>bridge.pollDevice({
+   deviceId:D,sessionToken:active.token
  }),/bridge_session_database_unavailable/);
- await assert.rejects(()=>sessions.connect({deviceId:D,deviceSecret:SECRET}),
+ await assert.rejects(()=>bridge.connectDevice({deviceId:D,deviceSecret:SECRET}),
    /device_not_authenticated/);
- const rotated=await sessions.connect({deviceId:D,deviceSecret:rotatedSecret});
+ const rotated=await bridge.connectDevice({deviceId:D,deviceSecret:rotatedSecret});
  assert.equal(rotated.token.length,64);
- assert.equal(await sessions.close({deviceId:D,token:rotated.token}),true);
+ assert.equal(await bridge.closeDeviceSession({deviceId:D,token:rotated.token}),true);
 });
