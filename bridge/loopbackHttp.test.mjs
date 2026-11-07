@@ -73,8 +73,10 @@ test('loopback rejects unapproved role, invalid bearer and wrong JSON',async t=>
   assert.equal((await post(url,'/bridge/admin/list',{deviceId:DEVICE},'b'.repeat(32))).status,403);
   const invalid=await fetch(url+'/bridge/admin/list',{method:'POST',headers:{'content-type':'application/json'},body:'{'});
   assert.equal(invalid.status,400);
+  assert.deepEqual(await invalid.json(),{error:'invalid_json'});
   const noType=await fetch(url+'/bridge/admin/list',{method:'POST',body:'{}'});
-  assert.equal(noType.status,400);
+  assert.equal(noType.status,415);
+  assert.deepEqual(await noType.json(),{error:'unsupported_media_type'});
 });
 
 test('loopback blocks unsupported routes, methods and oversized bodies',async t=>{
@@ -82,7 +84,15 @@ test('loopback blocks unsupported routes, methods and oversized bodies',async t=
   const url=await srv.start();t.after(()=>srv.stop());
   assert.equal((await fetch(url+'/bridge/admin/list')).status,405);
   assert.equal((await post(url,'/bridge/admin/read',{deviceId:DEVICE})).status,404);
-  assert.equal((await post(url,'/bridge/admin/list',{deviceId:DEVICE,padding:'x'.repeat(2200)})).status,400);
+  const oversized=await post(url,'/bridge/admin/list',{deviceId:DEVICE,padding:'x'.repeat(2200)});
+  assert.equal(oversized.status,413);
+  assert.deepEqual(oversized.body,{error:'payload_too_large'});
+  const exactLimit=await fetch(url+'/bridge/admin/list',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:' '.repeat(2048)
+  });
+  assert.equal(exactLimit.status,400);
+  assert.deepEqual(await exactLimit.json(),{error:'invalid_json'});
 });
 
 test('loopback does not expose a public bind address or fixed port',async t=>{
