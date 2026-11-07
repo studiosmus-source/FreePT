@@ -72,6 +72,7 @@ function phoneNorm(s){ return s.replace(/[\s().-]/g,''); }
 function heading(t,extra=''){return '<header class="top"><h1>'+esc(t)+'</h1>'+extra+'</header>'}
 
 function requestScreen(denied=false){
+  closeAdminOverlays();
   selected=null; messageRequest++;
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
   '<button type="button" id="adminAccess" class="admin-entry">Accesso amministratore</button>'+
@@ -107,6 +108,7 @@ function requestScreen(denied=false){
   };
 }
 function adminScreen(){
+  closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
   '<form id="adminForm" class="form"><input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required>'+
   '<input type="password" name="password" autocomplete="current-password" placeholder="Password" required>'+
@@ -132,6 +134,7 @@ function adminScreen(){
   };
 }
 function waitingScreen(){
+  closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiesta inviata</h2>'+
   '<p class="notice waiting-copy">I nostri sistemi stanno elaborando la tua richiesta di accesso… Attendere.</p>'+
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
@@ -174,7 +177,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){closeAdminOverlays();adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -222,6 +225,11 @@ async function refreshOnVisible(){
   }
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
 }
+function closeAdminOverlays(){
+  document.getElementById('adminBridgePanel')?.remove();
+  document.getElementById('chatActions')?.remove();
+}
+
 function showAdminBridge(){
   if(profile?.role!=='admin'||!adminUnlocked)return;
   document.getElementById('adminBridgePanel')?.remove();
@@ -246,6 +254,7 @@ function showAdminBridge(){
 }
 
 function renderLayout(){
+  closeAdminOverlays();
   const admin=profile.role==='admin';
   el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button type="button" id="adminBridge">Bridge</button><button id="logout">Esci</button>':'')+
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
@@ -482,6 +491,7 @@ document.addEventListener('visibilitychange',()=>{
     filePickerClearTimer=setTimeout(finishFilePicker,1800);
   }
   if(document.visibilityState==='hidden'&&profile?.role==='admin'&&Capacitor.isNativePlatform()&&!filePickerActive){
+    closeAdminOverlays();
     adminUnlocked=false;
     if(sub){db.removeChannel(sub);sub=null}
     selected=null;messageRequest++;
