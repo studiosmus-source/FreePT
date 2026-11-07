@@ -8,6 +8,13 @@
 import { createServer } from 'node:http';
 
 const MAX_BYTES = 2048;
+class RequestBodyError extends Error {
+  constructor(status, code) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
+}
 function reply(res, status, body) {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -18,18 +25,22 @@ function reply(res, status, body) {
 }
 async function parseBody(req) {
   if (req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json')
-    throw new Error('invalid_content_type');
+    throw new RequestBodyError(415, 'unsupported_media_type');
+  const contentLength = req.headers['content-length'];
+  if (contentLength !== undefined && (/^\d+$/.test(contentLength) === false ||
+      Number(contentLength) > MAX_BYTES))
+    throw new RequestBodyError(413, 'payload_too_large');
   const buffers = [];
   let bytes = 0;
   for await (const part of req) {
     bytes += part.length;
-    if (bytes > MAX_BYTES) throw new Error('payload_too_large');
+    if (bytes > MAX_BYTES) throw new RequestBodyError(413, 'payload_too_large');
     buffers.push(part);
   }
   try {
     return JSON.parse(Buffer.concat(buffers).toString('utf8'));
   } catch {
-    throw new Error('invalid_json');
+    throw new RequestBodyError(400, 'invalid_json');
   }
 }
 export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
@@ -55,8 +66,9 @@ export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
         headers:{authorization:req.headers.authorization}, body
       });
       reply(res, response.status, response.body);
-    } catch {
-      reply(res, 400, {error:'invalid_request'});
+    } catch (error) {
+      reply(res, error instanceof RequestBodyError ? error.status : 400,
+        {error: error instanceof RequestBodyError ? error.code : 'invalid_request'});
     }
   });
   return {
