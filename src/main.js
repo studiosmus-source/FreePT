@@ -12,6 +12,9 @@ const db = createClient(URL, KEY, { auth: { persistSession: true, autoRefreshTok
 const bridgeClient=createBridgeAdminClient({
   baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,auth:db.auth
 });
+// Session-only metadata for jobs already submitted; never persist credentials.
+const bridgePendingJobs=new Map();
+let bridgePendingOwnerId=null;
 const el = document.getElementById('app');
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
 let messageRequest = 0;
@@ -182,7 +185,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){closeAdminOverlays();adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){closeAdminOverlays();bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -208,7 +211,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -282,13 +285,17 @@ async function loadAdminBridgeDevices(panel){
     (data.length===100?'<p>Visualizzati i primi 100 dispositivi autorizzati.</p>':'');
   if(bridgeClient)content.querySelectorAll('[data-bridge-request]').forEach(button=>{
     button.onclick=()=>void requestAdminBridgeList(panel,button);
+    const saved=bridgePendingJobs.get(me.id+':'+button.dataset.bridgeRequest);
+    if(saved)void requestAdminBridgeList(panel,button,saved);
   });
 }
 
-async function requestAdminBridgeList(panel,button){
+async function requestAdminBridgeList(panel,button,existingJob=null){
   if(!bridgeClient||!panel.isConnected||profile?.role!=='admin'||
      !adminUnlocked||!me||button.disabled)return;
   const deviceId=button.dataset.bridgeRequest;
+  const ownerId=me.id;
+  const jobKey=ownerId+':'+deviceId;
   const row=button.parentElement;
   // One pending request per visible device; no duplicate submit on rapid taps.
   row.querySelectorAll('.bridge-job-controls, .bridge-job-status').forEach(el=>el.remove());
@@ -301,7 +308,9 @@ async function requestAdminBridgeList(panel,button){
   const stillAuthorized=()=>panel.isConnected&&row.isConnected&&
     profile?.role==='admin'&&adminUnlocked&&!!me;
   try{
-    const job=await bridgeClient.requestList(deviceId);
+    const job=existingJob||await bridgeClient.requestList(deviceId);
+    if(bridgePendingOwnerId===ownerId && me?.id===ownerId)
+      bridgePendingJobs.set(jobKey,job);
     if(!stillAuthorized())return;
     const controls=document.createElement('span');
     controls.className='bridge-job-controls';
@@ -323,6 +332,7 @@ async function requestAdminBridgeList(panel,button){
       statusButton.disabled=inFlight||terminal;
       cancelButton.disabled=inFlight||terminal;
       button.disabled=!terminal;
+      if(terminal)bridgePendingJobs.delete(jobKey);
     };
     statusButton.onclick=async()=>{
       if(!stillAuthorized()||inFlight)return;
@@ -332,6 +342,7 @@ async function requestAdminBridgeList(panel,button){
         const updated=await bridgeClient.getStatus(job.jobId);
         if(!stillAuthorized())return;
         state=updated.state;
+        bridgePendingJobs.set(jobKey,{...job,state});
         message='';
         render();
       }catch{
@@ -349,6 +360,8 @@ async function requestAdminBridgeList(panel,button){
         const updated=await bridgeClient.cancel(job.jobId);
         if(!stillAuthorized())return;
         state=updated.state;
+        bridgePendingJobs.set(jobKey,{...job,state});
+        message='';
         render();
       }catch{
         message='Impossibile annullare: controlla lo stato.';
