@@ -1,4 +1,4 @@
-import {validateBridgeFolderPage} from '../src/bridgeFileProtocol.js';
+import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from '../src/bridgeFileProtocol.js';
 /**
  * Backend-only adapter for staging PostgreSQL job RPCs.
  * Caller MUST supply a server-owned service-role RPC client. Never import
@@ -48,6 +48,19 @@ export class BridgePostgresJobsAdapter {
     return {jobId,deviceId,state:'queued'};
   }
 
+  async requestRead({authContext,deviceId,jobId,handle,offset,length}) {
+    requireId(deviceId);requireId(jobId);
+    const request=validateBridgeReadRequest({handle,offset,length});
+    if(length>32768)throw Error('bridge_read_chunk_limit');
+    const receiverId=await this.#requireAdminId(authContext);
+    const data=await this.#rpc('bridge_server_enqueue_read',{
+      p_job_id:jobId,p_device_id:deviceId,p_receiver_id:receiverId,
+      p_handle:request.handle,p_offset:request.offset,p_length:request.length
+    });
+    if(data!==jobId)throw Error('bridge_jobs_invalid_response');
+    return {jobId,deviceId,state:'queued'};
+  }
+
   async #requireAdminId(authContext) {
     const admin = await this.authenticateAdmin(authContext);
     if (!admin || admin.role !== 'admin' || admin.approved !== true)
@@ -89,6 +102,19 @@ export class BridgePostgresJobsAdapter {
     requireId(deviceId);
     const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
     if (!BINDING.test(binding)) throw new Error('bridge_invalid_session_binding');
+    const next=await this.#rpc('bridge_server_claim_read',{
+      p_device_id:deviceId,p_session_binding_hex:binding
+    });
+    if(next!==null){
+      if(!next||typeof next!=='object'||Array.isArray(next)||
+         Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,length,offset,operation,state'||
+         !UUID.test(next.jobId)||next.deviceId!==deviceId||
+         next.operation!=='read'||next.state!=='sent')
+        throw Error('bridge_jobs_invalid_response');
+      validateBridgeReadRequest({handle:next.handle,offset:next.offset,length:next.length});
+      if(next.length>32768)throw Error('bridge_jobs_invalid_response');
+      return next;
+    }
     const data=await this.#rpc('bridge_server_claim_list',{
       p_device_id:deviceId,p_session_binding_hex:binding
     });
@@ -114,6 +140,28 @@ export class BridgePostgresJobsAdapter {
     });
     if(result!==true)throw Error('bridge_jobs_invalid_response');
     return {jobId,deviceId,state:'done'};
+  }
+
+  async completeRead({deviceId,sessionToken,jobId,chunk}){
+    requireId(deviceId);requireId(jobId);
+    const validated=validateBridgeFileChunk(chunk,32768);
+    if(validated.bytesRead>32768)throw Error('bridge_read_chunk_limit');
+    const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
+    if(!BINDING.test(binding))throw Error('bridge_invalid_session_binding');
+    const result=await this.#rpc('bridge_server_complete_read',{
+      p_job_id:jobId,p_device_id:deviceId,p_session_binding_hex:binding,p_chunk:validated
+    });
+    if(result!==true)throw Error('bridge_jobs_invalid_response');
+    return {jobId,deviceId,state:'done'};
+  }
+
+  async getReadChunk({authContext,jobId}){
+    requireId(jobId);
+    const receiverId=await this.#requireAdminId(authContext);
+    const result=await this.#rpc('bridge_server_read_chunk',{
+      p_job_id:jobId,p_receiver_id:receiverId
+    });
+    return validateBridgeFileChunk(result,32768);
   }
 
   /** Read only the calling, verified admin's explicitly granted result. */
