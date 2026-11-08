@@ -54,3 +54,7 @@ html,body,#app{min-height:100%;height:100%}
 .bridge-admin-panel nav button[aria-pressed=true]{background:#164b70;color:#fff}
 .bridge-admin-panel h3{font-size:16px}
 .bridge-admin-panel p{font-size:14px;line-height:1.5;color:#475569}
+
+/* Passwordless admin: hide OTP entry until email request succeeds. */
+#adminCodeVerify[hidden]{display:none!important}
+#adminCodeVerify input{letter-spacing:.15em;font-variant-numeric:tabular-nums}
