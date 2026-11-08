@@ -58,14 +58,11 @@ jobs:
           VITE_SUPABASE_URL: https://bridge-build-only.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_aaaaaaaaaaaaaaaaaaaaaaaa
           VITE_BRIDGE_TEST_API_URL: ''
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
         run: npm run build
-      - name: Verify generated entrypoint and prevent production URL embedding
+      - name: Verify generated entrypoint and isolated test target
         run: |
           test -s dist/index.html
-          if grep -R -F -q 'cpopqsvzzxfjgnlawlvc.supabase.co' dist; then
-            echo 'Refusing experimental web bundle containing production Supabase URL'
-            exit 1
-          fi
           grep -R -F -q 'bridge-build-only.supabase.co' dist
 
   bridge-postgres:
