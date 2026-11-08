@@ -7,7 +7,6 @@ import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
-import {adminAccessAction} from './adminAccessAction.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -519,8 +518,7 @@ function renderPeople(){
       (x.lastMessage?'<span class="chat-preview">'+
         esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+
         '</span>':'')+
-      (x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':
-        '<br><span class="admin-access-action" data-access-id="'+esc(x.id)+'">'+esc(adminAccessAction(x.status)?.label||'')+'</span>')+
+      (x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+
       '</button>').join('')+'</div>';
   const search=p.querySelector('#adminPeopleSearch');
   const filter=p.querySelector('#adminPeopleStatus');
@@ -570,28 +568,6 @@ function bindAdminPeopleActions(p){
     button.addEventListener('contextmenu',event=>{event.preventDefault();showActions()});
     button.onclick=async event=>{
       if(suppressClick){suppressClick=false;event.preventDefault();return}
-      if(event.target.dataset.accessId){
-        event.stopPropagation();
-        const user=people.find(x=>x.id===id);
-        const action=adminAccessAction(user?.status);
-        if(!action||!confirm(action.question+'\n'+(user?.full_name||'Utente')))return;
-        button.disabled=true;
-        try{
-          const {data,error}=await db.from('profiles').update({status:action.next})
-            .eq('id',id).eq('status',user.status).neq('role','admin')
-            .select('id,status');
-          if(error)throw error;
-          if(data?.length!==1)throw Error('Stato cambiato nel frattempo: aggiorna l’elenco.');
-          if(action.next==='blocked'&&selected===id){
-            selected=null;messageRequest++;
-            document.getElementById('chat')?.classList.add('off');
-            document.getElementById('people')?.classList.remove('off');
-          }
-          await listPeople();renderPeople();
-        }catch(error){alert('Operazione non completata: '+friendly(error));}
-        finally{button.disabled=false;}
-        return;
-      }
       if(event.target.dataset.approve||event.target.dataset.deny){
         event.stopPropagation();
         const approved=!!event.target.dataset.approve;
