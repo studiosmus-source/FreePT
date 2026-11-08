@@ -44,7 +44,7 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
     const method = request?.method;
     const path = request?.path;
     if (method !== 'POST') return fail(405, 'method_not_allowed');
-    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel'].includes(path))
+    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel', '/bridge/admin/folder'].includes(path))
       return fail(404, 'not_found');
     const token = bearer(request?.headers);
     if (!token) return fail(401, 'authentication_required');
@@ -67,6 +67,12 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
           authContext, deviceId: body.deviceId, jobId
         });
         return { status: 202, body: result };
+      }
+      if (path === '/bridge/admin/folder') {
+        if (typeof service.getFolderPage !== 'function') return fail(404,'not_found');
+        return {status:200,body:await service.getFolderPage({
+          authContext,jobId:body.jobId
+        })};
       }
       if (path === '/bridge/admin/status')
         return { status: 200, body: await service.getRequestStatus({
