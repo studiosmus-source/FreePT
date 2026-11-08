@@ -45,7 +45,7 @@ jobs:
           if data.get('appId')!='it.freept.app':
               raise SystemExit('Unexpected app identity, refusing')
           data['appId']='it.freept.bridge.next'
-          data['appName']='FreePT Bridge Compile Only'
+          data['appName']='FreePT Bridge 2 CI'
           p.write_text(json.dumps(data,indent=2)+'\n')
           PY
           npx cap add android
