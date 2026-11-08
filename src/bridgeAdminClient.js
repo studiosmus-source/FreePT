@@ -103,6 +103,22 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     try{return await response.json()}
     catch{throw Error('bridge_invalid_response');}
   };
+  const requestBrowse=async(deviceId,{handle='root',offset=0}={})=>{
+    if(!UUID.test(deviceId)||!(handle==='root'||UUID.test(handle))||
+       !Number.isSafeInteger(offset)||offset<0||offset>10000)
+      throw Error('bridge_browse_invalid');
+    const result=await readCall('browse',{deviceId,handle,offset});
+    if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
+       result.state!=='queued')throw Error('bridge_invalid_response');
+    return result;
+  };
+  const getBrowsePage=async(jobId)=>{
+    if(!UUID.test(jobId))throw Error('bridge_invalid_id');
+    const data=await readCall('browse-page',{jobId});
+    if(data?.jobId!==jobId)throw Error('bridge_invalid_response');
+    const page=validateBridgeFolderPage({entries:data.entries,nextOffset:data.nextOffset});
+    return {jobId,entries:page.entries,nextOffset:page.nextOffset};
+  };
   const requestRead=async(deviceId,request)=>{
     if(!UUID.test(deviceId))throw Error('bridge_invalid_id');
     const valid=validateBridgeReadRequest(request);
@@ -123,7 +139,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     }catch{throw Error('bridge_invalid_response');}
   };
   return Object.freeze({
-    requestRead,getReadChunk,
+    requestRead,getReadChunk,requestBrowse,getBrowsePage,
     getFolderPage,
     requestList: deviceId=>perform('list',deviceId),
     getStatus: jobId=>perform('status',jobId),
