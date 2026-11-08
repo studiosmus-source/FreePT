@@ -3,8 +3,8 @@
 -- Non inserire qui password, token o chiavi Supabase.
 do $freept$
 declare
-  v_email text := mp23970@yahoo.it;
-  v_phone text := +393913530223;
+  v_email text := 'SOSTITUIRE_EMAIL_ADMIN';
+  v_phone text := 'SOSTITUIRE_TELEFONO_ADMIN';
   v_id uuid;
 begin
   if v_email = 'SOSTITUIRE_EMAIL_ADMIN'
