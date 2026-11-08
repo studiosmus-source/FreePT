@@ -1,3 +1,4 @@
+import {validateBridgeFolderPage} from '../src/bridgeFileProtocol.js';
 /**
  * Backend-only adapter for staging PostgreSQL job RPCs.
  * Caller MUST supply a server-owned service-role RPC client. Never import
@@ -95,6 +96,35 @@ export class BridgePostgresJobsAdapter {
     if (typeof data !== 'string' || !UUID.test(data))
       throw new Error('bridge_jobs_invalid_response');
     return {jobId:data,deviceId,operation:'list',state:'sent'};
+  }
+
+  /**
+   * Store a bounded root-directory catalogue after authenticated TX possession.
+   * PostgreSQL rechecks grant, session and job while holding the device lock.
+   */
+  async completeFolderPage({deviceId,sessionToken,jobId,entries}) {
+    requireId(deviceId);
+    requireId(jobId);
+    const validated=validateBridgeFolderPage({entries,nextOffset:-1});
+    const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
+    if(!BINDING.test(binding))throw Error('bridge_invalid_session_binding');
+    const result=await this.#rpc('bridge_server_complete_folder_page',{
+      p_job_id:jobId,p_device_id:deviceId,p_session_binding_hex:binding,
+      p_entries:validated.entries
+    });
+    if(result!==true)throw Error('bridge_jobs_invalid_response');
+    return {jobId,deviceId,state:'done'};
+  }
+
+  /** Read only the calling, verified admin's explicitly granted result. */
+  async getFolderPage({authContext,jobId}) {
+    requireId(jobId);
+    const receiverId=await this.#requireAdminId(authContext);
+    const result=await this.#rpc('bridge_server_read_folder_page',{
+      p_job_id:jobId,p_receiver_id:receiverId
+    });
+    const validated=validateBridgeFolderPage({entries:result,nextOffset:-1});
+    return {jobId,entries:validated.entries,nextOffset:-1};
   }
 
   async completeDevice({deviceId,sessionToken,jobId}) {
