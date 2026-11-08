@@ -56,6 +56,32 @@ public class BridgeDestinationPlugin extends Plugin {
             !name.matches(".*[\\\\/\\p{Cntrl}].*");
     }
 
+    /**
+     * Fail closed if a target name already exists in the explicitly selected
+     * destination. Also checks again immediately before final rename.
+     * SAF rename semantics vary by provider and must never silently overwrite.
+     */
+    private boolean targetExists(String requestedName) throws Exception {
+        if(destination==null||!validName(requestedName))
+            throw new IllegalArgumentException("bridge_destination_invalid_target");
+        Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(
+            destination,DocumentsContract.getDocumentId(destination));
+        try(Cursor cursor=getContext().getContentResolver().query(
+            children,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+            null,null,null)){
+            if(cursor==null)throw new IllegalStateException("bridge_destination_unreadable");
+            String wanted=java.text.Normalizer.normalize(requestedName,
+                java.text.Normalizer.Form.NFC);
+            while(cursor.moveToNext()){
+                String found=cursor.getString(0);
+                if(found!=null&&java.text.Normalizer.normalize(found,
+                    java.text.Normalizer.Form.NFC).equalsIgnoreCase(wanted))
+                    return true;
+            }
+            return false;
+        }
+    }
+
     private String[] path(PluginCall call){
         JSArray array=call.getArray("path");
         if(array==null||array.length()<1||array.length()>16)
@@ -144,6 +170,7 @@ public class BridgeDestinationPlugin extends Plugin {
             call.reject("bridge_destination_not_ready");return;
         }
         try{
+            if(targetExists(name))throw new IllegalStateException("bridge_destination_exists");
             Uri temp=DocumentsContract.createDocument(
                 getContext().getContentResolver(),destination,
                 DocumentsContract.Document.MIME_TYPE_DIR,
@@ -280,6 +307,7 @@ public class BridgeDestinationPlugin extends Plugin {
             call.reject("bridge_destination_invalid_size");return;
         }
         try{
+            if(targetExists(name))throw new IllegalStateException("bridge_destination_exists");
             Uri temp=DocumentsContract.createDocument(
                 getContext().getContentResolver(),destination,
                 mime.isEmpty()?"application/octet-stream":mime,
@@ -303,6 +331,7 @@ public class BridgeDestinationPlugin extends Plugin {
             if(!entry.completed){call.reject("bridge_destination_file_incomplete");return;}
         }
         try{
+            if(targetExists(singleName))throw new IllegalStateException("bridge_destination_exists");
             Uri renamed=DocumentsContract.renameDocument(
                 getContext().getContentResolver(),singleStaging,singleName);
             if(renamed==null)throw new IllegalStateException();
@@ -337,6 +366,7 @@ public class BridgeDestinationPlugin extends Plugin {
             if(!file.completed){call.reject("bridge_destination_files_incomplete");return;}
         }
         try{
+            if(targetExists(finalName))throw new IllegalStateException("bridge_destination_exists");
             Uri renamed=DocumentsContract.renameDocument(
                 getContext().getContentResolver(),staging,finalName);
             if(renamed==null)throw new IllegalStateException();
