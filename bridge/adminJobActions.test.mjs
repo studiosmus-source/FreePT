@@ -36,9 +36,11 @@ function harness({pending=false}={}){
   };
   const panel={isConnected:true};
   const button={dataset:{bridgeRequest:DEVICE},parentElement:row,disabled:false};
-  const context={document,bridgeClient,profile:{role:'admin'},adminUnlocked:true,me:{id:'admin'}};
+  const bridgePendingJobs=new Map();
+  const context={document,bridgeClient,profile:{role:'admin'},adminUnlocked:true,
+    me:{id:'admin'},bridgePendingJobs,bridgePendingOwnerId:'admin'};
   runInNewContext(source+'\nthis.request=requestAdminBridgeList;',context);
-  return {request:context.request,panel,button,row,children,calls,context,finish:()=>finish?.()};
+  return {request:context.request,panel,button,row,children,calls,context,bridgePendingJobs,finish:()=>finish?.()};
 }
 test('Bridge admin can request, inspect and close a job without duplicate submission',async()=>{
   const h=harness();
@@ -76,4 +78,28 @@ test('revoked admin cannot submit Bridge jobs',async()=>{
   h.context.profile.role='user';
   await h.request(h.panel,h.button);
   assert.equal(h.calls.length,0);
+});
+
+test('Bridge active job survives panel re-entry without enqueueing again',async()=>{
+  const h=harness();
+  await h.request(h.panel,h.button);
+  const saved=h.bridgePendingJobs.get('admin:'+DEVICE);
+  assert.equal(saved.jobId,JOB);
+  const reopened={isConnected:true};
+  const secondButton={dataset:{bridgeRequest:DEVICE},parentElement:h.row,disabled:false};
+  await h.request(reopened,secondButton,saved);
+  assert.equal(h.calls.filter(c=>c[0]==='list').length,1);
+  assert.equal(secondButton.disabled,true);
+  const controls=h.children.find(e=>e.className==='bridge-job-controls');
+  await controls.children[1].onclick();
+  assert.equal(h.bridgePendingJobs.has('admin:'+DEVICE),false);
+});
+test('Bridge delayed response from closed panel retains recoverable job metadata',async()=>{
+  const h=harness({pending:true});
+  const work=h.request(h.panel,h.button);
+  h.panel.isConnected=false;
+  h.finish();
+  await work;
+  assert.equal(h.bridgePendingJobs.get('admin:'+DEVICE)?.jobId,JOB);
+  assert.equal(h.children.filter(e=>e.className==='bridge-job-controls').length,0);
 });
