@@ -112,7 +112,7 @@ test('composition exposes only fixed job and session operations',()=>{
   const {service}=makeFixture();
   assert.deepEqual(Object.keys(service).sort(),[
     'cancelRequest','closeDeviceSession','completeDevice','completeFolderPage','connectDevice',
-    'getFolderPage','getRequestStatus','pollDevice','requestList'
+    'getFolderPage','getReadChunk','getRequestStatus','pollDevice','requestList','requestRead','completeRead'
   ].sort());
   assert.equal(Object.isFrozen(service),true);
   assert.equal('readFile' in service,false);
