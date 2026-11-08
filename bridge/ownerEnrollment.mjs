@@ -45,8 +45,8 @@ export function createBridgeOwnerEnrollmentHandler({
     if(!body||typeof body!=='object'||Array.isArray(body))
       return fail(400,'invalid_request');
     if(path.endsWith('/enroll')?
-       (Object.keys(body).length!==1||!ALLOWED.test(body.label)||
-        !body.label.trim()):
+       (Object.keys(body).length!==1||typeof body.label!=='string'||
+        !ALLOWED.test(body.label)||!body.label.trim()):
        (Object.keys(body).length!==1||!UUID.test(body.deviceId)))
       return fail(400,'invalid_request');
     const owner=await ownerId(token);
