@@ -2,7 +2,7 @@
 \set ON_ERROR_STOP on
 do $test$
 declare
-  dev uuid:='e1111111-1111-4111-8111-111111111111';
+  dev uuid:='91111111-1111-4111-8111-111111111111';
   owner_id uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   admin_id uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   stranger uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
