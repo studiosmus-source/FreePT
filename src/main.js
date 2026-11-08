@@ -5,6 +5,7 @@ import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
+import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -119,32 +120,80 @@ function requestScreen(denied=false){
     }finally{button.disabled=false}
   };
 }
+async function completeAdminLogin(user){
+  if(!user?.id||user.is_anonymous)throw Error('Account amministratore non valido.');
+  me=user;
+  try{
+    await loadProfile();
+    if(profile?.role!=='admin'||profile?.status!=='approved')
+      throw Error('Questo account non è un amministratore autorizzato.');
+  }catch(error){
+    await db.auth.signOut();
+    me=null;profile=null;adminUnlocked=false;
+    throw error;
+  }
+  if(await unlockAdmin())await renderWorkspace();
+}
+
 function adminScreen(){
   closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
-  '<form id="adminForm" class="form"><input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required>'+
-  '<input type="password" name="password" autocomplete="current-password" placeholder="Password" required>'+
-  '<button>Accedi</button></form><p id="status" class="small"></p>'+
-  '<button id="backRequest" type="button">Torna alla richiesta di accesso</button></main></div>';
+    '<p class="small">Accedi senza password con un codice inviato alla tua email amministratore. In seguito potrai entrare con impronta sul telefono.</p>'+
+    '<form id="adminCodeSend" class="form"><input type="email" name="email" autocomplete="email" placeholder="Email amministratore" required>'+
+    '<button type="submit">Invia codice via email</button></form>'+
+    '<form id="adminCodeVerify" class="form" hidden><label for="adminOtp">Codice di 6 cifre ricevuto via email</label>'+
+    '<input id="adminOtp" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>'+
+    '<button type="submit">Accedi con codice</button></form>'+
+    '<details><summary>Accesso alternativo con password</summary>'+
+    '<form id="adminForm" class="form"><input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required>'+
+    '<input type="password" name="password" autocomplete="current-password" placeholder="Password" required>'+
+    '<button>Accedi con password</button></form></details>'+
+    '<p id="status" class="small" role="status"></p>'+
+    '<button id="backRequest" type="button">Torna alla richiesta di accesso</button></main></div>';
   document.getElementById('backRequest').onclick=()=>requestScreen();
+  let pendingEmail=null;
+  document.getElementById('adminCodeSend').onsubmit=async e=>{
+    e.preventDefault();
+    const form=e.currentTarget,button=form.querySelector('button');
+    button.disabled=true;status('Invio codice in corso...');
+    try{
+      pendingEmail=await sendAdminEmailCode(db.auth,new FormData(form).get('email'));
+      document.getElementById('adminCodeVerify').hidden=false;
+      status('Se l’account è abilitato, riceverai un codice via email. Inseriscilo qui.');
+    }catch{
+      status('Impossibile inviare il codice. Verifica email e configurazione Supabase.',true);
+    }finally{button.disabled=false;}
+  };
+  document.getElementById('adminCodeVerify').onsubmit=async e=>{
+    e.preventDefault();
+    if(!pendingEmail){status('Richiedi prima il codice via email.',true);return;}
+    const form=e.currentTarget,button=form.querySelector('button');
+    button.disabled=true;status('Verifica codice in corso...');
+    try{
+      const user=await verifyAdminEmailCode(db.auth,pendingEmail,new FormData(form).get('code'));
+      await completeAdminLogin(user);
+    }catch(error){
+      status(error?.message==='admin_code_invalid'
+        ?'Inserisci le sei cifre del codice.'
+        :'Codice non valido, scaduto o account non autorizzato.',true);
+    }finally{button.disabled=false;}
+  };
   document.getElementById('adminForm').onsubmit=async e=>{
-    e.preventDefault();const f=new FormData(e.target);status('Accesso in corso...');
-    try {
+    e.preventDefault();const form=e.currentTarget,button=form.querySelector('button');
+    const f=new FormData(form);button.disabled=true;status('Accesso in corso...');
+    try{
       const {data:{session}}=await db.auth.getSession();
       if(session?.user?.is_anonymous) await db.auth.signOut();
-      const result=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});
+      const result=await db.auth.signInWithPassword({
+        email:String(f.get('email')),password:String(f.get('password'))
+      });
       if(result.error)throw result.error;
-      me=result.data.user;
-      await loadProfile();
-      if(profile?.role!=='admin'||profile.status!=='approved'){
-        await db.auth.signOut();
-        me=null;profile=null;
-        throw Error('Questo account non è un amministratore autorizzato.');
-      }
-      if(await unlockAdmin())await renderWorkspace();
-    }catch(err){status(friendly(err),true)}
+      await completeAdminLogin(result.data.user);
+    }catch(err){status(friendly(err),true);}
+    finally{button.disabled=false;}
   };
 }
+
 function waitingScreen(){
   closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiesta inviata</h2>'+
