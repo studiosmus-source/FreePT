@@ -5,6 +5,7 @@
  *
  * Backend hosting/TLS is NOT supplied by this client.
  */
+import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATES=new Set(['queued','sent','done','cancelled']);
 const PROD='cpopqsvzzxfjgnlawlvc.supabase.co';
@@ -53,7 +54,38 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
       throw Error('bridge_invalid_response');
     return {jobId:body.jobId,deviceId:body.deviceId,state:body.state};
   };
+  const getFolderPage=async jobId=>{
+    if(!UUID.test(jobId))throw Error('bridge_invalid_id');
+    const {data,error}=await auth.getSession();
+    const token=data?.session?.access_token;
+    if(error||typeof token!=='string'||token.length<20)
+      throw Error('bridge_auth_required');
+    let response;
+    try{
+      response=await fetchImpl(url+'/bridge/admin/folder',{
+        method:'POST',
+        headers:{'content-type':'application/json',authorization:'Bearer '+token},
+        body:JSON.stringify({jobId}),
+        cache:'no-store',redirect:'error'
+      });
+    }catch{throw Error('bridge_network_unavailable');}
+    if(!response||!response.ok)
+      throw Error(response?.status===401||response?.status===403
+        ?'bridge_auth_required':'bridge_request_failed');
+    let payload;
+    try{payload=await response.json()}catch{throw Error('bridge_invalid_response');}
+    if(!payload||Object.keys(payload).sort().join(',')!=='entries,jobId,nextOffset'||
+       payload.jobId!==jobId)
+      throw Error('bridge_invalid_response');
+    try{
+      const page=validateBridgeFolderPage({
+        entries:payload.entries,nextOffset:payload.nextOffset
+      });
+      return {jobId,entries:page.entries,nextOffset:page.nextOffset};
+    }catch{throw Error('bridge_invalid_response');}
+  };
   return Object.freeze({
+    getFolderPage,
     requestList: deviceId=>perform('list',deviceId),
     getStatus: jobId=>perform('status',jobId),
     cancel: jobId=>perform('cancel',jobId)
