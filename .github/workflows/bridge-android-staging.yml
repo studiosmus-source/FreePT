@@ -60,7 +60,7 @@ jobs:
       - name: Require experimental HTTPS Bridge backend endpoint
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
         env:
-          VITE_BRIDGE_TEST_API_URL: ${{ vars.FREEPT_BRIDGE_TEST_API_URL }}
+          VITE_BRIDGE_TEST_API_URL: ${{ 'https://freept-bridge-staging.onrender.com' }}
         run: |
           python3 - <<'PY'
           import os
@@ -80,7 +80,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
-          VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && vars.FREEPT_BRIDGE_TEST_API_URL || '' }}
+          VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && 'https://freept-bridge-staging.onrender.com' || '' }}
           VITE_BRIDGE_ISOLATED_BUILD: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && 'true' || 'false' }}
         run: |
           set -euo pipefail
@@ -121,7 +121,7 @@ jobs:
       - name: Install native file catalogue and foreground TX (Bridge staging only)
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
         env:
-          VITE_BRIDGE_TEST_API_URL: ${{ vars.FREEPT_BRIDGE_TEST_API_URL }}
+          VITE_BRIDGE_TEST_API_URL: ${{ 'https://freept-bridge-staging.onrender.com' }}
         run: python3 android-bridge/install.py
       - name: Ensure Android biometric permission
         run: |

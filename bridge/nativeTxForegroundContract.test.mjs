@@ -46,7 +46,7 @@ test('FreePT owner TX is native, not a four-minute WebView loop',()=>{
   assert.doesNotMatch(main,/Date\.now\(\)\+240000/);
   assert.doesNotMatch(main,/Avvia Bridge per 4 minuti/);
   assert.doesNotMatch(main,/createBridgeFolderTransmitter\(/);
-  assert.match(workflow,/VITE_BRIDGE_TEST_API_URL: \$\{\{ vars\.FREEPT_BRIDGE_TEST_API_URL \}\}/);
+  assert.match(workflow,/freept-bridge-staging\.onrender\.com/);
 });
 
 test('native TX renews the backend five-minute session but stops after refused login',()=>{
