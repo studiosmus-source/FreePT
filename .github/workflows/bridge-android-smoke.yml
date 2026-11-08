@@ -44,7 +44,7 @@ jobs:
           data=json.loads(p.read_text())
           if data.get('appId')!='it.freept.app':
               raise SystemExit('Unexpected app identity, refusing')
-          data['appId']='it.freept.bridge'
+          data['appId']='it.freept.bridge.next'
           data['appName']='FreePT Bridge Compile Only'
           p.write_text(json.dumps(data,indent=2)+'\n')
           PY
@@ -62,7 +62,7 @@ jobs:
         run: |
           APK=android/app/build/outputs/apk/debug/app-debug.apk
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
-          "$AAPT" dump badging "$APK" | grep -F "package: name='it.freept.bridge'"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='it.freept.bridge.next'"
           unzip -t "$APK" > /dev/null
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4

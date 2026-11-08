@@ -17,7 +17,7 @@ match = re.search(r"^package\s+([a-zA-Z_][\w.]*)\s*;", source, re.M)
 if not match:
     raise SystemExit("MainActivity missing Java package declaration")
 package = match.group(1)
-if package != "it.freept.bridge":
+if package != "it.freept.bridge.next":
     raise SystemExit("BridgeFiles may only be installed into isolated test APK")
 
 if "extends BridgeActivity" not in source:

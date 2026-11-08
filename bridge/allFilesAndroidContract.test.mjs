@@ -7,7 +7,7 @@ const installer=readFileSync(new URL('../android-bridge/install.py',import.meta.
 test('isolated Android install registers all-files provider and permission',()=>{
   assert.match(installer,/registerPlugin\(BridgeAllFilesPlugin\.class\)/);
   assert.match(installer,/MANAGE_EXTERNAL_STORAGE/);
-  assert.match(installer,/package != "it\.freept\.bridge"/);
+  assert.match(installer,/package != "it\.freept\.bridge\.next"/);
   assert.match(installer,/BridgeAllFilesPlugin\.java\.template/);
 });
 test('remote TX uses wide storage only after OS permission granted',()=>{

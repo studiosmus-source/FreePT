@@ -10,5 +10,5 @@ test('CI never uploads an APK without fixed signing identity',()=>{
   assert.match(wf,/Bridge signing identity mismatch/);
   assert.match(wf,/path: android\/app\/build\/outputs\/apk\/debug\/bridge-stable\.apk/);
   assert.doesNotMatch(wf,/path: android\/app\/build\/outputs\/apk\/debug\/app-debug\.apk/);
-  assert.match(wf,/EXPECTED_ID=it\.freept\.bridge/);
+  assert.match(wf,/EXPECTED_ID=it\.freept\.bridge\.next/);
 });

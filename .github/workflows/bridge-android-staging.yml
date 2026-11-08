@@ -105,10 +105,10 @@ jobs:
           data = json.loads(config.read_text())
           if data.get('appId') != 'it.freept.app':
               raise SystemExit('Unexpected base appId; refusing experimental build')
-          data['appId'] = 'it.freept.bridge'
+          data['appId'] = 'it.freept.bridge.next'
           data['appName'] = 'FreePT Bridge Test'
           config.write_text(json.dumps(data, indent=2) + '\n')
-          assert json.loads(config.read_text())['appId'] == 'it.freept.bridge'
+          assert json.loads(config.read_text())['appId'] == 'it.freept.bridge.next'
           PY
       - name: Generate and synchronize Android project
         shell: bash
@@ -218,7 +218,7 @@ jobs:
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee android-apk-info.txt
           if [[ "$GITHUB_REF" == "refs/heads/feature/bridge-chunk-receiver-20261108" ]]; then
-            EXPECTED_ID=it.freept.bridge
+            EXPECTED_ID=it.freept.bridge.next
           else
             EXPECTED_ID=it.freept.app
           fi

@@ -10,7 +10,7 @@ const nativeFiles=read('android-bridge/BridgeAllFilesCore.java.template');
 const main=read('src/main.js');
 const workflow=read('.github/workflows/bridge-android-staging.yml');
 test('native TX only installed in isolated APK with explicit Android foreground service',()=>{
-  assert.match(installer,/package != "it\.freept\.bridge"/);
+  assert.match(installer,/package != "it\.freept\.bridge\.next"/);
   assert.match(installer,/"FOREGROUND_SERVICE_DATA_SYNC"/);
   assert.match(installer,/android:foregroundServiceType="dataSync"/);
   assert.match(installer,/android:exported="false"/);
