@@ -50,6 +50,21 @@ export class BridgePostgresJobsAdapter {
     return {jobId,deviceId,state:'queued'};
   }
 
+  async requestBrowse({authContext,deviceId,jobId,handle='root',offset=0}) {
+    if(!this.readJobsEnabled)throw Error('bridge_browse_disabled');
+    requireId(deviceId);requireId(jobId);
+    if(!(handle==='root'||UUID.test(handle))||
+       !Number.isSafeInteger(offset)||offset<0||offset>10000)
+      throw Error('bridge_browse_invalid');
+    const receiverId=await this.#requireAdminId(authContext);
+    const result=await this.#rpc('bridge_server_enqueue_browse',{
+      p_job_id:jobId,p_device_id:deviceId,p_receiver_id:receiverId,
+      p_handle:handle,p_offset:offset
+    });
+    if(result!==jobId)throw Error('bridge_jobs_invalid_response');
+    return {jobId,deviceId,state:'queued'};
+  }
+
   async requestRead({authContext,deviceId,jobId,handle,offset,length}) {
     if(!this.readJobsEnabled)throw Error('bridge_read_disabled');
     requireId(deviceId);requireId(jobId);
@@ -122,6 +137,20 @@ export class BridgePostgresJobsAdapter {
       if(next.length>32768)throw Error('bridge_jobs_invalid_response');
       return next;
     }
+    if(data===null && this.readJobsEnabled){
+      const next=await this.#rpc('bridge_server_claim_browse',{
+        p_device_id:deviceId,p_session_binding_hex:binding
+      });
+      if(next===null)return null;
+      if(!next||typeof next!=='object'||Array.isArray(next)||
+         Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,offset,operation,state'||
+         !UUID.test(next.jobId)||next.deviceId!==deviceId||
+         next.operation!=='browse'||next.state!=='sent'||
+         !(next.handle==='root'||UUID.test(next.handle))||
+         !Number.isSafeInteger(next.offset)||next.offset<0||next.offset>10000)
+        throw Error('bridge_jobs_invalid_response');
+      return next;
+    }
     if (data === null) return null;
     if (typeof data !== 'string' || !UUID.test(data))
       throw new Error('bridge_jobs_invalid_response');
@@ -144,6 +173,31 @@ export class BridgePostgresJobsAdapter {
     });
     if(result!==true)throw Error('bridge_jobs_invalid_response');
     return {jobId,deviceId,state:'done'};
+  }
+
+  async completeBrowsePage({deviceId,sessionToken,jobId,entries,nextOffset}){
+    if(!this.readJobsEnabled)throw Error('bridge_browse_disabled');
+    requireId(deviceId);requireId(jobId);
+    const page=validateBridgeFolderPage({entries,nextOffset});
+    const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
+    if(!BINDING.test(binding))throw Error('bridge_invalid_session_binding');
+    const done=await this.#rpc('bridge_server_complete_browse_page',{
+      p_job_id:jobId,p_device_id:deviceId,p_session_binding_hex:binding,
+      p_entries:page.entries,p_next_offset:page.nextOffset
+    });
+    if(done!==true)throw Error('bridge_jobs_invalid_response');
+    return {jobId,deviceId,state:'done'};
+  }
+
+  async getBrowsePage({authContext,jobId}){
+    if(!this.readJobsEnabled)throw Error('bridge_browse_disabled');
+    requireId(jobId);
+    const receiverId=await this.#requireAdminId(authContext);
+    const page=await this.#rpc('bridge_server_read_browse_page',{
+      p_job_id:jobId,p_receiver_id:receiverId
+    });
+    const valid=validateBridgeFolderPage(page);
+    return {jobId,entries:valid.entries,nextOffset:valid.nextOffset};
   }
 
   async completeRead({deviceId,sessionToken,jobId,chunk}){
