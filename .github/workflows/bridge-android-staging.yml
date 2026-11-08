@@ -165,11 +165,53 @@ jobs:
             fi
             sleep $((attempt * 5))
           done
-      - name: Build debug APK
+      - name: Require retained signing key for Bridge APK
+        shell: bash
+        env:
+          BRIDGE_KEYSTORE_B64: ${{ secrets.FREEPT_BRIDGE_KEYSTORE_B64 }}
+          BRIDGE_STORE_PASSWORD: ${{ secrets.FREEPT_BRIDGE_STORE_PASSWORD }}
+          BRIDGE_KEY_ALIAS: ${{ secrets.FREEPT_BRIDGE_KEY_ALIAS }}
+          BRIDGE_KEY_PASSWORD: ${{ secrets.FREEPT_BRIDGE_KEY_PASSWORD }}
+          BRIDGE_CERT_SHA256: ${{ secrets.FREEPT_BRIDGE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          for name in BRIDGE_KEYSTORE_B64 BRIDGE_STORE_PASSWORD BRIDGE_KEY_ALIAS BRIDGE_KEY_PASSWORD BRIDGE_CERT_SHA256; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing stable Bridge signing secret $name; no APK published"
+              exit 1
+            fi
+          done
+          umask 077
+          printf "%s" "$BRIDGE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/freept-bridge.jks"
+          test -s "$RUNNER_TEMP/freept-bridge.jks"
+          keytool -list -keystore "$RUNNER_TEMP/freept-bridge.jks" -storepass:env BRIDGE_STORE_PASSWORD -alias "$BRIDGE_KEY_ALIAS" >/dev/null
+      - name: Build Android APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Sign APK with persistent Bridge identity and verify certificate
+        shell: bash
+        env:
+          BRIDGE_STORE_PASSWORD: ${{ secrets.FREEPT_BRIDGE_STORE_PASSWORD }}
+          BRIDGE_KEY_ALIAS: ${{ secrets.FREEPT_BRIDGE_KEY_ALIAS }}
+          BRIDGE_KEY_PASSWORD: ${{ secrets.FREEPT_BRIDGE_KEY_PASSWORD }}
+          BRIDGE_CERT_SHA256: ${{ secrets.FREEPT_BRIDGE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -n "$TOOL"
+          SRC=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/debug/bridge-stable.apk
+          "$TOOL" sign --ks "$RUNNER_TEMP/freept-bridge.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --out "$APK" "$SRC"
+          "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/bridge-signing-check.txt"
+          EXPECTED="$(printf "%s" "$BRIDGE_CERT_SHA256" | tr -d ":[:space:]" | tr "[:upper:]" "[:lower:]")"
+          ACTUAL="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/bridge-signing-check.txt" | head -1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ || "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::Bridge signing identity mismatch; APK rejected"
+            exit 1
+          fi
+          echo 'Bridge signing identity verified'
       - name: Verify APK integrity and identity
         run: |
-          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/debug/bridge-stable.apk
           test -s "$APK"
           unzip -t "$APK" > /dev/null
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
@@ -191,9 +233,9 @@ jobs:
             android-apk-info.txt
             android-apk-sha256.txt
           if-no-files-found: error
-      - name: Upload installable debug APK
+      - name: Upload stable signed Bridge APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ 'FreePT-bridge-staging-debug-apk' }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ 'FreePT-bridge-staging-stable-apk' }}
+          path: android/app/build/outputs/apk/debug/bridge-stable.apk
           if-no-files-found: error
