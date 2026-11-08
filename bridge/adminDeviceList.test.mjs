@@ -105,3 +105,17 @@ test('older network responses cannot overwrite a newer Bridge device refresh',as
   assert.match(h.content.innerHTML,/Nuovo/);
   assert.doesNotMatch(h.content.innerHTML,/Vecchio/);
 });
+
+test('device response cannot cross administrator account switch',async()=>{
+  let finish;
+  const h=makeHarness(null);
+  h.context.db.from=()=>({select:()=>({eq:()=>({is:()=>({limit:()=>
+    new Promise(resolve=>{finish=resolve})})})})});
+  const pending=h.context.load(h.panel);
+  h.context.me={id:'different-admin'};
+  finish({data:[{device_id:'sensitive',bridge_devices:{
+    id:'sensitive',label:'Old account device',bridge_enabled:true
+  }}],error:null});
+  await pending;
+  assert.doesNotMatch(h.content.innerHTML,/Old account device/);
+});
