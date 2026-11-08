@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 
 const entry=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
-const start=entry.indexOf('async function requestAdminBridgeList(panel,button){');
+const start=entry.indexOf('async function requestAdminBridgeList(panel,button,existingJob=null){');
 const end=entry.indexOf('\nfunction showAdminBridge(){',start);
 assert.ok(start>=0&&end>start,'Bridge admin job actions must exist');
 const source=entry.slice(start,end);
