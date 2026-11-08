@@ -6,6 +6,7 @@ import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
 import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
+import {createBridgeFolderTransmitter} from './bridgeTxFolderClient.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
@@ -639,6 +640,43 @@ async function showOwnerBridgeFolder(){
         if(!confirm('Autorizzare questo amministratore alla cartella Bridge selezionata?'))return;
         await bridgeOwnerControls.grant(account.deviceId,field.value.trim());
       });
+      if(current.enabled && grants.some(x=>x.active)){
+        const respond=document.createElement('button');
+        respond.type='button';
+        respond.textContent='Rispondi a una richiesta Bridge';
+        grantsArea.appendChild(respond);
+        let responding=false;
+        respond.onclick=async()=>{
+          if(responding||!alive())return;
+          if(!confirm('Collegare questo telefono al Bridge di prova per UNA richiesta? La cartella scelta può essere elencata solo dagli amministratori autorizzati.'))return;
+          responding=true;respond.disabled=true;
+          let tx=null;
+          try{
+            const chosen=await bridgeFiles.getFolder();
+            if(!chosen?.selected)throw Error('no_shared_folder');
+            const credentials=await bridgeCredentials.getForConnection();
+            if(!alive()||credentials?.deviceId!==account.deviceId)
+              throw Error('bridge_owner_changed');
+            tx=createBridgeFolderTransmitter({
+              baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
+              deviceId:credentials.deviceId,
+              deviceSecret:credentials.deviceSecret,
+              folderProvider:bridgeFiles
+            });
+            await tx.connect();
+            if(!alive())throw Error('bridge_owner_closed');
+            const processed=await tx.processOne();
+            if(alive())status.textContent=processed
+              ?'Elenco consegnato al server Bridge di prova.'
+              :'Nessuna richiesta Bridge in attesa.';
+          }catch{
+            if(alive())status.textContent='Nessuna risposta inviata: verifica server, autorizzazione e cartella selezionata.';
+          }finally{
+            if(tx)await tx.disconnect();
+            responding=false;respond.disabled=false;
+          }
+        };
+      }
       for(const item of grants){
         const line=document.createElement('div');
         const label=document.createElement('span');
