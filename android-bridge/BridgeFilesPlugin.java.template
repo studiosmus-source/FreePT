@@ -221,14 +221,26 @@ public class BridgeFilesPlugin extends Plugin {
                 FileChannel channel = stream.getChannel();
                 channel.position(offset);
                 ByteBuffer bytes = ByteBuffer.allocate(length);
-                int count = channel.read(bytes);
+                // SAF providers can return a short read even before EOF.
+                // Accumulate until requested length or a true EOF instead of
+                // producing an apparently truncated network transfer.
+                int total = 0;
+                while(bytes.hasRemaining()) {
+                    int count = channel.read(bytes);
+                    if(count < 0) break;
+                    if(count == 0) {
+                        // A blocking channel should not spin indefinitely.
+                        throw new java.io.IOException("bridge_file_no_read_progress");
+                    }
+                    total += count;
+                }
                 bytes.flip();
-                byte[] output = new byte[Math.max(0,count)];
+                byte[] output = new byte[total];
                 bytes.get(output);
                 JSObject response = new JSObject();
                 response.put("base64",Base64.encodeToString(output,Base64.NO_WRAP));
                 response.put("bytesRead",output.length);
-                response.put("eof",count < length);
+                response.put("eof",total < length);
                 call.resolve(response);
             }
         } catch(Exception error) {
