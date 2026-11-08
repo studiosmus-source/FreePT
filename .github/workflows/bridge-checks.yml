@@ -7,6 +7,7 @@ on:
     paths:
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
+      - 'supabase/migrations/20261108_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
       - 'package.json'
       - 'src/**'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
+      - 'supabase/migrations/20261108_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
       - 'package.json'
       - 'src/**'
@@ -121,3 +123,7 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-atomic-session-jobs.sql
       - name: Verify Node shared sessions and persistent jobs together
         run: node --test bridge/postgresSessionsLive.integration.mjs
+      - name: Install experimental file-catalogue RPCs on disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_folder_catalog_staging.sql
+      - name: Verify authenticated folder listing and revocation in PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-folder-catalog.sql
