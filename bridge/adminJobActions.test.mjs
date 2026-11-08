@@ -22,7 +22,11 @@ function harness({pending=false}={}){
   };
   const document={createElement:tag=>({
     tagName:tag,className:'',textContent:'',disabled:false,onclick:null,
-    setAttribute(){},append(...els){this.children=els},remove(){const index=children.indexOf(this);if(index>=0)children.splice(index,1)}
+    setAttribute(){},append(...els){this.children=els},
+    appendChild(child){this.children??=[];this.children.push(child);return child},
+    replaceChildren(...els){this.children=els},
+    querySelector(){return null},
+    remove(){const index=children.indexOf(this);if(index>=0)children.splice(index,1)}
   })};
   let finish;
   const bridgeClient={
