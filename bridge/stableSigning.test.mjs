@@ -7,7 +7,8 @@ test('CI never uploads an APK without fixed signing identity',()=>{
     assert.ok(wf.includes('secrets.'+key),key);
   assert.match(wf,/Missing stable Bridge signing secret/);
   assert.match(wf,/verify --verbose --print-certs/);
-  assert.match(wf,/Bridge signing identity mismatch/);
+  assert.match(wf,/GitHub fingerprint does not match stored signing key/);
+  assert.match(wf,/APK signing certificate differs from keystore certificate/);
   assert.match(wf,/path: android\/app\/build\/outputs\/apk\/debug\/bridge-stable\.apk/);
   assert.doesNotMatch(wf,/path: android\/app\/build\/outputs\/apk\/debug\/app-debug\.apk/);
   assert.match(wf,/EXPECTED_ID=it\.freept\.bridge\.next/);
