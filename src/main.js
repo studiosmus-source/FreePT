@@ -4,6 +4,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
+import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
@@ -17,6 +18,11 @@ const config=getFreePtSupabaseConfig({
 const db = createClient(config.url, config.key, { auth: { persistSession: true, autoRefreshToken: true } });
 const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
   ? registerPlugin('BridgeFiles') : null;
+const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
+const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
+  baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
+  auth:db.auth,credentials:bridgeCredentials
+}) : null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
   baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,auth:db.auth
@@ -525,6 +531,12 @@ async function showOwnerBridgeFolder(){
     '<p>Seleziona una cartella del tuo telefono. Per ora resta soltanto sul dispositivo: il collegamento remoto non è ancora attivo.</p>'+
     '<div class="bridge-owner-actions"><button type="button" id="chooseOwnerFolder">Scegli cartella</button>'+
     '<button type="button" id="clearOwnerFolder">Rimuovi autorizzazione</button></div>'+
+    (bridgeOwnerClient?'<section class="bridge-owner-pairing"><h3>Associazione telefono Bridge</h3>'+
+      '<p>Associazione esplicita sul server di prova. La registrazione non concede accesso remoto e non avvia la trasmissione.</p>'+
+      '<label for="bridgeOwnerLabel">Nome telefono</label><input id="bridgeOwnerLabel" maxlength="100" placeholder="Il mio Android">'+
+      '<div class="bridge-owner-actions"><button type="button" id="bridgeOwnerEnroll">Registra telefono</button>'+
+      '<button type="button" id="bridgeOwnerDelete">Revoca telefono</button></div>'+
+      '<p id="bridgeOwnerPairStatus" role="status"></p></section>':'')+
     '<div id="ownerBridgeContents" role="status"></div></section>';
   document.body.appendChild(panel);
   const area=panel.querySelector('#ownerBridgeContents');
@@ -533,6 +545,48 @@ async function showOwnerBridgeFolder(){
   const ownerId=me.id;
   const alive=()=>panel.isConnected&&me?.id===ownerId&&profile?.status==='approved'&&
     (profile.role==='user'||(profile.role==='admin'&&adminUnlocked));
+  if(bridgeOwnerClient){
+    const label=panel.querySelector('#bridgeOwnerLabel');
+    const enroll=panel.querySelector('#bridgeOwnerEnroll');
+    const revoke=panel.querySelector('#bridgeOwnerDelete');
+    const status=panel.querySelector('#bridgeOwnerPairStatus');
+    let pairing=false;
+    const refresh=async()=>{
+      if(!alive())return;
+      try{
+        const current=await bridgeOwnerClient.status();
+        if(!alive())return;
+        status.textContent=current?.provisioned
+          ?'Telefono registrato (disattivato finché non autorizzi una condivisione).'
+          :'Questo telefono non è ancora registrato sul Bridge.';
+        enroll.disabled=!!current?.provisioned;
+        revoke.disabled=!current?.provisioned;
+      }catch{if(alive())status.textContent='Stato credenziale non disponibile.';}
+    };
+    enroll.onclick=async()=>{
+      if(pairing||!alive())return;
+      if(!confirm('Registrare questo telefono sul Bridge di prova? Non avvia la condivisione.'))return;
+      pairing=true;enroll.disabled=true;revoke.disabled=true;
+      status.textContent='Registrazione del telefono…';
+      try{
+        await bridgeOwnerClient.enroll(label.value);
+        if(alive())status.textContent='Telefono registrato. Nessuna cartella condivisa automaticamente.';
+      }catch{if(alive())status.textContent='Registrazione non completata. Controlla il collegamento al server di prova.';}
+      finally{pairing=false;await refresh();}
+    };
+    revoke.onclick=async()=>{
+      if(pairing||!alive())return;
+      if(!confirm('Revocare definitivamente questo telefono sul server Bridge?'))return;
+      pairing=true;enroll.disabled=true;revoke.disabled=true;
+      status.textContent='Revoca del dispositivo…';
+      try{
+        await bridgeOwnerClient.remove();
+        if(alive())status.textContent='Dispositivo revocato.';
+      }catch{if(alive())status.textContent='Revoca non completata: ritenta quando il server è disponibile.';}
+      finally{pairing=false;await refresh();}
+    };
+    void refresh();
+  }
   const draw=async(offset=0)=>{
     if(!alive())return;
     const revision=++generation;
