@@ -124,3 +124,22 @@ test('single-file transfer rollback deletes temporary document on error',async()
    destination:dest,pause:async()=>{}}),/disk_full/);
  assert.deepEqual(events,['discardSingleFile']);
 });
+
+test('Android destination rejects preexisting names before staging and before final rename',()=>{
+ const java=readFileSync(new URL('../android-bridge/BridgeDestinationPlugin.java.template',import.meta.url),'utf8');
+ assert.match(java,/private boolean targetExists\(String requestedName\)/);
+ assert.match(java,/DocumentsContract\.buildChildDocumentsUriUsingTree/);
+ assert.match(java,/java\.text\.Normalizer\.normalize/);
+ assert.match(java,/equalsIgnoreCase\(wanted\)/);
+ assert.match(java,/if\(targetExists\(name\)\)throw/);
+ assert.match(java,/if\(targetExists\(singleName\)\)throw/);
+ assert.match(java,/if\(targetExists\(finalName\)\)throw/);
+ assert.equal((java.match(/if\(targetExists\(/g)||[]).length,4);
+});
+test('Android keeps renamed document URI for rollback on final name verification error',()=>{
+ const java=readFileSync(new URL('../android-bridge/BridgeDestinationPlugin.java.template',import.meta.url),'utf8');
+ assert.match(java,/singleStaging=renamed;/);
+ assert.match(java,/staging=renamed;/);
+ assert.match(java,/deleteDocument\(\s*getContext\(\)\.getContentResolver\(\),singleStaging\)/);
+ assert.match(java,/deleteDocument\(getContext\(\)\.getContentResolver\(\),staging\)/);
+});
