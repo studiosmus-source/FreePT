@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/bridge-admin-foundation-20261106
+      - feature/bridge-chunk-receiver-20261108
     paths:
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
