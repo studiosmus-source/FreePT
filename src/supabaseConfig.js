@@ -17,7 +17,7 @@ export function getFreePtSupabaseConfig({
   let parsed;
   try {parsed=new URL(url);} catch {throw Error('isolated_supabase_url_required');}
   if(parsed.protocol!=='https:'||
-     !/^[a-z0-9-]+\\.supabase\\.co$/.test(parsed.hostname)||
+     !/^[a-z0-9-]+\.supabase\.co$/.test(parsed.hostname)||
      parsed.hostname===PROD_HOST||parsed.username||parsed.password||
      parsed.port||parsed.pathname!=='/'||parsed.search||parsed.hash)
     throw Error('isolated_supabase_url_required');
