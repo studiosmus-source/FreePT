@@ -118,8 +118,10 @@ jobs:
           npx cap add android
           npx cap sync android
           test -s android/capacitor.settings.gradle
-      - name: Install explicit owner-selected SAF folder provider (Bridge test only)
+      - name: Install native file catalogue and foreground TX (Bridge staging only)
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        env:
+          VITE_BRIDGE_TEST_API_URL: ${{ vars.FREEPT_BRIDGE_TEST_API_URL }}
         run: python3 android-bridge/install.py
       - name: Ensure Android biometric permission
         run: |

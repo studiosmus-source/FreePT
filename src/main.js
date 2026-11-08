@@ -6,7 +6,6 @@ import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
 import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
-import {createBridgeFolderTransmitter} from './bridgeTxFolderClient.js';
 import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
 import {renderOriginalTxRx} from './originalTxRxUi.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
@@ -23,6 +22,7 @@ const db = createClient(config.url, config.key, { auth: { persistSession: true, 
 const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
+const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
@@ -38,6 +38,29 @@ const bridgeClient=createBridgeAdminClient({
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
 let bridgePendingOwnerId=null;
+let bridgeTxStartupInProgress=false;
+async function startProvisionedTxWhenAllowed(){
+  if(bridgeTxStartupInProgress||!bridgeTxControl||!bridgeOwnerControls||
+     profile?.status!=='approved'||profile?.role!=='user'||!me?.id)return;
+  bridgeTxStartupInProgress=true;
+  const owner=me.id;
+  try{
+    const [state,device,permission]=await Promise.all([
+      bridgeTxControl.status(),bridgeCredentials.status(),bridgeAllFiles.status()
+    ]);
+    if(me?.id!==owner||profile?.status!=='approved'||state?.paused||
+       state?.running||!state?.configured||!permission?.granted||
+       !device?.provisioned)return;
+    const [setting,grants]=await Promise.all([
+      bridgeOwnerControls.device(device.deviceId),
+      bridgeOwnerControls.recipients(device.deviceId)
+    ]);
+    if(me?.id===owner&&setting?.enabled&&grants.some(x=>x.active))
+      await bridgeTxControl.start();
+  }catch{
+    // Failed closed on expired login, missing staging backend or permissions.
+  }finally{bridgeTxStartupInProgress=false;}
+}
 const el = document.getElementById('app');
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
 let messageRequest = 0;
@@ -273,7 +296,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){adminPeopleQuery='';adminPeopleStatus='all';closeAdminOverlays();bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';closeAdminOverlays();bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -299,7 +322,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user')void startProvisionedTxWhenAllowed();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -317,6 +340,7 @@ async function refreshOnVisible(){
         renderPeople();
       }
       if(selected) await showMessages(false);
+      if(profile?.role==='user')void startProvisionedTxWhenAllowed();
     } catch(e){ status(friendly(e),true) }
   }
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
@@ -687,62 +711,33 @@ async function showOwnerBridgeFolder(){
         if(!confirm('Autorizzare questo amministratore alla cartella Bridge selezionata?'))return;
         await bridgeOwnerControls.grant(account.deviceId,field.value.trim());
       });
-      if(current.enabled && grants.some(x=>x.active)){
+      if(current.enabled && grants.some(x=>x.active)&&bridgeTxControl){
         const respond=document.createElement('button');
         respond.type='button';
-        respond.textContent='Avvia Bridge per 4 minuti';
         grantsArea.appendChild(respond);
-        let responding=false;
-        let stopRequested=false;
-        respond.onclick=async()=>{
-          if(responding){
-            stopRequested=true;
-            respond.disabled=true;
-            respond.textContent='Arresto richiesto…';
-            return;
-          }
-          if(!alive())return;
-          if(!confirm('Attivare la condivisione con gli amministratori autorizzati per questa sessione?'))return;
-          responding=true;stopRequested=false;
-          respond.textContent='Interrompi condivisione Bridge';
-          let tx=null,processedCount=0;
-          try{
-            const all=await bridgeAllFiles?.status();
-            const folderProvider=all?.granted ? bridgeAllFiles : bridgeFiles;
-            if(!all?.granted){
-              const chosen=await bridgeFiles.getFolder();
-              if(!chosen?.selected)throw Error('no_shared_folder');
-            }
-            const credentials=await bridgeCredentials.getForConnection();
-            if(!alive()||credentials?.deviceId!==account.deviceId)
-              throw Error('bridge_owner_changed');
-            tx=createBridgeFolderTransmitter({
-              baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
-              deviceId:credentials.deviceId,
-              deviceSecret:credentials.deviceSecret,
-              folderProvider
-            });
-            await tx.connect();
-            const stopAt=Date.now()+240000;
-            while(alive()&&!stopRequested&&Date.now()<stopAt){
-              const processed=await tx.processOne();
-              if(processed)processedCount++;
-              if(alive())status.textContent='Bridge temporaneamente attivo. Richieste servite: '+processedCount;
-              if(!stopRequested)
-                await new Promise(resolve=>setTimeout(resolve,processed?450:1250));
-            }
-            if(alive())status.textContent='Sessione Bridge terminata. Richieste elaborate: '+processedCount;
-          }catch{
-            if(alive())status.textContent='Bridge interrotto: verifica server di prova, sessione e autorizzazioni.';
-          }finally{
-            if(tx)await tx.disconnect();
-            responding=false;stopRequested=false;
-            if(alive()){
-              respond.disabled=false;
-              respond.textContent='Avvia Bridge per 4 minuti';
-            }
-          }
+        const updateState=async()=>{
+          const result=await bridgeTxControl.status();
+          if(alive())respond.textContent=result?.running?
+            'Interrompi Sistema Connesso':'Avvia Sistema Connesso';
         };
+        respond.onclick=async()=>{
+          if(!alive())return;
+          respond.disabled=true;
+          try{
+            const state=await bridgeTxControl.status();
+            if(state?.running){
+              await bridgeTxControl.stop();
+              status.textContent='Condivisione interrotta. Rimarrà sospesa.';
+            }else{
+              await bridgeTxControl.start();
+              status.textContent='Sistema Connesso avviato sul telefono.';
+            }
+            await updateState();
+          }catch{
+            if(alive())status.textContent='Controlla autorizzazioni Android e collegamento Bridge.';
+          }finally{if(alive())respond.disabled=false;}
+        };
+        void updateState();
       }
       for(const item of grants){
         const line=document.createElement('div');

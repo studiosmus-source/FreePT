@@ -26,7 +26,8 @@ if any(name in source for name in ("BridgeFilesPlugin.class",
                                       "BridgeCredentialsPlugin.class",
                                       "BridgeDestinationPlugin.class",
                                       "BridgeRxKeysPlugin.class",
-                                      "BridgeAllFilesPlugin.class")):
+                                      "BridgeAllFilesPlugin.class",
+                                      "BridgeTxControlPlugin.class")):
     raise SystemExit("Plugin already registered: refuse stacking patches")
 anchor = "public class MainActivity extends BridgeActivity {"
 if source.count(anchor) != 1:
@@ -44,6 +45,7 @@ source = source.replace(
     registerPlugin(BridgeCredentialsPlugin.class);\n    registerPlugin(BridgeDestinationPlugin.class);
     registerPlugin(BridgeRxKeysPlugin.class);
     registerPlugin(BridgeAllFilesPlugin.class);
+    registerPlugin(BridgeTxControlPlugin.class);
     super.onCreate(savedInstanceState);
   }
 """,
@@ -88,4 +90,51 @@ if 'android.permission.MANAGE_EXTERNAL_STORAGE' in xml:
 if xml.count("<application") != 1:
     raise SystemExit("Unexpected AndroidManifest.xml layout")
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
-print("Five Bridge plugins installed in isolated app:", package)
+for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
+             "BridgeTxControlPlugin"):
+    template_path = Path("android-bridge") / (name + ".java.template")
+    template = template_path.read_text()
+    if template.count("__PACKAGE__") != 1:
+        raise SystemExit("Unexpected native service template: " + name)
+    main.with_name(name + ".java").write_text(
+        template.replace("__PACKAGE__", package)
+    )
+manifest_text = manifest.read_text()
+for permission_name in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC",
+                        "POST_NOTIFICATIONS"):
+    token = 'android.permission.' + permission_name
+    if token not in manifest_text:
+        manifest_text = manifest_text.replace(
+            "<application",
+            '<uses-permission android:name="' + token + '" />\n    <application',
+            1,
+        )
+service = ('<service android:name=".BridgeTxService" '
+           'android:exported="false" '
+           'android:foregroundServiceType="dataSync" />')
+if manifest_text.count("</application>") != 1:
+    raise SystemExit("Unexpected AndroidManifest app closure")
+if "BridgeTxService" in manifest_text:
+    raise SystemExit("TX native service already registered")
+manifest.write_text(manifest_text.replace("</application>",
+    "    " + service + "\n    </application>", 1))
+# The runtime endpoint is injected at APK build time, never committed or guessed.
+from urllib.parse import urlparse
+import os
+from xml.sax.saxutils import escape
+raw = os.environ.get("VITE_BRIDGE_TEST_API_URL", "").strip()
+if raw:
+    parsed = urlparse(raw)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.port or
+            parsed.username or parsed.password or parsed.path not in ("", "/") or
+            parsed.query or parsed.fragment or
+            parsed.hostname == "cpopqsvzzxfjgnlawlvc.supabase.co"):
+        raise SystemExit("Invalid isolated Bridge native backend")
+    raw = parsed.scheme + "://" + parsed.hostname
+values = Path("android/app/src/main/res/values")
+values.mkdir(parents=True, exist_ok=True)
+(values / "freept_bridge.xml").write_text(
+    '<resources><string name="bridge_endpoint">' +
+    escape(raw) + '</string></resources>\n'
+)
+print("Seven Bridge plugins/classes installed in isolated app:", package)
