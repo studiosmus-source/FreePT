@@ -213,7 +213,7 @@ create or replace function public.bridge_server_enqueue_read(
   p_job_id uuid,p_device_id uuid,p_receiver_id uuid,
   p_handle uuid,p_offset bigint,p_length integer
 ) returns uuid language plpgsql security invoker set search_path=''
-as $
+as $$
 begin
   if p_job_id is null or p_device_id is null or p_receiver_id is null or
      p_handle is null or p_offset is null or p_offset<0 or
@@ -249,7 +249,7 @@ begin
     values(p_job_id,p_handle,p_offset,p_length);
   return p_job_id;
 end;
-$;
+$$;
 
 
 revoke all on function public.bridge_server_enqueue_browse(uuid,uuid,uuid,text,integer)
