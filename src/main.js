@@ -6,6 +6,7 @@ import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
+import {filterAdminPeople} from './adminPeopleFilter.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -28,6 +29,8 @@ let adminUnlocked = false;
 let adminUnlocking = false;
 let awaySince = 0;
 let deleteMigrationReady = true;
+let adminPeopleQuery = '';
+let adminPeopleStatus = 'all';
 let filePickerActive = false;
 let filePickerReturned = false;
 let filePickerClearTimer = null;
@@ -238,7 +241,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){closeAdminOverlays();bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){adminPeopleQuery='';adminPeopleStatus='all';closeAdminOverlays();bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -488,14 +491,44 @@ function renderLayout(){
 function renderPeople(){
   const p=document.getElementById('people');
   if(!p)return;
-  p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+
+  const visiblePeople=filterAdminPeople(people,adminPeopleQuery,adminPeopleStatus);
+  p.innerHTML='<div class="admin-people-tools"><strong>Utenti ('+visiblePeople.length+'/'+people.length+')</strong>'+
+    '<input type="search" id="adminPeopleSearch" aria-label="Cerca utenti" placeholder="Cerca nome o telefono" value="'+esc(adminPeopleQuery)+'">'+
+    '<select id="adminPeopleStatus" aria-label="Filtra utenti per stato">'+
+    [['all','Tutti'],['pending','Da approvare'],['approved','Approvati'],['blocked','Bloccati']].map(([key,label])=>
+      '<option value="'+key+'"'+(adminPeopleStatus===key?' selected':'')+'>'+label+'</option>').join('')+
+    '</select></div><div id="adminPeopleResults">'+
+    '<p class="hint" id="adminPeopleEmpty"'+(visiblePeople.length?' hidden':'')+'>Nessun utente corrisponde ai filtri.</p>'+
     people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+
       esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
       (x.lastMessage?'<span class="chat-preview">'+
         esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+
         '</span>':'')+
       (x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+
-      '</button>').join('');
+      '</button>').join('')+'</div>';
+  const search=p.querySelector('#adminPeopleSearch');
+  const filter=p.querySelector('#adminPeopleStatus');
+  search.oninput=()=>{
+    adminPeopleQuery=search.value;
+    // Keep the keyboard open on Android: replace results, not the active input.
+    updateAdminPeopleResults();
+  };
+  filter.onchange=()=>{adminPeopleStatus=filter.value;updateAdminPeopleResults();};
+  bindAdminPeopleActions(p);
+  updateAdminPeopleResults();
+}
+function updateAdminPeopleResults(){
+  const p=document.getElementById('people');
+  if(!p)return;
+  const filtered=filterAdminPeople(people,adminPeopleQuery,adminPeopleStatus);
+  p.querySelector('.admin-people-tools strong').textContent='Utenti ('+filtered.length+'/'+people.length+')';
+  // Keep existing user buttons, their listeners and any selected conversation intact.
+  for(const button of p.querySelectorAll('[data-id]'))
+    button.hidden=!filtered.some(user=>user.id===button.dataset.id);
+  const empty=p.querySelector('#adminPeopleEmpty');
+  if(empty)empty.hidden=filtered.length>0;
+}
+function bindAdminPeopleActions(p){
   p.querySelectorAll('[data-id]').forEach(button=>{
     let holdTimer=null;
     let suppressClick=false;
