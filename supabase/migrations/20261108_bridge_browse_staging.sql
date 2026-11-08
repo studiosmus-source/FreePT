@@ -208,6 +208,50 @@ begin
 end;
 $$;
 
+-- Files discovered inside granted subfolders are readable with the same grant.
+create or replace function public.bridge_server_enqueue_read(
+  p_job_id uuid,p_device_id uuid,p_receiver_id uuid,
+  p_handle uuid,p_offset bigint,p_length integer
+) returns uuid language plpgsql security invoker set search_path=''
+as $
+begin
+  if p_job_id is null or p_device_id is null or p_receiver_id is null or
+     p_handle is null or p_offset is null or p_offset<0 or
+     p_length is null or p_length not between 1 and 32768 then
+    raise exception 'bridge_read_invalid' using errcode='22023';
+  end if;
+  perform 1 from public.bridge_devices d where d.id=p_device_id
+    and d.bridge_enabled=true for update;
+  if not found then raise exception 'bridge_read_denied' using errcode='42501'; end if;
+  if not exists (
+    select 1 from public.bridge_grants g
+    join public.profiles p on p.id=g.receiver_id
+    where g.device_id=p_device_id and g.receiver_id=p_receiver_id
+      and g.revoked_at is null and p.role='admin' and p.status='approved'
+  ) then raise exception 'bridge_read_denied' using errcode='42501'; end if;
+  -- Only file handles from a fresh, completed, same-device/same-receiver
+  -- listing may be used. No arbitrary URI/path is ever accepted here.
+  if not exists (
+    select 1 from public.bridge_folder_pages f
+    join public.bridge_jobs j on j.id=f.job_id
+    cross join lateral jsonb_array_elements(f.entries) as e(entry)
+    where j.device_id=p_device_id and j.receiver_id=p_receiver_id
+      and j.operation in ('list','browse') and j.state='done'
+      and j.expires_at>clock_timestamp()
+      and e.entry->>'handle'=p_handle::text
+      and e.entry->>'directory'='false'
+      and (e.entry->>'size')::bigint>=p_offset+p_length
+  ) then raise exception 'bridge_read_handle_denied' using errcode='42501'; end if;
+  insert into public.bridge_jobs(id,device_id,receiver_id,operation,state,expires_at)
+    values(p_job_id,p_device_id,p_receiver_id,'read','queued',
+      clock_timestamp()+interval '60 seconds');
+  insert into public.bridge_read_requests(job_id,handle,byte_offset,byte_length)
+    values(p_job_id,p_handle,p_offset,p_length);
+  return p_job_id;
+end;
+$;
+
+
 revoke all on function public.bridge_server_enqueue_browse(uuid,uuid,uuid,text,integer)
  from public,anon,authenticated;
 revoke all on function public.bridge_server_claim_browse(uuid,text)
