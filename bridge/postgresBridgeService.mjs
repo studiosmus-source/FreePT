@@ -9,7 +9,7 @@ import {BridgePostgresJobsAdapter} from './postgresJobsAdapter.mjs';
 import {BridgePostgresTxSessions} from './postgresTxSessions.mjs';
 
 export function createBridgePostgresService({
-  rpcClient, authenticateAdmin, authenticateDevice
+  rpcClient, authenticateAdmin, authenticateDevice,readJobsEnabled=false
 }) {
   if (typeof rpcClient?.rpc !== 'function' ||
       typeof authenticateAdmin !== 'function' ||
@@ -18,7 +18,7 @@ export function createBridgePostgresService({
 
   const sessions = new BridgePostgresTxSessions({rpcClient, authenticateDevice});
   const jobs = new BridgePostgresJobsAdapter({
-    rpcClient, sessions, authenticateAdmin
+    rpcClient, sessions, authenticateAdmin,readJobsEnabled
   });
 
   // Only the fixed-list metadata job is supported. All authorization and
