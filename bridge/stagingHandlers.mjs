@@ -45,7 +45,8 @@ export function createBridgeStagingHandlers({
     completeFolderPage: ({ deviceId, sessionToken, jobId, entries }) =>
       jobs.completeFolderPage({ deviceId, sessionToken, jobId, entries }),
     completeRead: ({ deviceId, sessionToken, jobId, chunk }) =>
-      jobs.completeRead({ deviceId, sessionToken, jobId, chunk })
+      jobs.completeRead({ deviceId, sessionToken, jobId, chunk }),
+    completeBrowsePage: params => jobs.completeBrowsePage(params)
   };
   const adminHandler = createBridgeAdminRequestHandler({
     service: jobs,
