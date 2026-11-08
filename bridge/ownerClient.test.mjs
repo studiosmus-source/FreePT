@@ -43,7 +43,10 @@ test('authenticated owner provisions the individual secret only into native Keys
   assert.deepEqual(f.requests[0].body,{label:'My Android'});
   assert.equal(f.requests[0].auth,'Bearer '+TOKEN);
   assert.equal(JSON.stringify(f.requests).includes(SECRET),false);
-  await assert.rejects(()=>f.client.enroll('Again'),/already_provisioned/);
+  assert.deepEqual(await f.client.enroll('Again'),{
+    deviceId:DEVICE,provisioned:true,alreadyProvisioned:true
+  });
+  assert.deepEqual(f.requests.map(x=>x.action),['enroll']);
   assert.equal(await f.client.remove(),true);
   assert.equal(f.getSaved(),null);
   assert.equal(f.isEnrolled(),false);
@@ -69,4 +72,13 @@ test('unapproved owner does not provision a device',async()=>{
   await assert.rejects(()=>f.client.enroll('Android'),/owner_denied/);
   assert.equal(f.requests.length,1);
   assert.equal(f.getSaved(),null);
+});
+
+test('existing local TX enrollment is reused without re-enrolling or clearing credentials',async()=>{
+  const f=fixture();
+  await f.client.enroll('First phone');
+  const before=f.getSaved();
+  assert.equal((await f.client.enroll('Again')).alreadyProvisioned,true);
+  assert.equal(f.getSaved(),before);
+  assert.equal(f.requests.length,1);
 });

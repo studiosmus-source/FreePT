@@ -562,17 +562,16 @@ function showAdminBridge(){
     if(a.length<32||b.length<32||a===b){message.textContent='Le due chiavi devono essere diverse e di almeno 32 caratteri.';return;}
     button.disabled=true;
     try{
-      // The relay is checked before writing credentials to encrypted Android storage.
-      const {CapacitorHttp}=await import('@capacitor/core');
-      const {createOriginalTxRx}=await import('./originalTxRx.js');
-      const client=createOriginalTxRx({request:options=>CapacitorHttp.request(options)});
-      try{await client.connect(a,b);}
-      finally{client.disconnect();}
-      if(!alive())return;
+      // These keys are local RX settings, not the device's Supabase Bridge
+      // authorization. Never reject a secure save because the legacy TX relay
+      // is offline, incompatible, or a different backend.
       const saved=await provider.save({rxKey:a,txKey:b});
       if(saved?.saved!==true)throw Error('bridge_keys_not_saved');
+      const verified=await provider.status();
+      if(verified?.configured!==true)throw Error('bridge_keys_not_persisted');
+      if(!alive())return;
       rx.value='';tx.value='';
-      message.textContent='Chiavi verificate e salvate.';
+      message.textContent='Chiavi salvate in modo sicuro sul telefono.';
     }catch(error){if(alive())message.textContent='Salvataggio non riuscito: '+friendly(error);}
     finally{button.disabled=false;}
   };
@@ -636,6 +635,8 @@ async function showOwnerBridgeFolder(){
           :'Questo telefono non è ancora registrato sul Bridge.';
         enroll.disabled=!!current?.provisioned;
         revoke.disabled=!current?.provisioned;
+        label.disabled=!!current?.provisioned;
+        enroll.textContent=current?.provisioned?'Telefono già collegato':'Registra telefono';
       }catch{if(alive())status.textContent='Stato credenziale non disponibile.';}
     };
     enroll.onclick=async()=>{
@@ -644,8 +645,10 @@ async function showOwnerBridgeFolder(){
       pairing=true;enroll.disabled=true;revoke.disabled=true;
       status.textContent='Registrazione del telefono…';
       try{
-        await bridgeOwnerClient.enroll(label.value);
-        if(alive())status.textContent='Telefono registrato. Nessuna cartella condivisa automaticamente.';
+        const linked=await bridgeOwnerClient.enroll(label.value);
+        if(alive())status.textContent=linked.alreadyProvisioned?
+          'Telefono già registrato: configurazione conservata.':
+          'Telefono registrato. Puoi continuare senza ripetere la registrazione.';
       }catch{if(alive())status.textContent='Registrazione non completata. Controlla il collegamento al server di prova.';}
       finally{pairing=false;await refresh();if(alive())await renderGrants();}
     };

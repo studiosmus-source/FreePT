@@ -48,7 +48,13 @@ export function createBridgeOwnerClient({
          /[\u0000-\u001f\u007f]/.test(label))
         throw Error('bridge_owner_invalid_label');
       const current=await credentials.status();
-      if(current?.provisioned)throw Error('bridge_owner_device_already_provisioned');
+      if(current?.provisioned){
+        // Reinstallation/return to enrollment must never overwrite an
+        // existing Keystore secret or create duplicate server devices.
+        if(!UUID.test(current.deviceId))
+          throw Error('bridge_owner_invalid_local_registration');
+        return {deviceId:current.deviceId,provisioned:true,alreadyProvisioned:true};
+      }
       const result=await post('enroll',{label:label.trim()});
       if(!result||Object.keys(result).sort().join(',')!=='deviceId,deviceSecret'||
          !UUID.test(result.deviceId)||!HEX.test(result.deviceSecret))
