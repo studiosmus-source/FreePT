@@ -7,7 +7,8 @@
  */
 import { createServer } from 'node:http';
 
-const MAX_BYTES = 2048;
+// Max 100 bounded file entries in a single authenticated catalogue response.
+const MAX_BYTES = 32768;
 class RequestBodyError extends Error {
   constructor(status, code) {
     super(code);
@@ -53,8 +54,8 @@ export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
         reply(res, 405, {error:'method_not_allowed'});
         return;
       }
-      const adminPaths = ['/bridge/admin/list','/bridge/admin/status','/bridge/admin/cancel'];
-      const txPaths = ['/bridge/tx/connect','/bridge/tx/poll','/bridge/tx/complete','/bridge/tx/disconnect'];
+      const adminPaths = ['/bridge/admin/list','/bridge/admin/status','/bridge/admin/cancel','/bridge/admin/folder'];
+      const txPaths = ['/bridge/tx/connect','/bridge/tx/poll','/bridge/tx/complete','/bridge/tx/disconnect','/bridge/tx/folder'];
       const txRoute = txPaths.includes(req.url);
       if (!adminPaths.includes(req.url) && !(txHandler && txRoute)) {
         reply(res, 404, {error:'not_found'});
