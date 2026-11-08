@@ -472,7 +472,9 @@ function showAdminBridge(){
     if(view==='approvals')void loadAdminBridgeDevices(panel);
     else {
       panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
-      content.textContent='La consultazione dei file richiede un collegamento Bridge autorizzato e verificato dal backend. Non è ancora disponibile.';
+      content.innerHTML='<p>Trasferimento remoto non ancora disponibile. Puoi collaudare la lettura di una cartella di questo telefono.</p>'+
+        (bridgeFiles?'<button type="button" id="testOwnBridgeFolder">Prova cartella locale</button>':'');
+      if(bridgeFiles)content.querySelector('#testOwnBridgeFolder').onclick=showOwnerBridgeFolder;
     }
   };
   panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.onclick=()=>show(b.dataset.bridgeView));
@@ -485,7 +487,8 @@ function showAdminBridge(){
  * The user selects exactly one tree through Android's system picker.
  */
 async function showOwnerBridgeFolder(){
-  if(!bridgeFiles||!me||profile?.role!=='user'||profile.status!=='approved')return;
+  if(!bridgeFiles||!me||profile?.status!=='approved'||
+     (profile.role!=='user' && !(profile.role==='admin'&&adminUnlocked)))return;
   document.getElementById('ownerBridgePanel')?.remove();
   const panel=document.createElement('div');
   panel.id='ownerBridgePanel';panel.className='bridge-admin-shade';
@@ -499,7 +502,9 @@ async function showOwnerBridgeFolder(){
   const area=panel.querySelector('#ownerBridgeContents');
   const stack=[{handle:'root',name:'Cartella scelta'}];
   let generation=0;
-  const alive=()=>panel.isConnected&&profile?.role==='user'&&profile?.status==='approved'&&me;
+  const ownerId=me.id;
+  const alive=()=>panel.isConnected&&me?.id===ownerId&&profile?.status==='approved'&&
+    (profile.role==='user'||(profile.role==='admin'&&adminUnlocked));
   const draw=async(offset=0)=>{
     if(!alive())return;
     const revision=++generation;
