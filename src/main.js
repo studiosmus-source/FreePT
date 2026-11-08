@@ -243,6 +243,8 @@ async function loadAdminBridgeDevices(panel){
   if(!content || !panel.isConnected || profile?.role!=='admin' || !adminUnlocked)return;
   // Each tab refresh invalidates older responses so stale data cannot
   // overwrite a newer view after slow network calls.
+  const ownerId=me?.id;
+  if(!ownerId)return;
   const revision=panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
   content.textContent='Caricamento dispositivi autorizzati…';
   // RLS only exposes devices this approved account may read.
@@ -251,12 +253,12 @@ async function loadAdminBridgeDevices(panel){
   try {
     ({data,error}=await db.from('bridge_grants')
       .select('device_id,bridge_devices!inner(id,label,bridge_enabled)')
-      .eq('receiver_id',me.id).is('revoked_at',null).limit(100));
+      .eq('receiver_id',ownerId).is('revoked_at',null).limit(100));
   } catch {
     error={code:'bridge_network_unavailable'};
   }
   if(!panel.isConnected || panel.bridgeLoadRevision!==revision ||
-      profile?.role!=='admin' || !adminUnlocked ||
+      me?.id!==ownerId || profile?.role!=='admin' || !adminUnlocked ||
       panel.querySelector('[data-bridge-view="approvals"]')?.getAttribute('aria-pressed')!=='true')return;
   if(error){
     const missing=/42P01|PGRST205|PGRST204|does not exist|schema cache/i.test(
@@ -285,7 +287,7 @@ async function loadAdminBridgeDevices(panel){
     (data.length===100?'<p>Visualizzati i primi 100 dispositivi autorizzati.</p>':'');
   if(bridgeClient)content.querySelectorAll('[data-bridge-request]').forEach(button=>{
     button.onclick=()=>void requestAdminBridgeList(panel,button);
-    const saved=bridgePendingJobs.get(me.id+':'+button.dataset.bridgeRequest);
+    const saved=bridgePendingJobs.get(ownerId+':'+button.dataset.bridgeRequest);
     if(saved)void requestAdminBridgeList(panel,button,saved);
   });
 }
@@ -306,7 +308,8 @@ async function requestAdminBridgeList(panel,button,existingJob=null){
   row.appendChild(result);
   result.textContent='Invio richiesta Bridge…';
   const stillAuthorized=()=>panel.isConnected&&row.isConnected&&
-    profile?.role==='admin'&&adminUnlocked&&!!me;
+    profile?.role==='admin'&&adminUnlocked&&me?.id===ownerId&&
+    bridgePendingOwnerId===ownerId;
   try{
     const job=existingJob||await bridgeClient.requestList(deviceId);
     if(bridgePendingOwnerId===ownerId && me?.id===ownerId)
