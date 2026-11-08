@@ -7,6 +7,7 @@ import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
+import {getAdminStatusAction} from './adminStatusAction.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -600,6 +601,7 @@ function showConversationActions(user){
   modal.setAttribute('aria-label','Gestione conversazione');
   modal.innerHTML='<div class="chat-actions-box"><h3>'+esc(user.full_name)+'</h3>'+
     '<p>Che cosa vuoi fare?</p>'+
+    (getAdminStatusAction(user.status)?'<button type="button" id="adminStatusAction">'+esc(getAdminStatusAction(user.status).label)+'</button>':'')+
     '<button type="button" id="clearChatAction">Cancella chat</button>'+
     '<button type="button" class="danger" id="deleteUserAction">Elimina utente</button>'+
     '<button type="button" class="secondary" id="cancelChatAction">Annulla</button>'+
@@ -608,6 +610,31 @@ function showConversationActions(user){
   const close=()=>modal.remove();
   modal.onclick=event=>{if(event.target===modal)close()};
   document.getElementById('cancelChatAction').onclick=close;
+  const statusButton=modal.querySelector('#adminStatusAction');
+  if(statusButton)statusButton.onclick=async()=>{
+    const action=getAdminStatusAction(user.status);
+    if(!action||!confirm(action.question+'\n'+user.full_name))return;
+    modal.querySelectorAll('button').forEach(button=>button.disabled=true);
+    const statusNode=modal.querySelector('#actionStatus');
+    statusNode.textContent='Aggiornamento autorizzazione...';
+    try{
+      // Only an approved admin may update status, enforced by DB RLS.
+      // Compare previous status to avoid overriding concurrent changes.
+      const {data,error}=await db.from('profiles').update({status:action.next})
+        .eq('id',user.id).eq('status',user.status).eq('role','user')
+        .select('id,status');
+      if(error)throw error;
+      if(data?.length!==1)throw Error('Stato già modificato da un’altra sessione. Aggiorna l’elenco.');
+      if(action.next==='blocked'&&selected===user.id){
+        selected=null;messageRequest++;
+        document.getElementById('chat')?.classList.add('off');
+        document.getElementById('people')?.classList.remove('off');
+      }
+      close();
+      await listPeople();renderPeople();
+    }catch(error){statusNode.textContent='Operazione non completata: '+friendly(error);statusNode.className='error';}
+    finally{if(document.contains(modal))modal.querySelectorAll('button').forEach(button=>button.disabled=false);}
+  };
   const run=async deleteUser=>{
     if(!deleteMigrationReady){
       const statusNode=document.getElementById('actionStatus');
