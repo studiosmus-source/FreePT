@@ -37,6 +37,8 @@ public class BridgeDestinationPlugin extends Plugin {
     private Uri destination;
     private Uri staging;
     private String finalName;
+    private Uri singleStaging;
+    private String singleName;
     private final Map<String,Uri> directories=new HashMap<>();
     private final Map<String,FileEntry> files=new HashMap<>();
 
@@ -103,7 +105,7 @@ public class BridgeDestinationPlugin extends Plugin {
 
     @PluginMethod
     public void chooseDestination(PluginCall call){
-        if(staging!=null){call.reject("bridge_destination_busy");return;}
+        if(staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
@@ -138,7 +140,7 @@ public class BridgeDestinationPlugin extends Plugin {
     public void beginFolder(PluginCall call){
         restore();
         String name=call.getString("name");
-        if(destination==null||staging!=null||!validName(name)){
+        if(destination==null||staging!=null||singleStaging!=null||!validName(name)){
             call.reject("bridge_destination_not_ready");return;
         }
         try{
@@ -205,7 +207,7 @@ public class BridgeDestinationPlugin extends Plugin {
         FileEntry file=files.get(call.getString("fileId"));
         Object raw=call.getData().opt("offset");
         String encoded=call.getString("base64");
-        if(staging==null||file==null||file.completed||
+        if((staging==null&&singleStaging==null)||file==null||file.completed||
             !(raw instanceof Number)||encoded==null||
             encoded.length()>43692){
             call.reject("bridge_destination_write_invalid");return;
@@ -238,7 +240,7 @@ public class BridgeDestinationPlugin extends Plugin {
     @PluginMethod
     public void commitFile(PluginCall call){
         FileEntry file=files.get(call.getString("fileId"));
-        if(staging==null||file==null||file.completed||
+        if((staging==null&&singleStaging==null)||file==null||file.completed||
             file.written!=file.expected){
             call.reject("bridge_destination_file_incomplete");return;
         }
@@ -250,7 +252,7 @@ public class BridgeDestinationPlugin extends Plugin {
     public void discardFile(PluginCall call){
         String id=call.getString("fileId");
         FileEntry file=files.get(id);
-        if(staging==null||file==null){call.reject("bridge_destination_file_missing");return;}
+        if((staging==null&&singleStaging==null)||file==null){call.reject("bridge_destination_file_missing");return;}
         try{
             if(!DocumentsContract.deleteDocument(
                 getContext().getContentResolver(),file.uri))
@@ -258,6 +260,74 @@ public class BridgeDestinationPlugin extends Plugin {
             files.remove(id);
             call.resolve();
         }catch(Exception error){call.reject("bridge_destination_file_cleanup_failed");}
+    }
+
+    /** Stage a single file directly under the user's selected destination. */
+    @PluginMethod
+    public void beginSingleFile(PluginCall call){
+        restore();
+        String name=call.getString("name");
+        String mime=call.getString("mime","application/octet-stream");
+        Object raw=call.getData().opt("size");
+        if(destination==null||staging!=null||singleStaging!=null||
+            !validName(name)||mime==null||mime.length()>160||
+            !(raw instanceof Number)){
+            call.reject("bridge_destination_not_ready");return;
+        }
+        long size=((Number)raw).longValue();
+        if(((Number)raw).doubleValue()!=(double)size||
+            size<0||size>MAX_FILE_BYTES){
+            call.reject("bridge_destination_invalid_size");return;
+        }
+        try{
+            Uri temp=DocumentsContract.createDocument(
+                getContext().getContentResolver(),destination,
+                mime.isEmpty()?"application/octet-stream":mime,
+                ".freept-partial-"+UUID.randomUUID());
+            if(temp==null)throw new IllegalStateException();
+            singleStaging=temp;singleName=name;
+            files.clear();
+            String id=UUID.randomUUID().toString();
+            files.put(id,new FileEntry(temp,size));
+            JSObject result=new JSObject();result.put("fileId",id);
+            call.resolve(result);
+        }catch(Exception error){call.reject("bridge_destination_create_failed");}
+    }
+
+    @PluginMethod
+    public void commitSingleFile(PluginCall call){
+        if(singleStaging==null||files.size()!=1){
+            call.reject("bridge_destination_not_started");return;
+        }
+        for(FileEntry entry:files.values()){
+            if(!entry.completed){call.reject("bridge_destination_file_incomplete");return;}
+        }
+        try{
+            Uri renamed=DocumentsContract.renameDocument(
+                getContext().getContentResolver(),singleStaging,singleName);
+            if(renamed==null)throw new IllegalStateException();
+            try(Cursor cursor=getContext().getContentResolver().query(renamed,
+                new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+                null,null,null)){
+                if(cursor==null||!cursor.moveToFirst()||
+                    !singleName.equals(cursor.getString(0)))
+                    throw new IllegalStateException();
+            }
+            singleStaging=null;singleName=null;files.clear();
+            call.resolve();
+        }catch(Exception error){call.reject("bridge_destination_commit_failed");}
+    }
+
+    @PluginMethod
+    public void discardSingleFile(PluginCall call){
+        if(singleStaging==null){call.resolve();return;}
+        try{
+            if(!DocumentsContract.deleteDocument(
+                getContext().getContentResolver(),singleStaging))
+                throw new IllegalStateException();
+            singleStaging=null;singleName=null;files.clear();
+            call.resolve();
+        }catch(Exception error){call.reject("bridge_destination_cleanup_failed");}
     }
 
     @PluginMethod
@@ -298,7 +368,7 @@ public class BridgeDestinationPlugin extends Plugin {
 
     @PluginMethod
     public void clearDestination(PluginCall call){
-        if(staging!=null){call.reject("bridge_destination_busy");return;}
+        if(staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
         destination=null;
         if(!getContext().getSharedPreferences(PREFS,0).edit()
             .remove(SELECTED).commit()){
