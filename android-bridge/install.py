@@ -22,7 +22,9 @@ if package != "it.freept.bridge":
 
 if "extends BridgeActivity" not in source:
     raise SystemExit("Unexpected Capacitor Android activity")
-if any(name in source for name in ("BridgeFilesPlugin.class",\n                                      "BridgeCredentialsPlugin.class",\n                                      "BridgeDestinationPlugin.class")):
+if any(name in source for name in ("BridgeFilesPlugin.class",
+                                      "BridgeCredentialsPlugin.class",
+                                      "BridgeDestinationPlugin.class")):
     raise SystemExit("Plugin already registered: refuse stacking patches")
 anchor = "public class MainActivity extends BridgeActivity {"
 if source.count(anchor) != 1:
