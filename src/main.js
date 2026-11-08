@@ -399,6 +399,32 @@ async function requestAdminBridgeList(panel,button,existingJob=null){
     cancelButton.type='button';
     cancelButton.textContent='Annulla richiesta';
     controls.append(statusButton,cancelButton);
+    const catalogue=document.createElement('div');
+    catalogue.className='bridge-job-catalogue';
+    row.appendChild(catalogue);
+    const view=document.createElement('button');
+    view.type='button';
+    view.textContent='Mostra elenco ricevuto';
+    view.hidden=true;
+    catalogue.appendChild(view);
+    view.onclick=async()=>{
+      if(!stillAuthorized()||view.disabled)return;
+      view.disabled=true;
+      try{
+        const page=await bridgeClient.getFolderPage(job.jobId);
+        if(!stillAuthorized())return;
+        catalogue.replaceChildren();
+        const summary=document.createElement('p');
+        summary.textContent=page.entries.length+' elementi ricevuti:';
+        catalogue.appendChild(summary);
+        for(const item of page.entries){
+          const entry=document.createElement('p');
+          entry.textContent=(item.directory?'📁 ':'📄 ')+item.name;
+          catalogue.appendChild(entry);
+        }
+      }catch{if(stillAuthorized())result.textContent='Elenco remoto non ancora disponibile.';}
+      finally{view.disabled=false;}
+    };
     let state=job.state;
     let inFlight=false;
     let message='';
@@ -409,6 +435,7 @@ async function requestAdminBridgeList(panel,button,existingJob=null){
       statusButton.disabled=inFlight||terminal;
       cancelButton.disabled=inFlight||terminal;
       button.disabled=!terminal;
+      view.hidden=state!=='done';
       if(terminal)bridgePendingJobs.delete(jobKey);
     };
     statusButton.onclick=async()=>{
