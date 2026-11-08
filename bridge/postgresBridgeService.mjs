@@ -25,12 +25,15 @@ export function createBridgePostgresService({
   // consent decisions remain inside the trusted auth callbacks and DB RPCs.
   return Object.freeze({
     requestList: params => jobs.requestList(params),
+    requestRead: params => jobs.requestRead(params),
+    getReadChunk: params => jobs.getReadChunk(params),
     getRequestStatus: params => jobs.getRequestStatus(params),
     cancelRequest: params => jobs.cancelRequest(params),
     connectDevice: params => sessions.connect(params),
     pollDevice: params => jobs.pollDevice(params),
     completeDevice: params => jobs.completeDevice(params),
     completeFolderPage: params => jobs.completeFolderPage(params),
+    completeRead: params => jobs.completeRead(params),
     getFolderPage: params => jobs.getFolderPage(params),
     closeDeviceSession: params => sessions.close(params)
   });
