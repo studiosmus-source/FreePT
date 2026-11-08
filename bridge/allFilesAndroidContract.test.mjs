@@ -19,5 +19,5 @@ test('remote TX uses wide storage only after OS permission granted',()=>{
   const permissionUi=readFileSync(new URL('../android-bridge/BridgeAllFilesPlugin.java.template',import.meta.url),'utf8');
   assert.match(permissionUi,/Settings\.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION/);
   assert.match(java,/getCanonicalPath\(\)/);
-  assert.match(java,/\@PluginMethod public void readChunk/);
+  assert.match(java,/static synchronized JSObject read\(/);
 });
