@@ -141,8 +141,8 @@ function adminScreen(){
     '<p class="small">Accedi senza password con un codice inviato alla tua email amministratore. In seguito potrai entrare con impronta sul telefono.</p>'+
     '<form id="adminCodeSend" class="form"><input type="email" name="email" autocomplete="email" placeholder="Email amministratore" required>'+
     '<button type="submit">Invia codice via email</button></form>'+
-    '<form id="adminCodeVerify" class="form" hidden><label for="adminOtp">Codice di 6 cifre ricevuto via email</label>'+
-    '<input id="adminOtp" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>'+
+    '<form id="adminCodeVerify" class="form" hidden><label for="adminOtp">Codice ricevuto via email (da 6 a 10 cifre)</label>'+
+    '<input id="adminOtp" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required>'+
     '<button type="submit">Accedi con codice</button></form>'+
     '<details><summary>Accesso alternativo con password</summary>'+
     '<form id="adminForm" class="form"><input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required>'+
@@ -174,7 +174,7 @@ function adminScreen(){
       await completeAdminLogin(user);
     }catch(error){
       status(error?.message==='admin_code_invalid'
-        ?'Inserisci le sei cifre del codice.'
+        ?'Inserisci il codice numerico completo (da 6 a 10 cifre).'
         :'Codice non valido, scaduto o account non autorizzato.',true);
     }finally{button.disabled=false;}
   };
