@@ -22,11 +22,14 @@ test('passwordless admin verifies one-time email token',async()=>{
   const auth={async verifyOtp(input){calls.push(input);return {data:{user},error:null};}};
   assert.equal(await verifyAdminEmailCode(auth,email,' 123456 '),user);
   assert.deepEqual(calls,[{email,token:'123456',type:'email'}]);
+  assert.equal(await verifyAdminEmailCode(auth,email,' 12345678 '),user);
+  assert.deepEqual(calls[1],{email,token:'12345678',type:'email'});
+  assert.equal(await verifyAdminEmailCode(auth,email,'1234567890'),user);
 });
 test('passwordless admin refuses invalid tokens before network request',async()=>{
   let called=false;
   const auth={async verifyOtp(){called=true;return {data:{user:{}},error:null};}};
-  for(const code of ['', '12345','1234567','xxxxxx'])
+  for(const code of ['', '12345','12345678901','xxxxxx','1234567x'])
     await assert.rejects(()=>verifyAdminEmailCode(auth,email,code),/admin_code_invalid/);
   assert.equal(called,false);
 });
