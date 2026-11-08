@@ -64,3 +64,14 @@ html,body,#app{min-height:100%;height:100%}
 .admin-people-tools strong{font-size:14px}
 .admin-people-tools input,.admin-people-tools select{width:100%;min-width:0;padding:10px;border:1px solid #cbd2d9;border-radius:9px;background:white;color:#18202d}
 .person[hidden],#adminPeopleEmpty[hidden]{display:none!important}
+
+/* Prevent pointless scrolling of the app home/workspace. Only tall forms scroll. */
+.shell{overflow-y:hidden;overscroll-behavior:none}
+.request-shell,.shell:has(#adminCodeSend){overflow-y:auto;overscroll-behavior-y:contain}
+.request-shell .panel{margin:8px auto;padding:14px 18px 20px}
+.request-shell .disclaimer{padding:10px 12px;font-size:12px;line-height:1.35}
+.request-shell .disclaimer p{margin:6px 0}
+.request-shell .disclaimer-promise{font-size:15px;line-height:1.4}
+.request-shell .form{gap:9px}
+/* Discreet entry: long-press the title, never an exposed admin button. */
+.request-shell .top h1{user-select:none;-webkit-user-select:none;touch-action:manipulation}
