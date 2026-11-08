@@ -146,7 +146,7 @@ jobs:
           if grep -q '^networkTimeout=' "$WRAPPER"; then
             sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$WRAPPER"
           else
-            printf '\\nnetworkTimeout=120000\\n' >> "$WRAPPER"
+            printf '\nnetworkTimeout=120000\n' >> "$WRAPPER"
           fi
           for attempt in 1 2 3; do
             echo "Gradle wrapper download attempt $attempt/3"
