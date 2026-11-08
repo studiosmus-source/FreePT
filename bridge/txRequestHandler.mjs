@@ -4,7 +4,7 @@
  * Caller must provide the trusted in-process service; real deployment requires
  * TLS, consent persistence, anti-bruteforce throttling and a trusted backend.
  */
-import {validateBridgeFolderPage} from '../src/bridgeFileProtocol.js';
+import {validateBridgeFolderPage,validateBridgeFileChunk} from '../src/bridgeFileProtocol.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX = /^[0-9a-f]{64}$/;
 const ROUTES = {
@@ -12,6 +12,7 @@ const ROUTES = {
   '/bridge/tx/poll': ['deviceId', 'sessionToken'],
   '/bridge/tx/complete': ['deviceId', 'sessionToken', 'jobId'],
   '/bridge/tx/folder': ['deviceId', 'sessionToken', 'jobId', 'entries'],
+  '/bridge/tx/chunk': ['deviceId', 'sessionToken', 'jobId', 'chunk'],
   '/bridge/tx/disconnect': ['deviceId', 'sessionToken']
 };
 const fail = (status, code) => ({status, body:{error:code}});
@@ -69,6 +70,8 @@ export function createBridgeTxRequestHandler({
     const keys = ROUTES[request?.path];
     if (!keys || (request.path === '/bridge/tx/disconnect' &&
         typeof service.closeDeviceSession !== 'function') ||
+        (request.path === '/bridge/tx/chunk' &&
+        typeof service.completeRead !== 'function') ||
         (request.path === '/bridge/tx/folder' &&
         typeof service.completeFolderPage !== 'function'))
       return fail(404,'not_found');
@@ -83,6 +86,15 @@ export function createBridgeTxRequestHandler({
     if(request.path === '/bridge/tx/folder') {
       try{validateBridgeFolderPage({entries:body.entries,nextOffset:-1});}
       catch{return fail(400,'invalid_request');}
+    }
+    if(request.path === '/bridge/tx/chunk'){
+      try{
+        const chunk=body.chunk;
+        if(!chunk || !Number.isSafeInteger(chunk.bytesRead) ||
+           chunk.bytesRead<1||chunk.bytesRead>32768)
+          return fail(400,'invalid_request');
+        validateBridgeFileChunk(chunk,chunk.bytesRead);
+      }catch{return fail(400,'invalid_request');}
     }
     const connecting = request.path === '/bridge/tx/connect';
     if (connecting) {
@@ -113,6 +125,11 @@ export function createBridgeTxRequestHandler({
         return {status:200,body:{job:await service.pollDevice({
           deviceId:body.deviceId,sessionToken:body.sessionToken
         })}};
+      if(request.path === '/bridge/tx/chunk')
+        return {status:200,body:await service.completeRead({
+          deviceId:body.deviceId,sessionToken:body.sessionToken,
+          jobId:body.jobId,chunk:body.chunk
+        })};
       if(request.path === '/bridge/tx/folder')
         return {status:200,body:await service.completeFolderPage({
           deviceId:body.deviceId,sessionToken:body.sessionToken,
