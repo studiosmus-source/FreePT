@@ -30,6 +30,8 @@ export function createBridgePostgresService({
     connectDevice: params => sessions.connect(params),
     pollDevice: params => jobs.pollDevice(params),
     completeDevice: params => jobs.completeDevice(params),
+    completeFolderPage: params => jobs.completeFolderPage(params),
+    getFolderPage: params => jobs.getFolderPage(params),
     closeDeviceSession: params => sessions.close(params)
   });
 }
