@@ -144,7 +144,7 @@ export class BridgePostgresJobsAdapter {
 
   async completeRead({deviceId,sessionToken,jobId,chunk}){
     requireId(deviceId);requireId(jobId);
-    const validated=validateBridgeFileChunk(chunk,32768);
+    const validated=validateBridgeFileChunk(chunk,chunk?.bytesRead);
     if(validated.bytesRead>32768)throw Error('bridge_read_chunk_limit');
     const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
     if(!BINDING.test(binding))throw Error('bridge_invalid_session_binding');
@@ -161,7 +161,7 @@ export class BridgePostgresJobsAdapter {
     const result=await this.#rpc('bridge_server_read_chunk',{
       p_job_id:jobId,p_receiver_id:receiverId
     });
-    return validateBridgeFileChunk(result,32768);
+    return validateBridgeFileChunk(result,result?.bytesRead);
   }
 
   /** Read only the calling, verified admin's explicitly granted result. */
