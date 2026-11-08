@@ -103,3 +103,15 @@ test('Bridge delayed response from closed panel retains recoverable job metadata
   assert.equal(h.bridgePendingJobs.get('admin:'+DEVICE)?.jobId,JOB);
   assert.equal(h.children.filter(e=>e.className==='bridge-job-controls').length,0);
 });
+
+test('account switch while job request is pending never shows or retains old admin job',async()=>{
+  const h=harness({pending:true});
+  const work=h.request(h.panel,h.button);
+  h.context.me={id:'other-admin'};
+  h.context.bridgePendingOwnerId='other-admin';
+  h.bridgePendingJobs.clear();
+  h.finish();
+  await work;
+  assert.equal(h.bridgePendingJobs.size,0);
+  assert.equal(h.children.filter(e=>e.className==='bridge-job-controls').length,0);
+});
