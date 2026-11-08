@@ -170,10 +170,19 @@ begin
   ) then
     raise exception 'bridge_authority_denied' using errcode='42501';
   end if;
+  if p_next_offset<>-1 and not exists(
+    select 1 from public.bridge_browse_requests r
+    where r.job_id=p_job_id and r.page_offset+100=p_next_offset
+  ) then
+    raise exception 'bridge_file_page_invalid' using errcode='22023';
+  end if;
   insert into public.bridge_folder_pages(job_id,entries,next_offset)
     values(p_job_id,p_entries,p_next_offset);
+  -- Persist completed, authenticated metadata for the remaining consented
+  -- transfer session; queued/unclaimed jobs still expire after 60 seconds.
   update public.bridge_jobs
-    set state='done',updated_at=clock_timestamp() where id=p_job_id;
+    set state='done',expires_at=clock_timestamp()+interval '5 minutes',
+        updated_at=clock_timestamp() where id=p_job_id;
   return true;
 end;
 $$;
