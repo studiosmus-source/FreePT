@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
@@ -14,6 +14,8 @@ const config=getFreePtSupabaseConfig({
   isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
 });
 const db = createClient(config.url, config.key, { auth: { persistSession: true, autoRefreshToken: true } });
+const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
+  ? registerPlugin('BridgeFiles') : null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
   baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,auth:db.auth
@@ -477,6 +479,99 @@ function showAdminBridge(){
   show('approvals');
 }
 
+/**
+ * This is an OWNER-side Android SAF browser, not a remote file transfer.
+ * The user selects exactly one tree through Android's system picker.
+ */
+async function showOwnerBridgeFolder(){
+  if(!bridgeFiles||!me||profile?.role!=='user'||profile.status!=='approved')return;
+  document.getElementById('ownerBridgePanel')?.remove();
+  const panel=document.createElement('div');
+  panel.id='ownerBridgePanel';panel.className='bridge-admin-shade';
+  panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Cartella Bridge">'+
+    '<header><h2>Cartella Bridge</h2><button type="button" id="closeOwnerBridge">Chiudi</button></header>'+
+    '<p>Seleziona una cartella del tuo telefono. Per ora resta soltanto sul dispositivo: il collegamento remoto non è ancora attivo.</p>'+
+    '<div class="bridge-owner-actions"><button type="button" id="chooseOwnerFolder">Scegli cartella</button>'+
+    '<button type="button" id="clearOwnerFolder">Rimuovi autorizzazione</button></div>'+
+    '<div id="ownerBridgeContents" role="status"></div></section>';
+  document.body.appendChild(panel);
+  const area=panel.querySelector('#ownerBridgeContents');
+  const stack=[{handle:'root',name:'Cartella scelta'}];
+  let generation=0;
+  const alive=()=>panel.isConnected&&profile?.role==='user'&&profile?.status==='approved'&&me;
+  const draw=async(offset=0)=>{
+    if(!alive())return;
+    const revision=++generation;
+    const current=stack.at(-1);
+    area.textContent='Lettura cartella…';
+    try{
+      const response=await bridgeFiles.list({handle:current.handle,offset});
+      if(!alive()||revision!==generation)return;
+      if(offset===0)area.innerHTML='<div class="bridge-owner-path">'+esc(stack.map(x=>x.name).join(' / '))+'</div>'+
+        (stack.length>1?'<button type="button" id="ownerBridgeBack">‹ Indietro</button>':'')+
+        '<div id="ownerBridgeEntries"></div>';
+      const back=area.querySelector('#ownerBridgeBack');
+      if(back)back.onclick=()=>{stack.pop();void draw();};
+      const entries=area.querySelector('#ownerBridgeEntries');
+      for(const item of response.entries||[]){
+        const row=document.createElement('button');
+        row.type='button';row.className='bridge-owner-entry';
+        row.textContent=(item.directory?'📁 ':'📄 ')+String(item.name||'Senza nome');
+        row.onclick=async()=>{
+          if(!alive())return;
+          if(item.directory){stack.push({handle:item.handle,name:item.name||'Cartella'});await draw();}
+          else if(item.size>=0&&item.size<=65536 &&
+              (/^text\//.test(item.mime)||item.mime==='application/json')){
+            const rev=++generation;
+            area.textContent='Lettura anteprima…';
+            try{
+              const data=await bridgeFiles.readChunk({handle:item.handle,offset:0,length:Math.max(1,item.size)});
+              if(!alive()||rev!==generation)return;
+              const binary=atob(data.base64||'');
+              const bytes=Uint8Array.from(binary,ch=>ch.charCodeAt(0));
+              area.innerHTML='<button type="button" id="ownerBridgePreviewBack">‹ Indietro</button>'+
+                '<h3>'+esc(item.name)+'</h3><pre class="bridge-owner-preview">'+
+                esc(new TextDecoder().decode(bytes))+'</pre>';
+              area.querySelector('#ownerBridgePreviewBack').onclick=()=>void draw();
+            }catch{if(alive())area.textContent='Anteprima non disponibile per questo file.';}
+          }else{
+            area.textContent='File riconosciuto. La lettura di anteprime grandi e il download remoto non sono ancora attivati.';
+          }
+        };
+        entries.appendChild(row);
+      }
+      if(response.nextOffset>=0){
+        const more=document.createElement('button');
+        more.type='button';more.textContent='Carica altri file';
+        more.onclick=()=>void draw(response.nextOffset);
+        entries.appendChild(more);
+      }
+      if(!response.entries?.length&&offset===0){
+        const empty=document.createElement('p');
+        empty.textContent='Cartella vuota.';entries.appendChild(empty);
+      }
+    }catch(error){
+      if(alive()&&revision===generation)
+        area.textContent='Impossibile leggere la cartella: '+friendly(error);
+    }
+  };
+  panel.querySelector('#closeOwnerBridge').onclick=()=>{generation++;panel.remove();};
+  panel.querySelector('#chooseOwnerFolder').onclick=async()=>{
+    try{await bridgeFiles.chooseFolder();stack.splice(0,stack.length,{handle:'root',name:'Cartella scelta'});await draw();}
+    catch(error){if(alive())area.textContent='Selezione annullata o non disponibile.';}
+  };
+  panel.querySelector('#clearOwnerFolder').onclick=async()=>{
+    if(!confirm('Rimuovere il permesso di lettura della cartella da FreePT Bridge?'))return;
+    try{await bridgeFiles.clearFolder();generation++;area.textContent='Autorizzazione rimossa dal telefono.';}
+    catch{area.textContent='Non è stato possibile rimuovere il permesso.';}
+  };
+  try{
+    const selected=await bridgeFiles.getFolder();
+    if(alive())if(selected.selected)await draw();
+    else area.textContent='Nessuna cartella selezionata.';
+  }catch{if(alive())area.textContent='Accesso alle cartelle Android non disponibile.';}
+}
+
 function renderLayout(){
   closeAdminOverlays();
   const admin=profile.role==='admin';
@@ -484,7 +579,8 @@ function renderLayout(){
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
-    '<strong class="grow" id="chatTitle">Servizio</strong></div>'+
+    '<strong class="grow" id="chatTitle">Servizio</strong>'+
+    (!admin&&bridgeFiles?'<button type="button" id="ownerBridgeFolder">Cartella Bridge</button>':'')+'</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
@@ -499,6 +595,7 @@ function renderLayout(){
       document.getElementById('people').classList.remove('off');
     };
   }
+  if(!admin&&bridgeFiles)document.getElementById('ownerBridgeFolder').onclick=showOwnerBridgeFolder;
   document.getElementById('send').onsubmit=send;
   configureFileInput(document.getElementById('file'));
 }
