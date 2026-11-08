@@ -2,11 +2,12 @@
 \set ON_ERROR_STOP on
 do $check$
 declare
-  owner_id uuid := 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  owner_id uuid := 'eaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   admin_id uuid := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   dev uuid := 'e1111111-1111-4111-8111-111111111111';
   alien uuid := 'e2222222-2222-4222-8222-222222222222';
 begin
+  insert into public.profiles(id,role,status) values(owner_id,'user','approved');
   if has_function_privilege('authenticated',
       'public.bridge_server_enroll_device(uuid,uuid,text,text,text)','EXECUTE')
      or has_function_privilege('anon',
