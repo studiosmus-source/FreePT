@@ -1,0 +1,105 @@
+package __PACKAGE__;
+
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+
+/** RX configuration: encrypted at rest with a dedicated Android Keystore key. */
+@CapacitorPlugin(name="BridgeRxKeys")
+public class BridgeRxKeysPlugin extends Plugin {
+    private static final String STORE="AndroidKeyStore";
+    private static final String KEY_ALIAS="it.freept.bridge.rx.v1";
+    private static final String PREFS="freept_bridge_rx_keys";
+    private static final String SEALED="sealed";
+
+    private SecretKey key() throws Exception {
+        KeyStore store=KeyStore.getInstance(STORE);
+        store.load(null);
+        java.security.Key existing=store.getKey(KEY_ALIAS,null);
+        if(existing instanceof SecretKey)return (SecretKey)existing;
+        KeyGenerator generator=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,STORE);
+        generator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256).build());
+        return generator.generateKey();
+    }
+
+    @PluginMethod
+    public void save(PluginCall call) {
+        String rx=call.getString("rxKey");
+        String tx=call.getString("txKey");
+        if(rx==null||tx==null||rx.length()<32||tx.length()<32||
+           rx.length()>256||tx.length()>256||rx.equals(tx)){
+            call.reject("bridge_invalid_keys");return;
+        }
+        try{
+            Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE,key());
+            byte[] plaintext=(rx+"\n"+tx).getBytes(StandardCharsets.UTF_8);
+            byte[] sealed=cipher.doFinal(plaintext);
+            byte[] iv=cipher.getIV();
+            byte[] payload=new byte[iv.length+sealed.length];
+            System.arraycopy(iv,0,payload,0,iv.length);
+            System.arraycopy(sealed,0,payload,iv.length,sealed.length);
+            if(!getContext().getSharedPreferences(PREFS,0).edit()
+                .putString(SEALED,Base64.encodeToString(payload,Base64.NO_WRAP))
+                .commit())throw new IllegalStateException();
+            JSObject response=new JSObject();
+            response.put("saved",true);call.resolve(response);
+        }catch(Exception error){call.reject("bridge_keys_save_failed");}
+    }
+
+    @PluginMethod
+    public void status(PluginCall call) {
+        JSObject response=new JSObject();
+        response.put("configured",getContext().getSharedPreferences(PREFS,0)
+                .contains(SEALED));
+        call.resolve(response);
+    }
+
+    @PluginMethod
+    public void load(PluginCall call) {
+        String stored=getContext().getSharedPreferences(PREFS,0).getString(SEALED,null);
+        if(stored==null){call.reject("bridge_keys_absent");return;}
+        try{
+            byte[] packed=Base64.decode(stored,Base64.DEFAULT);
+            if(packed.length<29)throw new IllegalStateException();
+            byte[] iv=java.util.Arrays.copyOfRange(packed,0,12);
+            byte[] encrypted=java.util.Arrays.copyOfRange(packed,12,packed.length);
+            Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,iv));
+            String[] parts=new String(cipher.doFinal(encrypted),StandardCharsets.UTF_8)
+                .split("\n",-1);
+            if(parts.length!=2||parts[0].length()<32||parts[1].length()<32)
+                throw new IllegalStateException();
+            JSObject result=new JSObject();
+            result.put("rxKey",parts[0]);result.put("txKey",parts[1]);
+            call.resolve(result);
+        }catch(Exception error){call.reject("bridge_keys_unavailable");}
+    }
+
+    @PluginMethod
+    public void clear(PluginCall call) {
+        if(!getContext().getSharedPreferences(PREFS,0).edit().clear().commit()){
+            call.reject("bridge_keys_clear_failed");return;
+        }
+        try{
+            KeyStore store=KeyStore.getInstance(STORE);store.load(null);
+            if(store.containsAlias(KEY_ALIAS))store.deleteEntry(KEY_ALIAS);
+        }catch(Exception error){call.reject("bridge_keys_clear_failed");return;}
+        call.resolve();
+    }
+}

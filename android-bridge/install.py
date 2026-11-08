@@ -24,7 +24,8 @@ if "extends BridgeActivity" not in source:
     raise SystemExit("Unexpected Capacitor Android activity")
 if any(name in source for name in ("BridgeFilesPlugin.class",
                                       "BridgeCredentialsPlugin.class",
-                                      "BridgeDestinationPlugin.class")):
+                                      "BridgeDestinationPlugin.class",
+                                      "BridgeRxKeysPlugin.class")):
     raise SystemExit("Plugin already registered: refuse stacking patches")
 anchor = "public class MainActivity extends BridgeActivity {"
 if source.count(anchor) != 1:
@@ -40,6 +41,7 @@ source = source.replace(
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(BridgeFilesPlugin.class);
     registerPlugin(BridgeCredentialsPlugin.class);\n    registerPlugin(BridgeDestinationPlugin.class);
+    registerPlugin(BridgeRxKeysPlugin.class);
     super.onCreate(savedInstanceState);
   }
 """,
@@ -64,4 +66,10 @@ if destination_template.count("__PACKAGE__") != 1:
 main.with_name("BridgeDestinationPlugin.java").write_text(
     destination_template.replace("__PACKAGE__", package)
 )
-print("Three Bridge plugins installed in isolated app:", package)
+rx_template = Path("android-bridge/BridgeRxKeysPlugin.java.template").read_text()
+if rx_template.count("__PACKAGE__") != 1:
+    raise SystemExit("Unexpected RX credentials template")
+main.with_name("BridgeRxKeysPlugin.java").write_text(
+    rx_template.replace("__PACKAGE__", package)
+)
+print("Four Bridge plugins installed in isolated app:", package)

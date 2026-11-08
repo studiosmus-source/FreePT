@@ -24,6 +24,7 @@ const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_
   ? registerPlugin('BridgeFiles') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
+const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
 const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
@@ -501,46 +502,62 @@ function showAdminBridge(){
   const panel=document.createElement('div');
   panel.id='adminBridgePanel';
   panel.className='bridge-admin-shade';
-  panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Bridge">'+
+  panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Configurazione Bridge">'+
     '<header><h2>Bridge</h2><button type="button" id="closeAdminBridge">Chiudi</button></header>'+
-    '<p class="hint">Codice amministratore per l’autorizzazione Bridge:</p>'+
-    '<div class="bridge-admin-identity"><code>'+esc(me?.id||'')+'</code> <button type="button" id="copyBridgeAdminId">Copia</button></div>'+
-    '<nav><button type="button" data-bridge-view="approvals">Approvazioni</button><button type="button" data-bridge-view="files">File Bridge</button><button type="button" data-bridge-view="tx">TX originale</button></nav>'+
-    '<div id="bridgeAdminContent" aria-live="polite"></div></section>';
+    '<form id="bridgeKeyForm" class="form" autocomplete="off">'+
+    '<label>Chiave RX<input type="password" id="bridgeRxKey" required minlength="32" maxlength="256" autocomplete="new-password"></label>'+
+    '<label>Chiave TX<input type="password" id="bridgeTxKey" required minlength="32" maxlength="256" autocomplete="new-password"></label>'+
+    '<button type="submit">Salva le chiavi</button></form>'+
+    '<p id="bridgeKeyStatus" class="hint" role="status"></p>'+
+    '<button type="button" id="bridgeKeyRemove">Cancella chiavi salvate</button>'+
+    '</section>';
   document.body.appendChild(panel);
-  let disposeRemote=null;
-  const show=view=>{
-    disposeRemote?.();disposeRemote=null;
-    const content=panel.querySelector('#bridgeAdminContent');
-    panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.bridgeView===view)));
-    if(view==='approvals')void loadAdminBridgeDevices(panel);
-    else if(view==='tx'){
-      panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
-      disposeRemote=renderOriginalTxRx({
-        host:content,destination:bridgeDestination,
-        isAuthorized:()=>panel.isConnected&&me?.id&&profile?.role==='admin'&&adminUnlocked&&
-          panel.querySelector('[data-bridge-view="tx"]')?.getAttribute('aria-pressed')==='true'
-      });
-    } else {
-      panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
-      disposeRemote=renderBridgeRemoteFiles({
-        host:content,db,bridgeClient,bridgeDestination,
-        adminId:me.id,
-        isAuthorized:()=>panel.isConnected&&me?.id&&profile?.role==='admin'&&adminUnlocked&&
-          panel.querySelector('[data-bridge-view="files"]')?.getAttribute('aria-pressed')==='true'
-      });
-    }
+  const message=panel.querySelector('#bridgeKeyStatus');
+  const provider=bridgeRxKeys;
+  const alive=()=>panel.isConnected&&me?.id&&profile?.role==='admin'&&adminUnlocked;
+  const refresh=async()=>{
+    if(!alive())return;
+    if(!provider){message.textContent='Salvataggio sicuro disponibile solo su Android.';return;}
+    try{
+      const result=await provider.status();
+      if(alive())message.textContent=result?.configured?'Chiavi salvate su questo telefono.':'Nessuna chiave salvata.';
+    }catch{if(alive())message.textContent='Impossibile leggere lo stato delle chiavi.';}
   };
-  panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.onclick=()=>show(b.dataset.bridgeView));
-  panel.querySelector('#copyBridgeAdminId').onclick=async()=>{
-    try{await navigator.clipboard.writeText(me.id);}
-    catch{
-      const el=panel.querySelector('.bridge-admin-identity code');
-      if(el)el.textContent='Copia non disponibile: seleziona il codice.';
-    }
+  panel.querySelector('#bridgeKeyForm').onsubmit=async event=>{
+    event.preventDefault();
+    if(!alive()||!provider)return;
+    const button=event.currentTarget.querySelector('button');
+    const rx=panel.querySelector('#bridgeRxKey');
+    const tx=panel.querySelector('#bridgeTxKey');
+    const a=rx.value.trim(),b=tx.value.trim();
+    if(a.length<32||b.length<32||a===b){message.textContent='Le due chiavi devono essere diverse e di almeno 32 caratteri.';return;}
+    button.disabled=true;
+    try{
+      // The relay is checked before writing credentials to encrypted Android storage.
+      const {CapacitorHttp}=await import('@capacitor/core');
+      const {createOriginalTxRx}=await import('./originalTxRx.js');
+      const client=createOriginalTxRx({request:options=>CapacitorHttp.request(options)});
+      try{await client.connect(a,b);}
+      finally{client.disconnect();}
+      if(!alive())return;
+      const saved=await provider.save({rxKey:a,txKey:b});
+      if(saved?.saved!==true)throw Error('bridge_keys_not_saved');
+      rx.value='';tx.value='';
+      message.textContent='Chiavi verificate e salvate.';
+    }catch(error){if(alive())message.textContent='Salvataggio non riuscito: '+friendly(error);}
+    finally{button.disabled=false;}
   };
-  panel.querySelector('#closeAdminBridge').onclick=()=>{disposeRemote?.();panel.remove()};
-  show('approvals');
+  panel.querySelector('#bridgeKeyRemove').onclick=async()=>{
+    if(!alive()||!provider)return;
+    try{await provider.clear();await refresh();}
+    catch{if(alive())message.textContent='Impossibile cancellare le chiavi.';}
+  };
+  panel.querySelector('#closeAdminBridge').onclick=()=>{
+    panel.querySelector('#bridgeRxKey').value='';
+    panel.querySelector('#bridgeTxKey').value='';
+    panel.remove();
+  };
+  void refresh();
 }
 
 /**
@@ -818,6 +835,7 @@ function renderLayout(){
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
     '<strong class="grow" id="chatTitle">Servizio</strong>'+
+    (admin?'<button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
     (!admin&&bridgeFiles?'<button type="button" id="ownerBridgeFolder">Cartella Bridge</button>':'')+'</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
@@ -827,6 +845,31 @@ function renderLayout(){
   if(admin){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
+    document.getElementById('chatMessagesView').onclick=()=>{
+      document.getElementById('feed').hidden=false;
+      document.getElementById('send').hidden=false;
+      document.getElementById('chatRemoteFilesPanel')?.remove();
+    };
+    document.getElementById('chatRemoteFilesView').onclick=async()=>{
+      const user=people.find(person=>person.id===selected);
+      if(!user||user.status!=='approved'||!adminUnlocked||profile?.role!=='admin')return;
+      document.getElementById('feed').hidden=true;
+      document.getElementById('send').hidden=true;
+      let panel=document.getElementById('chatRemoteFilesPanel');
+      if(!panel){
+        panel=document.createElement('section');
+        panel.id='chatRemoteFilesPanel';
+        panel.setAttribute('role','status');
+        document.getElementById('feed').after(panel);
+      }
+      panel.replaceChildren();
+      const heading=document.createElement('h3');
+      heading.textContent='File e cartelle · '+user.full_name;
+      panel.appendChild(heading);
+      const info=document.createElement('p');
+      info.textContent='Nessun collegamento al dispositivo verificato per questa persona. I file remoti resteranno non accessibili finché il relay supporterà dispositivi distinti.';
+      panel.appendChild(info);
+    };
     renderPeople();
     document.getElementById('back').onclick=()=>{
       document.getElementById('chat').classList.add('off');
@@ -915,6 +958,9 @@ function bindAdminPeopleActions(p){
       const user=people.find(x=>x.id===id);
       if(user?.status!=='approved')return;
       selected=id;messageRequest++;
+      document.getElementById('chatRemoteFilesPanel')?.remove();
+      document.getElementById('feed').hidden=false;
+      document.getElementById('send').hidden=false;
       document.getElementById('chat').classList.remove('off');
       p.classList.add('off');
       document.getElementById('chatTitle').textContent=user.full_name||'Chat';
