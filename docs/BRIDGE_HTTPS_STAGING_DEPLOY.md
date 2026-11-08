@@ -1,115 +1,125 @@
-# FreePT Bridge — servizio HTTPS di prova separato
+# FreePT Bridge — HTTPS staging e Android (2026-11-08)
 
-**Stato:** gateway HTTPS predisposto nel ramo sperimentale e verificato in CI.
-Non è ancora installato su Render né collegato a telefoni reali. Non equivale
-a un download remoto funzionante.
+## Stato verificato
 
-## Isolamento obbligatorio
+- Fonte autorevole: branch `feature/bridge-chunk-receiver-20261108` del repository `studiosmus-source/FreePT`.
+- Build JavaScript/PostgreSQL/browser: CI automatica su PostgreSQL effimero.
+- APK Android `it.freept.bridge`: build GitHub Actions di staging riuscita;
+  separato da `it.freept.app`.
+- Il workflow Android ha confermato **Supabase di prova** e rifiutato l'host
+  Supabase di produzione.
+- Il workflow Android ha anche confermato che **FREEPT_BRIDGE_TEST_API_URL
+  non è configurato**: l'APK generato NON può collegarsi ad alcun server
+  Bridge pubblico. Non è stato effettuato un download fra due telefoni.
+- Nessuna migrazione applicata tramite CI a un database Supabase remoto.
+  Nessun deploy Render effettuato.
 
-- Repository: `studiosmus-source/FreePT`
-- Branch: `feature/bridge-admin-foundation-20261106`
-- Root directory servizio: radice del repo FreePT
-- Build command: `npm ci --omit=dev` oppure `npm install --omit=dev`
-- Start command: `npm run bridge:serve:staging`
-- Runtime: Node 22+.
-- **Creare un servizio Render NUOVO, distinto dal servizio TX esistente**.
-- HTTPS deve essere terminato dal proxy gestito Render, con
-  `x-forwarded-proto` **sovrascritto dal proxy**: l'header non è di per sé
-  prova crittografica se il listener Node fosse raggiungibile direttamente.
-- UNA istanza in staging; il rate limiter di processo non è distribuito.
-- Nessun collegamento al Supabase FreePT di produzione.
+## Isolamento obbligatorio del backend HTTPS
 
-## Variabili di ambiente del solo servizio (mai VITE_)
+Creare un **nuovo** servizio Render web, non modificare TX o FreePT produzione.
+Il servizio deve usare esclusivamente il branch indicato sopra:
+
+- Runtime Node.js 22 o superiore; directory root del repository;
+- Install: `npm ci --omit=dev` (oppure `npm install --omit=dev`);
+- Start: `npm run bridge:serve:staging`;
+- Una sola istanza con reverse proxy HTTPS gestito, senza accesso esterno
+  diretto alla porta Node. Il reverse proxy deve sovrascrivere
+  `x-forwarded-proto`, non fidarsi degli header arbitrari del client.
+- Nessun accesso a Supabase FreePT produzione e nessun segreto nell'APK.
+
+Variabili **solo del servizio server**, mai `VITE_*`:
 
 ```text
 FREEPT_BRIDGE_STAGING=I_UNDERSTAND_LOCAL_TEST_ONLY
 FREEPT_BRIDGE_PUBLIC=I_UNDERSTAND_STAGING_HTTPS_ONLY
 FREEPT_BRIDGE_READ_ENABLED=I_UNDERSTAND_TEST_ONLY
 FREEPT_BRIDGE_ALLOWED_ORIGINS=https://localhost
-FREEPT_BRIDGE_TEST_SUPABASE_URL=<isolated-staging-url>
-FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY=<isolated-staging-publishable>
-FREEPT_BRIDGE_TEST_SUPABASE_SERVICE_ROLE_KEY=<isolated-staging-secret>
-PORT=<injected-by-Render>
+FREEPT_BRIDGE_TEST_SUPABASE_URL=<URL PROGETTO SUPABASE TEST>
+FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY=<PUBLISHABLE TEST>
+FREEPT_BRIDGE_TEST_SUPABASE_SERVICE_ROLE_KEY=<SEGRETO TEST, SOLO SERVER>
+PORT=<PORT ASSEGNATA DA RENDER>
 ```
 
-La stringa `LOCAL_TEST_ONLY` rimane intenzionalmente richiesta dal validatore
-Supabase già esistente: il secondo interruttore `FREEPT_BRIDGE_PUBLIC` abilita
-la modalità HTTPS sotto il reverse proxy. Entrambi devono essere presenti.
-Il segreto `SERVICE_ROLE_KEY` non deve mai finire nell'APK, nei log,
-nelle variabili `VITE_*`, nei file GitHub o nei parametri URL.
-Il server rifiuta esplicitamente l'host Supabase di produzione.
+Il validatore del server rifiuta esplicitamente l'host Supabase di produzione.
+Il rate limit HTTP è per singola istanza di processo; usare una sola istanza
+in questa fase.
 
-Non distribuire prima di aver applicato e verificato tutte le migrazioni
-Bridge **nel progetto Supabase di prova**, nell'ordine coperto dalla pipeline
-`.github/workflows/bridge-checks.yml`. Il workflow attuale usa un
-PostgreSQL effimero: **non applica migrazioni al progetto Supabase remoto**.
+## Migrazioni nel SOLO database PostgreSQL/Supabase di prova
 
-## Configurazione dell'APK isolato
+L'ordine completo e verificato dalla CI è nel job
+`bridge-postgres` di `.github/workflows/bridge-checks.yml`.
+In particolare, dopo le migrazioni Bridge foundation, consensi, job e
+sessioni TX, applicare **nell'ordine**:
 
-Soltanto dopo aver verificato l'URL HTTPS del servizio e i suoi controlli,
-inserire nella variabile di repository GitHub Actions:
+1. `20261108_bridge_folder_catalog_staging.sql`
+2. `20261108_bridge_read_chunks_staging.sql`
+3. `20261108_bridge_browse_staging.sql`
+4. `20261108_bridge_device_enrollment_staging.sql`
+
+Non riapplicare le migrazioni già presenti senza controllo dello schema.
+Le RPC di lettura/navigazione sono server-only; i telefoni non hanno
+accesso diretto alle tabelle della coda o al service role.
+
+Prima di abilitare `FREEPT_BRIDGE_READ_ENABLED` verificare che le
+migrazioni di prova abbiano superato i controlli di sicurezza. Lo stesso
+flag abilita le operazioni sperimentali `read` e `browse`.
+
+## APK Android di staging
+
+Workflow: `.github/workflows/bridge-android-staging.yml`.
+
+Variabili **GitHub Actions** di test richieste:
 
 ```text
-FREEPT_BRIDGE_TEST_API_URL=https://<nuovo-servizio-bridge>.onrender.com
+FREEPT_BRIDGE_TEST_SUPABASE_URL=<URL PROGETTO TEST>
+FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY=<PUBLISHABLE TEST>
+FREEPT_BRIDGE_TEST_API_URL=https://<NUOVO SERVIZIO BRIDGE>.onrender.com
 ```
 
-Poi ricompilare soltanto il ramo sperimentale: il workflow
-`.github/workflows/android-debug.yml` valida che il valore sia HTTPS e
-diverso dal dominio Supabase di produzione. Se questa variabile è vuota,
-il client Bridge non crea un collegamento remoto e non inventa fallback.
+L'URL API va impostato **solo dopo** aver predisposto e verificato il nuovo
+servizio HTTPS. Ricompilare l'APK: l'URL è inserito nel bundle web durante
+la compilazione. Non inserire SERVICE_ROLE_KEY in GitHub variables,
+`VITE_*`, APK, log o sorgenti. Il service role deve stare nei segreti
+dell'ambiente server isolato.
 
-## Confini e operazioni
+Il workflow `bridge-android-smoke.yml` compila anche un APK puramente
+diagnostico con Supabase fittizio, che non è adatto al collaudo reale.
 
-Le rotte consentite sono soltanto:
-- admin: `list`, `status`, `cancel`, `folder`; con flag read esplicito anche `read`, `chunk`;
-- proprietario: `enroll`, `delete`;
-- trasmittente: `connect`, `poll`, `complete`, `folder`, `disconnect`; con flag read esplicito anche `chunk`.
+## Procedura manuale fra telefoni Android
 
-Il gateway applica HTTPS, CORS rigoroso per `https://localhost`, un
-limite globale di richieste per minuto per istanza e limiti ai body.
-Autenticazione Supabase, credenziale TX, sessione e grant vengono
-controllati dai servizi e dal database già esistenti. Nessun path del
-filesystem, esecuzione di comandi o archivio di file è esposto dal gateway.
+1. Installare l'APK di staging su due telefoni di prova.
+2. Su A registrare il dispositivo, selezionare tramite Android SAF la
+   **sola cartella da condividere**, attivare Bridge e autorizzare l'admin.
+3. Su A premere **Avvia Bridge per 4 minuti** e mantenere l'app attiva.
+   Il pulsante permette anche di interrompere la sessione.
+4. Su B accedere come admin approvato, sbloccare l'area Bridge, scegliere
+   la scheda **File**, selezionare con Android SAF la destinazione e
+   aprire il dispositivo autorizzato.
+5. Sfogliare le sottocartelle, scaricare un singolo file oppure la cartella
+   intera, con tutte le sottocartelle. I nomi e i percorsi relativi
+   vengono ricostruiti sotto la destinazione selezionata.
+6. Verificare SHA-256/dimensioni dei file sul dispositivo reale, annullamento,
+   revoca durante un trasferimento, file vuoti, cartelle vuote, reti lente
+   e riapertura dell'app.
 
-**Limiti residui:** il servizio HTTPS non è stato distribuito o testato
-con credenziali del progetto Supabase di prova; manca ancora un reale
-trasferimento di byte, la navigazione delle sottocartelle e il download
-delle cartelle; nessun collaudo funzionale su due dispositivi è stato eseguito.
-Su più istanze serviranno rate limiting e gestione sessioni condivisi.
+Le voci SAF del telefono proprietario ricevono identificatori opachi e
+restano valide solo nella relativa sessione di processo. Il catalogo delle
+cartelle completato scade dopo circa cinque minuti e la sessione TX dura
+cinque minuti; l'app A serve richieste per massimo quattro minuti.
+Trasferimenti lunghi o molto numerosi possono richiedere una nuova sessione
+e una nuova navigazione. Il resume persistente non è ancora implementato.
 
-## Criteri prima della prima prova reale
+## Limiti tecnici ancora da collaudare
 
-1. Verificare URL Render, isolamento dei segreti, certificato HTTPS,
-   header proxy e esatta origin Android.
-2. Verificare migrazioni sulla base staging, permessi per ruolo
-   e revoche senza accesso alle tabelle chat.
-3. Verificare l'APK `it.freept.bridge` e il dispositivo di prova,
-   poi registrazione, scelta cartella, grant, comando esplicito,
-   recupero elenco, revoca e riconnessione.
-4. Non migrare nulla su `main`, TX su Render o Supabase produzione
-   finché il collaudo reale non è approvato.
+Il protocollo trasporta al massimo **32 KiB per job di lettura** e mantiene
+la coda unificata PostgreSQL. Le cartelle vengono preventivamente
+enumerate per evitare una destinazione parziale prima di sapere cosa
+scaricare. Il destinatario scrive in oggetti SAF temporanei, rinominati
+alla fine; se il provider Android non supporta la rinomina atomica, il
+download deve fallire senza essere dichiarato concluso.
 
-## Protocollo `read` sperimentale — branch receiver 2026-11-08
+Non sono stati eseguiti collaudi funzionali tra due telefoni via Internet.
+Non dichiarare compatibilità con grandi cartelle, resume, lavoro in
+background o performance prima dei test reali.
 
-Il codice è presente ma **disabilitato per impostazione predefinita**.
-Prima di impostare `FREEPT_BRIDGE_READ_ENABLED`, applicare SOLO nel database
-Bridge isolato la migrazione
-`supabase/migrations/20261108_bridge_read_chunks_staging.sql`, **dopo**
-`20261108_bridge_folder_catalog_staging.sql` e la session fence.
-Il flag non va inserito nelle variabili `VITE_*`, nell'APK o sul servizio TX.
-
-Flusso attuale: un admin approvato richiede `/bridge/admin/read` per un
-handle file proveniente da un recente catalogo root; il TX autenticato ottiene
-il job con `poll`, legge fino a 32768 byte con SAF e li consegna a
-`/bridge/tx/chunk`. Il ricevente autenticato li recupera da
-`/bridge/admin/chunk`. Il database revalida consenso, sessione TX e job,
-e rifiuta letture dopo revoca. La coda PostgreSQL è unica, senza TX legacy.
-
-**Non è ancora un download Android utilizzabile:** mancano il salvataggio
-streaming sul dispositivo ricevente, l'orchestrazione automatica dei job
-ripetuti per file grandi, il catalogo remoto delle sottocartelle e il deploy
-separato di HTTPS/Supabase staging. Il modello di ricezione delle cartelle è
-locale ma non ancora collegato al server. Nessun test tra telefoni è attestato.
-La pipeline GitHub prova le operazioni su PostgreSQL effimero, non sul Supabase
-staging remoto; il workflow Android resta volutamente disabilitato su questo
-branch fino all'integrazione sicura del ricevitore.
+**Non alterare `main`, FreePT produzione, TX Render o Supabase produzione.**
