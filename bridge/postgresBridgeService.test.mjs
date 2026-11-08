@@ -111,8 +111,8 @@ test('server-only composition rejects unauthenticated admin and unknown TX',asyn
 test('composition exposes only fixed job and session operations',()=>{
   const {service}=makeFixture();
   assert.deepEqual(Object.keys(service).sort(),[
-    'cancelRequest','closeDeviceSession','completeDevice','connectDevice',
-    'getRequestStatus','pollDevice','requestList'
+    'cancelRequest','closeDeviceSession','completeDevice','completeFolderPage','connectDevice',
+    'getFolderPage','getRequestStatus','pollDevice','requestList'
   ].sort());
   assert.equal(Object.isFrozen(service),true);
   assert.equal('readFile' in service,false);
