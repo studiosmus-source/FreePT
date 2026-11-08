@@ -127,3 +127,7 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_folder_catalog_staging.sql
       - name: Verify authenticated folder listing and revocation in PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-folder-catalog.sql
+      - name: Install server-only owner enrollment on isolated PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_device_enrollment_staging.sql
+      - name: Verify enrollment privileges, ownership and deletion
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-device-enrollment.sql
