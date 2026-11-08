@@ -16,11 +16,13 @@ const requireId = value => {
     throw new Error('bridge_invalid_identity');
 };
 export class BridgePostgresJobsAdapter {
-  constructor({ rpcClient, sessions, authenticateAdmin }) {
+  constructor({ rpcClient, sessions, authenticateAdmin, readJobsEnabled=false }) {
     if (typeof rpcClient?.rpc !== 'function' ||
         typeof sessions?.getDispatchBinding !== 'function' ||
         typeof authenticateAdmin !== 'function')
       throw new Error('invalid_postgres_jobs_dependencies');
+    if(typeof readJobsEnabled!=='boolean')throw Error('bridge_read_configuration_invalid');
+    this.readJobsEnabled = readJobsEnabled;
     this.rpcClient = rpcClient;
     this.sessions = sessions;
     this.authenticateAdmin = authenticateAdmin;
@@ -49,6 +51,7 @@ export class BridgePostgresJobsAdapter {
   }
 
   async requestRead({authContext,deviceId,jobId,handle,offset,length}) {
+    if(!this.readJobsEnabled)throw Error('bridge_read_disabled');
     requireId(deviceId);requireId(jobId);
     const request=validateBridgeReadRequest({handle,offset,length});
     if(length>32768)throw Error('bridge_read_chunk_limit');
@@ -102,10 +105,14 @@ export class BridgePostgresJobsAdapter {
     requireId(deviceId);
     const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
     if (!BINDING.test(binding)) throw new Error('bridge_invalid_session_binding');
-    const next=await this.#rpc('bridge_server_claim_read',{
+    const data=await this.#rpc('bridge_server_claim_list',{
       p_device_id:deviceId,p_session_binding_hex:binding
     });
-    if(next!==null){
+    if(data===null && this.readJobsEnabled){
+      const next=await this.#rpc('bridge_server_claim_read',{
+        p_device_id:deviceId,p_session_binding_hex:binding
+      });
+      if(next===null)return null;
       if(!next||typeof next!=='object'||Array.isArray(next)||
          Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,length,offset,operation,state'||
          !UUID.test(next.jobId)||next.deviceId!==deviceId||
@@ -115,9 +122,6 @@ export class BridgePostgresJobsAdapter {
       if(next.length>32768)throw Error('bridge_jobs_invalid_response');
       return next;
     }
-    const data=await this.#rpc('bridge_server_claim_list',{
-      p_device_id:deviceId,p_session_binding_hex:binding
-    });
     if (data === null) return null;
     if (typeof data !== 'string' || !UUID.test(data))
       throw new Error('bridge_jobs_invalid_response');
@@ -143,6 +147,7 @@ export class BridgePostgresJobsAdapter {
   }
 
   async completeRead({deviceId,sessionToken,jobId,chunk}){
+    if(!this.readJobsEnabled)throw Error('bridge_read_disabled');
     requireId(deviceId);requireId(jobId);
     const validated=validateBridgeFileChunk(chunk,chunk?.bytesRead);
     if(validated.bytesRead>32768)throw Error('bridge_read_chunk_limit');
@@ -156,6 +161,7 @@ export class BridgePostgresJobsAdapter {
   }
 
   async getReadChunk({authContext,jobId}){
+    if(!this.readJobsEnabled)throw Error('bridge_read_disabled');
     requireId(jobId);
     const receiverId=await this.#requireAdminId(authContext);
     const result=await this.#rpc('bridge_server_read_chunk',{
