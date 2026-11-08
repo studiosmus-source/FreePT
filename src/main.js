@@ -87,19 +87,33 @@ function status(msg, bad=false){ const n=document.getElementById('status'); if(n
 function phoneNorm(s){ return s.replace(/[\s().-]/g,''); }
 
 function heading(t,extra=''){return '<header class="top"><h1>'+esc(t)+'</h1>'+extra+'</header>'}
+/** Concealed entry is UI discretion only: Supabase roles remain mandatory. */
+function bindConcealedAdminEntry(){
+  const title=el.querySelector('.top h1');
+  if(!title)return;
+  let timer=null;
+  const stop=()=>{if(timer!==null){clearTimeout(timer);timer=null;}};
+  title.addEventListener('pointerdown',event=>{
+    if(event.pointerType==='mouse'&&event.button!==0)return;
+    stop();timer=setTimeout(()=>{timer=null;adminScreen();},1300);
+  });
+  for(const type of ['pointerup','pointercancel','pointerleave'])title.addEventListener(type,stop);
+  title.addEventListener('contextmenu',event=>event.preventDefault());
+}
+
 
 function requestScreen(denied=false){
   closeAdminOverlays();
   selected=null; messageRequest++;
-  el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
-  '<button type="button" id="adminAccess" class="admin-entry">Accesso amministratore</button>'+
+  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
+
   '<form class="form" id="request"><input name="name" placeholder="Nome e cognome" maxlength="80" minlength="2" required autocomplete="name" '+(denied?'disabled':'')+'/>'+
   '<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>'+
   '<section class="disclaimer" aria-label="Informativa sull’intelligenza artificiale"><h3>FreePT · L’intelligenza artificiale per tutti</h3><p><strong>La potenza di ChatGPT e Claude senza dover sottoscrivere un abbonamento personale.</strong></p><p>Con FreePT puoi fare liberamente domande, inviare richieste, foto e documenti e ricevere risposte elaborate attraverso ChatGPT e Claude. Nessun account personale presso questi servizi è necessario.</p><p class="disclaimer-promise"><strong>SENZA LIMITI*<br>SENZA CENSURA*</strong></p><p class="disclaimer-note">* Salvo particolari condizioni legate alla disponibilità del servizio e alla possibilità di elaborare determinate richieste.</p><p>FreePT è un servizio indipendente, non affiliato a OpenAI o Anthropic.</p><label class="consent"><input name="disclaimer" type="checkbox" required><span>Dichiaro di aver letto e accettato quanto sopra.</span></label></section>'+
   '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
   '</main></div>';
-  document.getElementById('adminAccess').onclick=adminScreen;
+  bindConcealedAdminEntry();
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
     const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
