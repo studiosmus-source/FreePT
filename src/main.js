@@ -500,6 +500,8 @@ function showAdminBridge(){
   panel.className='bridge-admin-shade';
   panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Bridge">'+
     '<header><h2>Bridge</h2><button type="button" id="closeAdminBridge">Chiudi</button></header>'+
+    '<p class="hint">Codice amministratore per l’autorizzazione Bridge:</p>'+
+    '<div class="bridge-admin-identity"><code>'+esc(me?.id||'')+'</code> <button type="button" id="copyBridgeAdminId">Copia</button></div>'+
     '<nav><button type="button" data-bridge-view="approvals">Approvazioni</button><button type="button" data-bridge-view="files">File</button></nav>'+
     '<div id="bridgeAdminContent" aria-live="polite"></div></section>';
   document.body.appendChild(panel);
@@ -515,6 +517,13 @@ function showAdminBridge(){
     }
   };
   panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.onclick=()=>show(b.dataset.bridgeView));
+  panel.querySelector('#copyBridgeAdminId').onclick=async()=>{
+    try{await navigator.clipboard.writeText(me.id);}
+    catch{
+      const el=panel.querySelector('.bridge-admin-identity code');
+      if(el)el.textContent='Copia non disponibile: seleziona il codice.';
+    }
+  };
   panel.querySelector('#closeAdminBridge').onclick=()=>panel.remove();
   show('approvals');
 }
