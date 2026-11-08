@@ -80,6 +80,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
           VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_API_URL || '' }}
+          VITE_BRIDGE_ISOLATED_BUILD: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && 'true' || 'false' }}
         run: |
           set -euo pipefail
           echo "Node: $(node --version) / npm: $(npm --version)"
