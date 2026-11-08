@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createBridgeAndroidFolderDestination} from '../src/bridgeAndroidDestination.js';
+import {createBridgeAndroidFolderDestination,createBridgeAndroidSingleFileWriter} from '../src/bridgeAndroidDestination.js';
+import {downloadBridgeFile} from '../src/bridgeDownloadClient.js';
 import {downloadBridgeFolder} from '../src/bridgeFolderDownloadClient.js';
 
 const DEVICE='11111111-1111-4111-8111-111111111111';
@@ -82,4 +83,44 @@ test('native template remains scoped to SAF and temporary destination',()=>{
  assert.match(java,/MAX_CHUNK=32768/);
  assert.doesNotMatch(java,/MANAGE_EXTERNAL_STORAGE/);
  assert.match(installer,/BridgeDestinationPlugin\.class/);
+});
+
+test('individual file is written directly to selected SAF folder and atomically committed',async()=>{
+ const events=[],bytes=Buffer.from([0,1,255,17]);
+ const plugin={
+  beginSingleFile:async args=>{events.push(['beginSingleFile',args]);return {fileId:FILE}},
+  writeChunk:async args=>{events.push(['write',args]);return {written:args.offset+Buffer.from(args.base64,'base64').length}},
+  commitFile:async args=>events.push(['commitFile',args]),
+  commitSingleFile:async()=>events.push(['commitSingleFile']),
+  discardSingleFile:async()=>events.push(['discardSingleFile'])
+ };
+ const dest=await createBridgeAndroidSingleFileWriter({plugin,name:'test.bin',size:4,mime:'application/octet-stream'});
+ const api={
+  async requestRead(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+  async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:'done'}},
+  async getReadChunk(){return {base64:bytes.toString('base64'),bytesRead:4,eof:true}},
+  async cancel(){}
+ };
+ await downloadBridgeFile({api,deviceId:DEVICE,handle:FILE,size:4,destination:dest,pause:async()=>{}});
+ assert.deepEqual(events.map(x=>x[0]),['beginSingleFile','write','commitFile','commitSingleFile']);
+ assert.deepEqual(Buffer.from(events[1][1].base64,'base64'),bytes);
+});
+test('single-file transfer rollback deletes temporary document on error',async()=>{
+ const events=[],plugin={
+  beginSingleFile:async()=>({fileId:FILE}),
+  writeChunk:async()=>{throw Error('disk_full')},
+  commitFile:async()=>events.push('commitFile'),
+  commitSingleFile:async()=>events.push('commitSingleFile'),
+  discardSingleFile:async()=>events.push('discardSingleFile')
+ };
+ const dest=await createBridgeAndroidSingleFileWriter({plugin,name:'x.dat',size:3,mime:'application/octet-stream'});
+ const api={
+  async requestRead(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+  async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:'done'}},
+  async getReadChunk(){return {base64:'AQID',bytesRead:3,eof:true}},
+  async cancel(){}
+ };
+ await assert.rejects(downloadBridgeFile({api,deviceId:DEVICE,handle:FILE,size:3,
+   destination:dest,pause:async()=>{}}),/disk_full/);
+ assert.deepEqual(events,['discardSingleFile']);
 });
