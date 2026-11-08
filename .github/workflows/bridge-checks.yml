@@ -132,6 +132,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_read_chunks_staging.sql
       - name: Verify read authorization session fencing and revocation
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-read-chunks.sql
+      - name: Install isolated authenticated nested folder browsing RPCs
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_browse_staging.sql
+      - name: Verify nested folders, explicit selection and grant revocations
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-browse.sql
       - name: Install server-only owner enrollment on isolated PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_device_enrollment_staging.sql
       - name: Verify enrollment privileges, ownership and deletion
