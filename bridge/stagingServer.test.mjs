@@ -72,3 +72,66 @@ test('direct staging factory refuses unchecked or forged production configuratio
     config,createClientFn:fakeClient
   }),/bridge_staging_dependencies_invalid/);
 });
+
+test('staging HTTP admin boundary verifies live token before privileged RPC',async()=>{
+  const ADMIN='22222222-2222-4222-8222-222222222222';
+  const DEVICE='11111111-1111-4111-8111-111111111111';
+  const ACCESS='t'.repeat(40);
+  const calls=[];
+  const fakeClient=(url,key)=>{
+    if(key===good.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY)
+      return {auth:{async getUser(token){
+        calls.push('verify');
+        return {data:{user:token===ACCESS?{id:ADMIN,is_anonymous:false}:null},error:null};
+      }}};
+    if(key!==good.FREEPT_BRIDGE_TEST_SUPABASE_SERVICE_ROLE_KEY)
+      throw Error('wrong_test_key');
+    return {
+      from(table){
+        if(table!=='profiles')throw Error('unexpected_table');
+        return {select(columns){
+          assert.equal(columns,'id,role,status');
+          return {eq(column,id){
+            assert.equal(column,'id');assert.equal(id,ADMIN);
+            return {async maybeSingle(){
+              calls.push('role_check');
+              return {data:{id:ADMIN,role:'admin',status:'approved'},error:null};
+            }};
+          }};
+        }};
+      },
+      async rpc(name,args){
+        calls.push(name);
+        if(name!=='bridge_server_enqueue_list')throw Error('unexpected_rpc');
+        assert.equal(args.p_device_id,DEVICE);
+        assert.equal(args.p_receiver_id,ADMIN);
+        return {data:args.p_job_id,error:null};
+      }
+    };
+  };
+  const server=createBridgeStagingServer({
+    config:validateBridgeStagingConfig(good),createClientFn:fakeClient
+  });
+  const url=await server.start();
+  const request=async authorization=>{
+    const response=await fetch(url+'/bridge/admin/list',{
+      method:'POST',
+      headers:{'content-type':'application/json',
+        ...(authorization?{authorization} :{})},
+      body:JSON.stringify({deviceId:DEVICE})
+    });
+    return {status:response.status,body:await response.json()};
+  };
+  try{
+    assert.equal((await request(null)).status,401);
+    assert.deepEqual(calls,[]);
+    assert.equal((await request('Bearer '+'x'.repeat(40))).status,403);
+    assert.deepEqual(calls,['verify']);
+    const ok=await request('Bearer '+ACCESS);
+    assert.equal(ok.status,202);
+    assert.equal(ok.body.deviceId,DEVICE);
+    assert.equal(ok.body.state,'queued');
+    assert.match(ok.body.jobId,/^[0-9a-f-]{36}$/);
+    assert.deepEqual(calls.slice(-3),['verify','role_check','bridge_server_enqueue_list']);
+  }finally{await server.stop();}
+});
