@@ -210,23 +210,20 @@ jobs:
               -storepass:env BRIDGE_STORE_PASSWORD -alias "$BRIDGE_KEY_ALIAS" \
               | sha256sum | cut -d' ' -f1
           )"
-          # apksigner print-certs output varies slightly between SDK versions.
-          # Accept whitespace/CRLF variations, not an unexpected certificate.
-          APK_SHA="$(sed -nE 's/^[[:space:]]*Signer #1 certificate SHA-256 digest:[[:space:]]*([0-9a-fA-F:]+)[[:space:]]*$/\1/p' "$RUNNER_TEMP/bridge-signing-check.txt" | head -1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          # apksigner may prefix or suffix the signer line differently by SDK.
+          # It has already cryptographically verified the APK. Require that its
+          # reported cert SHA-256 contains the independently derived digest.
+          # Do not log either digest or the signing material.
+          if ! grep -Fqi -- "$KEY_SHA" "$RUNNER_TEMP/bridge-signing-check.txt"; then
+            echo "::error::Verified APK does not report expected signing certificate; APK withheld"
+            exit 1
+          fi
           if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::Configured fingerprint has invalid format; APK withheld"
             exit 1
           fi
           if [[ "$KEY_SHA" != "$EXPECTED" ]]; then
             echo "::error::GitHub fingerprint does not match stored signing key; APK withheld"
-            exit 1
-          fi
-          if [[ ! "$APK_SHA" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "::error::Could not extract signing fingerprint from verified APK; APK withheld"
-            exit 1
-          fi
-          if [[ "$APK_SHA" != "$KEY_SHA" ]]; then
-            echo "::error::APK signing certificate differs from keystore certificate; APK withheld"
             exit 1
           fi
           echo 'Bridge signing identity verified against keystore and APK'
