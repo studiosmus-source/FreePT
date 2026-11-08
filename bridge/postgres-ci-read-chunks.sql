@@ -10,7 +10,7 @@ declare
   readjob uuid:='e3333333-3333-4333-8333-333333333333';
   revokedjob uuid:='e5555555-5555-4555-8555-555555555555';
   file_handle uuid:='e4444444-4444-4444-8444-444444444444';
-  binding text:=repeat('d',64);
+  binding text:=repeat('11223344556677889900aabbccddeeff',2);
   verifier text:=repeat('e',64);
   chunk jsonb:=jsonb_build_object('base64','AQID','bytesRead',3,'eof',false);
   claimed jsonb;
