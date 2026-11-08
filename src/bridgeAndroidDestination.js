@@ -10,7 +10,7 @@ const checkPath=path=>{
      !path.every(safeName))throw Error('bridge_destination_invalid_path');
   return [...path];
 };
-const encode=bytes=>{
+export const encodeBridgeBytes=bytes=>{
   if(!(bytes instanceof Uint8Array)||bytes.length<1||bytes.length>32768)
     throw Error('bridge_destination_invalid_chunk');
   let raw='';
@@ -49,7 +49,7 @@ export function createBridgeAndroidFolderDestination({plugin,name}={}){
         async write(bytes,offset){
           if(finished||!Number.isSafeInteger(offset)||offset<0)
             throw Error('bridge_destination_writer_closed');
-          const result=await plugin.writeChunk({fileId,offset,base64:encode(bytes)});
+          const result=await plugin.writeChunk({fileId,offset,base64:encodeBridgeBytes(bytes)});
           if(result?.written!==offset+bytes.length)
             throw Error('bridge_destination_write_mismatch');
         },
@@ -74,6 +74,43 @@ export function createBridgeAndroidFolderDestination({plugin,name}={}){
       if(!active)return;
       await plugin.discardFolder();
       active=false;
+    }
+  });
+}
+
+/**
+ * Direct single-file destination. The SAF plugin creates a temporary document
+ * and renames it only after its expected byte count has been written.
+ */
+export async function createBridgeAndroidSingleFileWriter({plugin,name,size,mime}={}){
+  if(!plugin||['beginSingleFile','writeChunk','commitFile','commitSingleFile',
+     'discardSingleFile'].some(k=>typeof plugin[k]!=='function')||
+     !safeName(name)||!Number.isSafeInteger(size)||size<0||size>1024**4||
+     typeof mime!=='string'||mime.length>160)
+    throw Error('bridge_single_file_destination_invalid');
+  const opened=await plugin.beginSingleFile({name,size,mime});
+  const fileId=opened?.fileId;
+  if(typeof fileId!=='string'||!(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(fileId)))
+    throw Error('bridge_destination_invalid_file_id');
+  let closed=false;
+  return Object.freeze({
+    async write(bytes,offset){
+      if(closed||!Number.isSafeInteger(offset)||offset<0)
+        throw Error('bridge_destination_writer_closed');
+      const result=await plugin.writeChunk({fileId,offset,base64:encodeBridgeBytes(bytes)});
+      if(result?.written!==offset+bytes.length)
+        throw Error('bridge_destination_write_mismatch');
+    },
+    async commit(){
+      if(closed)throw Error('bridge_destination_writer_closed');
+      await plugin.commitFile({fileId});
+      await plugin.commitSingleFile();
+      closed=true;
+    },
+    async discard(){
+      if(closed)return;
+      await plugin.discardSingleFile();
+      closed=true;
     }
   });
 }
