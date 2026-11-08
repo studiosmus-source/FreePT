@@ -48,3 +48,11 @@ test('FreePT owner TX is native, not a four-minute WebView loop',()=>{
   assert.doesNotMatch(main,/createBridgeFolderTransmitter\(/);
   assert.match(workflow,/VITE_BRIDGE_TEST_API_URL: \$\{\{ vars\.FREEPT_BRIDGE_TEST_API_URL \}\}/);
 });
+
+test('native TX renews the backend five-minute session but stops after refused login',()=>{
+  const sql=read('supabase/migrations/20261106_bridge_tx_sessions_staging.sql');
+  assert.match(sql,/interval '5 minutes'/);
+  assert.match(service,/connectedOnce=true/);
+  assert.match(service,/if\(!connectedOnce\)break/);
+  assert.match(service,/catch\(SecurityException denied\)/);
+});

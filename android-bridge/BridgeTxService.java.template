@@ -174,21 +174,26 @@ public final class BridgeTxService extends Service {
         try{
             BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(this);
             while(running.get()&&!Thread.currentThread().isInterrupted()){
+                boolean connectedOnce=false;
                 try{
                     JSONObject connected=post("/bridge/tx/connect",new JSONObject()
                         .put("deviceId",cred.deviceId).put("deviceSecret",cred.deviceSecret));
                     String token=connected.getString("token");
                     if(!token.matches("^[0-9a-f]{64}$"))
                         throw new SecurityException("invalid_session");
+                    connectedOnce=true;
                     while(running.get()&&!Thread.currentThread().isInterrupted()){
                         JSONObject command=post("/bridge/tx/poll",payload(cred.deviceId,token));
                         JSONObject job=command.optJSONObject("job");
                         if(job!=null)executeJob(job,cred.deviceId,token);
                         else Thread.sleep(2000);
                     }
-                }catch(SecurityException revoked){
-                    // Credentials or session revoked: never continue with stale keys.
-                    break;
+                }catch(SecurityException denied){
+                    // TX sessions expire after 5 minutes. Only a previously
+                    // successful connection may renew; a refused fresh login
+                    // is a durable revocation and stops the service.
+                    if(!connectedOnce)break;
+                    try{Thread.sleep(1000);}catch(InterruptedException stop){break;}
                 }catch(Exception intermittent){
                     if(!running.get())break;
                     try{Thread.sleep(5000);}catch(InterruptedException stop){break;}
