@@ -22,7 +22,7 @@ export async function verifyAdminEmailCode(auth,emailInput,codeInput){
   if(typeof auth?.verifyOtp!=='function')throw Error('admin_auth_unavailable');
   const email=validateEmail(emailInput);
   const token=String(codeInput??'').trim();
-  if(!/^\d{6}$/.test(token))throw Error('admin_code_invalid');
+  if(!/^\d{6,10}$/.test(token))throw Error('admin_code_invalid');
   const {data,error}=await auth.verifyOtp({email,token,type:'email'});
   if(error||!data?.user||data.user.is_anonymous)
     throw Error('admin_code_verification_failed');
