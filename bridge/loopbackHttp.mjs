@@ -45,9 +45,10 @@ async function parseBody(req,maxBytes = MAX_BYTES) {
     throw new RequestBodyError(400, 'invalid_json');
   }
 }
-export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
+export function createBridgeLoopbackTestServer({ handler, txHandler = null, ownerHandler = null }) {
   if (typeof handler !== 'function' ||
-      (txHandler !== null && typeof txHandler !== 'function'))
+      (txHandler !== null && typeof txHandler !== 'function') ||
+      (ownerHandler !== null && typeof ownerHandler !== 'function'))
     throw new Error('invalid_http_handler');
   const server = createServer(async (req, res) => {
     try {
@@ -57,14 +58,16 @@ export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
       }
       const adminPaths = ['/bridge/admin/list','/bridge/admin/status','/bridge/admin/cancel','/bridge/admin/folder'];
       const txPaths = ['/bridge/tx/connect','/bridge/tx/poll','/bridge/tx/complete','/bridge/tx/disconnect','/bridge/tx/folder'];
+      const ownerPaths = ['/bridge/owner/enroll','/bridge/owner/delete'];
       const txRoute = txPaths.includes(req.url);
-      if (!adminPaths.includes(req.url) && !(txHandler && txRoute)) {
+      const ownerRoute = ownerHandler && ownerPaths.includes(req.url);
+      if (!adminPaths.includes(req.url) && !(txHandler && txRoute) && !ownerRoute) {
         reply(res, 404, {error:'not_found'});
         return;
       }
       const body = await parseBody(req,
         req.url === '/bridge/tx/folder' ? MAX_CATALOGUE_BYTES : MAX_BYTES);
-      const response = await (txRoute ? txHandler : handler)({
+      const response = await (ownerRoute ? ownerHandler : txRoute ? txHandler : handler)({
         method:req.method, path:req.url,
         headers:{authorization:req.headers.authorization}, body
       });
