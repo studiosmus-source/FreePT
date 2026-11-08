@@ -13,6 +13,7 @@ const ROUTES = {
   '/bridge/tx/complete': ['deviceId', 'sessionToken', 'jobId'],
   '/bridge/tx/folder': ['deviceId', 'sessionToken', 'jobId', 'entries'],
   '/bridge/tx/chunk': ['deviceId', 'sessionToken', 'jobId', 'chunk'],
+  '/bridge/tx/browse': ['deviceId','sessionToken','jobId','entries','nextOffset'],
   '/bridge/tx/disconnect': ['deviceId', 'sessionToken']
 };
 const fail = (status, code) => ({status, body:{error:code}});
@@ -70,6 +71,8 @@ export function createBridgeTxRequestHandler({
     const keys = ROUTES[request?.path];
     if (!keys || (request.path === '/bridge/tx/disconnect' &&
         typeof service.closeDeviceSession !== 'function') ||
+        (request.path === '/bridge/tx/browse' &&
+        typeof service.completeBrowsePage !== 'function') ||
         (request.path === '/bridge/tx/chunk' &&
         typeof service.completeRead !== 'function') ||
         (request.path === '/bridge/tx/folder' &&
@@ -83,6 +86,10 @@ export function createBridgeTxRequestHandler({
         (keys.includes('sessionToken') &&
           (typeof body.sessionToken !== 'string' || !HEX.test(body.sessionToken))))
       return fail(400,'invalid_request');
+    if(request.path === '/bridge/tx/browse') {
+      try{validateBridgeFolderPage({entries:body.entries,nextOffset:body.nextOffset});}
+      catch{return fail(400,'invalid_request');}
+    }
     if(request.path === '/bridge/tx/folder') {
       try{validateBridgeFolderPage({entries:body.entries,nextOffset:-1});}
       catch{return fail(400,'invalid_request');}
@@ -125,6 +132,11 @@ export function createBridgeTxRequestHandler({
         return {status:200,body:{job:await service.pollDevice({
           deviceId:body.deviceId,sessionToken:body.sessionToken
         })}};
+      if(request.path === '/bridge/tx/browse')
+        return {status:200,body:await service.completeBrowsePage({
+          deviceId:body.deviceId,sessionToken:body.sessionToken,jobId:body.jobId,
+          entries:body.entries,nextOffset:body.nextOffset
+        })};
       if(request.path === '/bridge/tx/chunk')
         return {status:200,body:await service.completeRead({
           deviceId:body.deviceId,sessionToken:body.sessionToken,
