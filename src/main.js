@@ -5,6 +5,7 @@ import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
+import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
@@ -19,6 +20,7 @@ const db = createClient(config.url, config.key, { auth: { persistSession: true, 
 const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
   ? registerPlugin('BridgeFiles') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
+const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
   auth:db.auth,credentials:bridgeCredentials
@@ -536,7 +538,8 @@ async function showOwnerBridgeFolder(){
       '<label for="bridgeOwnerLabel">Nome telefono</label><input id="bridgeOwnerLabel" maxlength="100" placeholder="Il mio Android">'+
       '<div class="bridge-owner-actions"><button type="button" id="bridgeOwnerEnroll">Registra telefono</button>'+
       '<button type="button" id="bridgeOwnerDelete">Revoca telefono</button></div>'+
-      '<p id="bridgeOwnerPairStatus" role="status"></p></section>':'')+
+      '<p id="bridgeOwnerPairStatus" role="status"></p>'+
+      '<div id="bridgeOwnerGrantControls"></div></section>':'')+
     '<div id="ownerBridgeContents" role="status"></div></section>';
   document.body.appendChild(panel);
   const area=panel.querySelector('#ownerBridgeContents');
@@ -585,7 +588,79 @@ async function showOwnerBridgeFolder(){
       }catch{if(alive())status.textContent='Revoca non completata: ritenta quando il server è disponibile.';}
       finally{pairing=false;await refresh();}
     };
-    void refresh();
+    const grantsArea=panel.querySelector('#bridgeOwnerGrantControls');
+    let grantBusy=false;
+    const renderGrants=async()=>{
+      if(!alive()||grantBusy)return;
+      const account=await bridgeOwnerClient.status();
+      if(!alive())return;
+      grantsArea.replaceChildren();
+      if(!account?.provisioned)return;
+      let current,grants;
+      try{
+        current=await bridgeOwnerControls.device(account.deviceId);
+        grants=await bridgeOwnerControls.recipients(account.deviceId);
+      }catch{
+        grantsArea.textContent='Le autorizzazioni Bridge non sono ancora disponibili sul server di prova.';
+        return;
+      }
+      const enabled=document.createElement('button');
+      enabled.type='button';
+      enabled.textContent=current.enabled?'Disattiva condivisione Bridge':'Attiva condivisione Bridge';
+      grantsArea.appendChild(enabled);
+      const heading=document.createElement('p');
+      heading.textContent='Consenti l’accesso soltanto a un amministratore approvato. La cartella resta quella scelta da te.';
+      grantsArea.appendChild(heading);
+      const field=document.createElement('input');
+      field.placeholder='ID amministratore autorizzato (UUID)';
+      field.setAttribute('aria-label','Identificativo amministratore da autorizzare');
+      field.maxLength=36;
+      const grant=document.createElement('button');
+      grant.type='button';grant.textContent='Autorizza amministratore';
+      grantsArea.append(field,grant);
+      const update=async action=>{
+        if(grantBusy||!alive())return;
+        grantBusy=true;
+        for(const button of grantsArea.querySelectorAll('button'))button.disabled=true;
+        try{
+          await action();
+          if(alive())status.textContent='Autorizzazioni aggiornate. Il trasferimento richiede comunque un collegamento remoto attivo.';
+        }catch{
+          if(alive())status.textContent='Autorizzazione non aggiornata. Controlla il server Bridge di prova.';
+        }finally{grantBusy=false;if(alive())void renderGrants();}
+      };
+      enabled.onclick=()=>void update(async()=>{
+        if(current.enabled||confirm('Attivare Bridge per il telefono e gli amministratori autorizzati?'))
+          await bridgeOwnerControls.setEnabled(account.deviceId,!current.enabled);
+      });
+      grant.onclick=()=>void update(async()=>{
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(field.value.trim()))
+          throw Error('bridge_invalid_receiver');
+        if(!confirm('Autorizzare questo amministratore alla cartella Bridge selezionata?'))return;
+        await bridgeOwnerControls.grant(account.deviceId,field.value.trim());
+      });
+      for(const item of grants){
+        const line=document.createElement('div');
+        const label=document.createElement('span');
+        label.textContent='Amministratore '+item.receiverId+' · '+(item.active?'autorizzato':'revocato');
+        line.appendChild(label);
+        if(item.active){
+          const revoke=document.createElement('button');
+          revoke.type='button';revoke.textContent='Revoca';
+          revoke.onclick=()=>void update(async()=>{
+            if(confirm('Revocare immediatamente l’accesso di questo amministratore?'))
+              await bridgeOwnerControls.revoke(account.deviceId,item.receiverId);
+          });
+          line.appendChild(revoke);
+        }
+        grantsArea.appendChild(line);
+      }
+    };
+    const originalRefresh=refresh;
+    // Run separate owner controls only after a confirmed local credential.
+    void (async()=>{await originalRefresh();if(alive())await renderGrants();})();
+    enroll.addEventListener('click',()=>setTimeout(()=>{if(alive())void renderGrants();},1000));
+    revoke.addEventListener('click',()=>setTimeout(()=>{if(alive())void renderGrants();},1000));
   }
   const draw=async(offset=0)=>{
     if(!alive())return;
