@@ -189,9 +189,14 @@ public class BridgeFilesPlugin extends Plugin {
         restoreTree();
         if(tree == null) {call.reject("bridge_no_folder_selected");return;}
         Entry entry = handles.get(call.getString("handle"));
-        Long offset = call.getLong("offset",0L);
+        // JSON small integers can arrive as Integer, not Long.
+        Object rawOffset = call.getData().opt("offset");
+        long offset = rawOffset instanceof Number ? ((Number)rawOffset).longValue() : -1;
         Integer length = call.getInt("length",MAX_CHUNK);
-        if(entry == null || entry.directory || offset == null || offset < 0 ||
+        if(entry == null || entry.directory ||
+                !(rawOffset instanceof Number) ||
+                ((Number)rawOffset).doubleValue() != (double)offset ||
+                offset < 0 || offset > 1099511627776L ||
                 length == null || length < 1 || length > MAX_CHUNK) {
             call.reject("bridge_invalid_file_request");return;
         }
