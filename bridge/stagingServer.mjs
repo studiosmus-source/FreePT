@@ -8,6 +8,7 @@
  */
 import {createClient} from '@supabase/supabase-js';
 import {createTrustedBridgeBackend} from './trustedBackend.mjs';
+import {createBridgeOwnerEnrollmentHandler} from './ownerEnrollment.mjs';
 import {createBridgeLoopbackTestServer} from './loopbackHttp.mjs';
 
 const PRODUCTION_HOST='cpopqsvzzxfjgnlawlvc.supabase.co';
@@ -52,8 +53,11 @@ export function createBridgeStagingServer({config,createClientFn=createClient}){
   const handlers=createTrustedBridgeBackend({
     authClient,profilesClient:dbClient,verifiersClient:dbClient,rpcClient:dbClient
   });
+  const ownerHandler=createBridgeOwnerEnrollmentHandler({
+    authClient,profilesClient:dbClient,rpcClient:dbClient
+  });
   return createBridgeLoopbackTestServer({
-    handler:handlers.admin,txHandler:handlers.tx
+    handler:handlers.admin,txHandler:handlers.tx,ownerHandler
   });
 }
 
