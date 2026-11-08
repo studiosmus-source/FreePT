@@ -6,6 +6,7 @@
  */
 import {receiveBridgeFolder} from '../bridge/folderReceiver.mjs';
 import {downloadBridgeFile} from './bridgeDownloadClient.js';
+import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -19,12 +20,21 @@ export async function downloadBridgeFolder({
   api,deviceId,root='root',listPage,destination,signal,
   pause,pollMs,maxPolls,maxEntries,onProgress=()=>{}
 }={}){
-  if(!UUID.test(deviceId)||!api||typeof listPage!=='function'||
+  if(!UUID.test(deviceId)||!api||
+     (listPage!==undefined&&typeof listPage!=='function')||
      !destination||['begin','makeDirectory','openFile','commit','discard']
        .some(method=>typeof destination[method]!=='function')||
      typeof onProgress!=='function')
     throw Error('bridge_folder_download_invalid_options');
 
+  // Prefer the authenticated remote catalogue when no custom page reader
+  // was supplied. The API and its grant checks remain the source of truth.
+  const reader=listPage??createBridgeRemoteFolderLister({
+    api,deviceId,
+    ...(pause===undefined?{}:{pause}),
+    ...(pollMs===undefined?{}:{pollMs}),
+    ...(maxPolls===undefined?{}:{maxPolls})
+  });
   let completedFiles=0;
   const downloadFile=async({handle,path,size,mime,signal:currentSignal})=>{
     const writer=await destination.openFile(path,{size,mime});
@@ -45,7 +55,7 @@ export async function downloadBridgeFolder({
   };
 
   return receiveBridgeFolder({
-    root,listPage,signal,
+    root,listPage:({handle,offset})=>reader({handle,offset,signal}),signal,
     ...(maxEntries===undefined?{}:{maxEntries}),
     begin:()=>destination.begin(),
     makeDirectory:path=>destination.makeDirectory(path),
