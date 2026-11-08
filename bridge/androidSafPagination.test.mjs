@@ -18,3 +18,13 @@ test('SAF request refuses unknown handles rather than reaching unrestricted path
  assert.match(java,/handles\.get\(call\.getString\("handle"\)\)/);
  assert.doesNotMatch(java,/MANAGE_EXTERNAL_STORAGE/);
 });
+
+test('SAF file chunk accumulates short blocking channel reads until requested length or EOF',()=>{
+ assert.match(java,/while\(bytes\.hasRemaining\(\)\)/);
+ assert.match(java,/int count = channel\.read\(bytes\);/);
+ assert.match(java,/if\(count < 0\) break;/);
+ assert.match(java,/bridge_file_no_read_progress/);
+ assert.match(java,/total \+= count;/);
+ assert.match(java,/response\.put\("eof",total < length\)/);
+ assert.doesNotMatch(java,/int count = channel\.read\(bytes\);\s*bytes\.flip\(\);/);
+});
