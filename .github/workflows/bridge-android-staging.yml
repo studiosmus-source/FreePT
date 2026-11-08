@@ -202,13 +202,34 @@ jobs:
           APK=android/app/build/outputs/apk/debug/bridge-stable.apk
           "$TOOL" sign --ks "$RUNNER_TEMP/freept-bridge.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --out "$APK" "$SRC"
           "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/bridge-signing-check.txt"
-          EXPECTED="$(printf "%s" "$BRIDGE_CERT_SHA256" | tr -d ":[:space:]" | tr "[:upper:]" "[:lower:]")"
-          ACTUAL="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/bridge-signing-check.txt" | head -1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
-          if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ || "$ACTUAL" != "$EXPECTED" ]]; then
-            echo "::error::Bridge signing identity mismatch; APK rejected"
+          # Independently derive the certificate fingerprint from the protected
+          # keystore. No certificate fingerprint or secret is printed to logs.
+          EXPECTED="$(printf "%s" "$BRIDGE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          KEY_SHA="$(
+            keytool -exportcert -keystore "$RUNNER_TEMP/freept-bridge.jks" \
+              -storepass:env BRIDGE_STORE_PASSWORD -alias "$BRIDGE_KEY_ALIAS" \
+              | sha256sum | cut -d' ' -f1
+          )"
+          # apksigner print-certs output varies slightly between SDK versions.
+          # Accept whitespace/CRLF variations, not an unexpected certificate.
+          APK_SHA="$(sed -nE 's/^[[:space:]]*Signer #1 certificate SHA-256 digest:[[:space:]]*([0-9a-fA-F:]+)[[:space:]]*$/\1/p' "$RUNNER_TEMP/bridge-signing-check.txt" | head -1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Configured fingerprint has invalid format; APK withheld"
             exit 1
           fi
-          echo 'Bridge signing identity verified'
+          if [[ "$KEY_SHA" != "$EXPECTED" ]]; then
+            echo "::error::GitHub fingerprint does not match stored signing key; APK withheld"
+            exit 1
+          fi
+          if [[ ! "$APK_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Could not extract signing fingerprint from verified APK; APK withheld"
+            exit 1
+          fi
+          if [[ "$APK_SHA" != "$KEY_SHA" ]]; then
+            echo "::error::APK signing certificate differs from keystore certificate; APK withheld"
+            exit 1
+          fi
+          echo 'Bridge signing identity verified against keystore and APK'
       - name: Verify APK integrity and identity
         run: |
           APK=android/app/build/outputs/apk/debug/bridge-stable.apk
