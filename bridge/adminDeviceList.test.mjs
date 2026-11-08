@@ -32,6 +32,7 @@ function makeHarness(response,{connected=true,role='admin',unlocked=true}={}){
   }};
   const context={
     db,panel,me:{id:'admin-id'},profile:{role},adminUnlocked:unlocked,
+    bridgeClient:null,
     esc:s=>String(s??'').replace(/[&<>"]/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[x]))
   };
   runInNewContext(source+'\nthis.load=loadAdminBridgeDevices;',context);
