@@ -308,6 +308,7 @@ async function refreshOnVisible(){
 function closeAdminOverlays(){
   document.getElementById('adminBridgePanel')?.remove();
   document.getElementById('chatActions')?.remove();
+  document.getElementById('ownerBridgePanel')?.remove();
 }
 
 async function loadAdminBridgeDevices(panel){
@@ -503,7 +504,7 @@ async function showOwnerBridgeFolder(){
     if(!alive())return;
     const revision=++generation;
     const current=stack.at(-1);
-    area.textContent='Lettura cartella…';
+    if(offset===0)area.textContent='Lettura cartella…';
     try{
       const response=await bridgeFiles.list({handle:current.handle,offset});
       if(!alive()||revision!==generation)return;
@@ -543,7 +544,7 @@ async function showOwnerBridgeFolder(){
       if(response.nextOffset>=0){
         const more=document.createElement('button');
         more.type='button';more.textContent='Carica altri file';
-        more.onclick=()=>void draw(response.nextOffset);
+        more.onclick=()=>{more.remove();void draw(response.nextOffset);};
         entries.appendChild(more);
       }
       if(!response.entries?.length&&offset===0){
