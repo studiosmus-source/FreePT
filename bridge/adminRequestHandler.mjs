@@ -45,15 +45,16 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
     const method = request?.method;
     const path = request?.path;
     if (method !== 'POST') return fail(405, 'method_not_allowed');
-    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel', '/bridge/admin/folder','/bridge/admin/read','/bridge/admin/chunk'].includes(path))
+    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel', '/bridge/admin/folder','/bridge/admin/read','/bridge/admin/chunk','/bridge/admin/browse','/bridge/admin/browse-page'].includes(path))
       return fail(404, 'not_found');
     const token = bearer(request?.headers);
     if (!token) return fail(401, 'authentication_required');
     const body = request?.body;
     if (!onlyKeys(body, path === '/bridge/admin/list' ? ['deviceId'] :
-        path === '/bridge/admin/read' ? ['deviceId','handle','offset','length'] : ['jobId']))
+        path === '/bridge/admin/read' ? ['deviceId','handle','offset','length'] :
+        path === '/bridge/admin/browse' ? ['deviceId','handle','offset'] : ['jobId']))
       return fail(400, 'invalid_request');
-    if (path === '/bridge/admin/list'||path === '/bridge/admin/read') {
+    if (path === '/bridge/admin/list'||path === '/bridge/admin/read'||path === '/bridge/admin/browse') {
       if (!own(body, 'deviceId') || typeof body.deviceId !== 'string' ||
           !UUID.test(body.deviceId)) return fail(400, 'invalid_device_id');
     } else if (!own(body, 'jobId') || typeof body.jobId !== 'string' ||
@@ -67,6 +68,10 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
         if(request.length>32768)return fail(400,'bridge_read_invalid');
       }catch{return fail(400,'bridge_read_invalid');}
     }
+    if(path === '/bridge/admin/browse' &&
+       (!(body.handle==='root'||UUID.test(body.handle))||
+        !Number.isSafeInteger(body.offset)||body.offset<0||body.offset>10000))
+      return fail(400,'bridge_browse_invalid');
     const authContext = { accessToken: token };
     try {
       if (path === '/bridge/admin/list') {
@@ -77,6 +82,19 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
           authContext, deviceId: body.deviceId, jobId
         });
         return { status: 202, body: result };
+      }
+      if(path === '/bridge/admin/browse'){
+        if(typeof service.requestBrowse!=='function')return fail(404,'not_found');
+        const jobId=newJobId();
+        if(typeof jobId!=='string'||!UUID.test(jobId))
+          throw Error('invalid_generated_job_id');
+        return {status:202,body:await service.requestBrowse({
+          authContext,deviceId:body.deviceId,jobId,handle:body.handle,offset:body.offset
+        })};
+      }
+      if(path === '/bridge/admin/browse-page'){
+        if(typeof service.getBrowsePage!=='function')return fail(404,'not_found');
+        return {status:200,body:await service.getBrowsePage({authContext,jobId:body.jobId})};
       }
       if (path === '/bridge/admin/read') {
         if(typeof service.requestRead!=='function')return fail(404,'not_found');
