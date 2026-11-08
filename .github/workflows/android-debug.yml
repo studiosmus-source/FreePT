@@ -117,6 +117,9 @@ jobs:
           npx cap add android
           npx cap sync android
           test -s android/capacitor.settings.gradle
+      - name: Install explicit owner-selected SAF folder provider (Bridge test only)
+        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        run: python3 android-bridge/install.py
       - name: Ensure Android biometric permission
         run: |
           python3 - <<'PY'
