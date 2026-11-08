@@ -7,7 +7,7 @@ import {validateBridgeFolderPage,validateBridgeJobIdentity,validateBridgeReadReq
 import {normalizeBridgeApiUrl} from './bridgeAdminClient.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX=/^[0-9a-f]{64}$/;
-const SHAPES=new Set(['connect','poll','folder','chunk','disconnect']);
+const SHAPES=new Set(['connect','poll','folder','chunk','browse','disconnect']);
 export function createBridgeFolderTransmitter({
   baseUrl,deviceId,deviceSecret,folderProvider,fetchImpl=fetch
 }={}){
@@ -46,7 +46,7 @@ export function createBridgeFolderTransmitter({
       const job=await request('poll',{sessionToken:session});
       if(job?.job===null)return false;
       const item=job?.job;
-      if(!item||!['list','read'].includes(item.operation)||item.state!=='sent')
+      if(!item||!['list','read','browse'].includes(item.operation)||item.state!=='sent')
         throw Error('bridge_tx_invalid_job');
       validateBridgeJobIdentity({jobId:item.jobId,deviceId:item.deviceId});
       if(item.deviceId!==deviceId)throw Error('bridge_tx_wrong_device');
@@ -64,6 +64,22 @@ export function createBridgeFolderTransmitter({
           throw Error('bridge_tx_chunk_truncated');
         const finished=await request('chunk',{
           sessionToken:session,jobId:item.jobId,chunk
+        });
+        if(finished?.jobId!==item.jobId||finished?.deviceId!==deviceId||
+           finished?.state!=='done')throw Error('bridge_tx_invalid_response');
+        return true;
+      }
+      if(item.operation==='browse'){
+        const handle=item.handle;
+        if(!(handle==='root'||UUID.test(handle))||
+           !Number.isSafeInteger(item.offset)||item.offset<0||item.offset>10000)
+          throw Error('bridge_tx_invalid_job');
+        const page=validateBridgeFolderPage(
+          await folderProvider.list({handle,offset:item.offset})
+        );
+        const finished=await request('browse',{
+          sessionToken:session,jobId:item.jobId,
+          entries:page.entries,nextOffset:page.nextOffset
         });
         if(finished?.jobId!==item.jobId||finished?.deviceId!==deviceId||
            finished?.state!=='done')throw Error('bridge_tx_invalid_response');
