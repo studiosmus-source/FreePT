@@ -24,6 +24,7 @@ a un download remoto funzionante.
 ```text
 FREEPT_BRIDGE_STAGING=I_UNDERSTAND_LOCAL_TEST_ONLY
 FREEPT_BRIDGE_PUBLIC=I_UNDERSTAND_STAGING_HTTPS_ONLY
+FREEPT_BRIDGE_READ_ENABLED=I_UNDERSTAND_TEST_ONLY
 FREEPT_BRIDGE_ALLOWED_ORIGINS=https://localhost
 FREEPT_BRIDGE_TEST_SUPABASE_URL=<isolated-staging-url>
 FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY=<isolated-staging-publishable>
@@ -60,9 +61,9 @@ il client Bridge non crea un collegamento remoto e non inventa fallback.
 ## Confini e operazioni
 
 Le rotte consentite sono soltanto:
-- admin: `list`, `status`, `cancel`, `folder`;
+- admin: `list`, `status`, `cancel`, `folder`; con flag read esplicito anche `read`, `chunk`;
 - proprietario: `enroll`, `delete`;
-- trasmittente: `connect`, `poll`, `complete`, `folder`, `disconnect`.
+- trasmittente: `connect`, `poll`, `complete`, `folder`, `disconnect`; con flag read esplicito anche `chunk`.
 
 Il gateway applica HTTPS, CORS rigoroso per `https://localhost`, un
 limite globale di richieste per minuto per istanza e limiti ai body.
@@ -87,3 +88,28 @@ Su più istanze serviranno rate limiting e gestione sessioni condivisi.
    recupero elenco, revoca e riconnessione.
 4. Non migrare nulla su `main`, TX su Render o Supabase produzione
    finché il collaudo reale non è approvato.
+
+## Protocollo `read` sperimentale — branch receiver 2026-11-08
+
+Il codice è presente ma **disabilitato per impostazione predefinita**.
+Prima di impostare `FREEPT_BRIDGE_READ_ENABLED`, applicare SOLO nel database
+Bridge isolato la migrazione
+`supabase/migrations/20261108_bridge_read_chunks_staging.sql`, **dopo**
+`20261108_bridge_folder_catalog_staging.sql` e la session fence.
+Il flag non va inserito nelle variabili `VITE_*`, nell'APK o sul servizio TX.
+
+Flusso attuale: un admin approvato richiede `/bridge/admin/read` per un
+handle file proveniente da un recente catalogo root; il TX autenticato ottiene
+il job con `poll`, legge fino a 32768 byte con SAF e li consegna a
+`/bridge/tx/chunk`. Il ricevente autenticato li recupera da
+`/bridge/admin/chunk`. Il database revalida consenso, sessione TX e job,
+e rifiuta letture dopo revoca. La coda PostgreSQL è unica, senza TX legacy.
+
+**Non è ancora un download Android utilizzabile:** mancano il salvataggio
+streaming sul dispositivo ricevente, l'orchestrazione automatica dei job
+ripetuti per file grandi, il catalogo remoto delle sottocartelle e il deploy
+separato di HTTPS/Supabase staging. Il modello di ricezione delle cartelle è
+locale ma non ancora collegato al server. Nessun test tra telefoni è attestato.
+La pipeline GitHub prova le operazioni su PostgreSQL effimero, non sul Supabase
+staging remoto; il workflow Android resta volutamente disabilitato su questo
+branch fino all'integrazione sicura del ricevitore.
