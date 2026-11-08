@@ -11,10 +11,11 @@ const main=read('src/main.js');
 const workflow=read('.github/workflows/bridge-android-staging.yml');
 test('native TX only installed in isolated APK with explicit Android foreground service',()=>{
   assert.match(installer,/package != "it\.freept\.bridge"/);
-  assert.match(installer,/android\.permission\.FOREGROUND_SERVICE_DATA_SYNC/);
+  assert.match(installer,/"FOREGROUND_SERVICE_DATA_SYNC"/);
   assert.match(installer,/android:foregroundServiceType="dataSync"/);
   assert.match(installer,/android:exported="false"/);
-  assert.match(installer,/BridgeTxService\.java\.template/);
+  assert.match(installer,/"BridgeTxService"/);
+  assert.match(installer,/name \+ "\.java\.template"/);
   assert.match(installer,/registerPlugin\(BridgeTxControlPlugin\.class\)/);
   assert.match(installer,/MANAGE_EXTERNAL_STORAGE/);
 });

@@ -173,14 +173,14 @@ public final class BridgeTxService extends Service {
         active=true;
         try{
             BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(this);
-            while(running.get()&&!Thread.currentThread().isInterrupted){
+            while(running.get()&&!Thread.currentThread().isInterrupted()){
                 try{
                     JSONObject connected=post("/bridge/tx/connect",new JSONObject()
                         .put("deviceId",cred.deviceId).put("deviceSecret",cred.deviceSecret));
                     String token=connected.getString("token");
                     if(!token.matches("^[0-9a-f]{64}$"))
                         throw new SecurityException("invalid_session");
-                    while(running.get()&&!Thread.currentThread().isInterrupted){
+                    while(running.get()&&!Thread.currentThread().isInterrupted()){
                         JSONObject command=post("/bridge/tx/poll",payload(cred.deviceId,token));
                         JSONObject job=command.optJSONObject("job");
                         if(job!=null)executeJob(job,cred.deviceId,token);
