@@ -6,7 +6,7 @@
 import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
 import {downloadBridgeFolder} from './bridgeFolderDownloadClient.js';
 import {downloadBridgeFile} from './bridgeDownloadClient.js';
-import {createBridgeAndroidFolderDestination} from './bridgeAndroidDestination.js';
+import {createBridgeAndroidFolderDestination,createBridgeAndroidSingleFileWriter} from './bridgeAndroidDestination.js';
 import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
 
 function create(node,label,parent){
@@ -46,22 +46,14 @@ export function renderBridgeRemoteFiles({
   };
   const setStatus=value=>{if(alive())status.textContent=value};
   const fileDownload=async(item,deviceId)=>{
-    const name='FreePT - '+item.name;
-    const writer=createBridgeAndroidFolderDestination({plugin:bridgeDestination,name});
-    await writer.begin();
-    try{
-      const file=await writer.openFile([item.name],{size:item.size,mime:item.mime});
-      await downloadBridgeFile({
-        api:bridgeClient,deviceId,handle:item.handle,size:item.size,
-        destination:file,signal:controller.signal,
-        onProgress:p=>setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte')
-      });
-      if(controller.signal.aborted)throw Error('bridge_transfer_cancelled');
-      await writer.commit();
-    }catch(error){
-      await writer.discard();
-      throw error;
-    }
+    const writer=await createBridgeAndroidSingleFileWriter({
+      plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime
+    });
+    await downloadBridgeFile({
+      api:bridgeClient,deviceId,handle:item.handle,size:item.size,
+      destination:writer,signal:controller.signal,
+      onProgress:p=>setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte')
+    });
   };
   const startDownload=async(item,deviceId,root=false)=>{
     if(activeDownload||!alive())return;
