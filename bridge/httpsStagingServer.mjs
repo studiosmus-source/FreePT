@@ -26,7 +26,8 @@ export function createBridgeStagingHttpsService({
   const serviceClient=createClientFn(dbConfig.url,dbConfig.serviceKey,clientOptions);
   const {admin,tx}=createTrustedBridgeBackend({
     authClient,profilesClient:serviceClient,verifiersClient:serviceClient,
-    rpcClient:serviceClient
+    rpcClient:serviceClient,
+    readJobsEnabled:env?.FREEPT_BRIDGE_READ_ENABLED==='I_UNDERSTAND_TEST_ONLY'
   });
   const owner=createBridgeOwnerEnrollmentHandler({
     authClient,profilesClient:serviceClient,rpcClient:serviceClient
