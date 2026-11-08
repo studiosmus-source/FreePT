@@ -8,6 +8,7 @@ import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
 import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
 import {createBridgeFolderTransmitter} from './bridgeTxFolderClient.js';
 import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
+import {renderOriginalTxRx} from './originalTxRxUi.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
@@ -504,7 +505,7 @@ function showAdminBridge(){
     '<header><h2>Bridge</h2><button type="button" id="closeAdminBridge">Chiudi</button></header>'+
     '<p class="hint">Codice amministratore per l’autorizzazione Bridge:</p>'+
     '<div class="bridge-admin-identity"><code>'+esc(me?.id||'')+'</code> <button type="button" id="copyBridgeAdminId">Copia</button></div>'+
-    '<nav><button type="button" data-bridge-view="approvals">Approvazioni</button><button type="button" data-bridge-view="files">File</button></nav>'+
+    '<nav><button type="button" data-bridge-view="approvals">Approvazioni</button><button type="button" data-bridge-view="files">File Bridge</button><button type="button" data-bridge-view="tx">TX originale</button></nav>'+
     '<div id="bridgeAdminContent" aria-live="polite"></div></section>';
   document.body.appendChild(panel);
   let disposeRemote=null;
@@ -513,7 +514,14 @@ function showAdminBridge(){
     const content=panel.querySelector('#bridgeAdminContent');
     panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.bridgeView===view)));
     if(view==='approvals')void loadAdminBridgeDevices(panel);
-    else {
+    else if(view==='tx'){
+      panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
+      disposeRemote=renderOriginalTxRx({
+        host:content,destination:bridgeDestination,
+        isAuthorized:()=>panel.isConnected&&me?.id&&profile?.role==='admin'&&adminUnlocked&&
+          panel.querySelector('[data-bridge-view="tx"]')?.getAttribute('aria-pressed')==='true'
+      });
+    } else {
       panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
       disposeRemote=renderBridgeRemoteFiles({
         host:content,db,bridgeClient,bridgeDestination,
