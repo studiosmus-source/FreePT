@@ -57,7 +57,7 @@ jobs:
               raise SystemExit('Bridge test Supabase publishable key missing or invalid')
           print('Bridge test Supabase configuration present; production project rejected')
           PY
-      - name: Validate optional experimental HTTPS Bridge backend endpoint
+      - name: Require experimental HTTPS Bridge backend endpoint
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
         env:
           VITE_BRIDGE_TEST_API_URL: ${{ vars.FREEPT_BRIDGE_TEST_API_URL }}
@@ -67,14 +67,13 @@ jobs:
           from urllib.parse import urlparse
           value=os.environ.get('VITE_BRIDGE_TEST_API_URL','')
           if not value:
-              print('No external Bridge endpoint configured: admin stays read-only')
-          else:
-              url=urlparse(value)
-              if (url.scheme!='https' or not url.hostname or url.hostname=='cpopqsvzzxfjgnlawlvc.supabase.co' or
-                  url.username or url.password or url.port or url.path not in ('','/') or
-                  url.query or url.fragment):
-                  raise SystemExit('Unsafe Bridge test endpoint refused')
-              print('Optional HTTPS Bridge test endpoint validated')
+              raise SystemExit('Bridge remote-test APK refused: FREEPT_BRIDGE_TEST_API_URL missing. No more disconnected APKs.')
+          url=urlparse(value)
+          if (url.scheme!='https' or not url.hostname or url.hostname=='cpopqsvzzxfjgnlawlvc.supabase.co' or
+              url.username or url.password or url.port or url.path not in ('','/') or
+              url.query or url.fragment):
+              raise SystemExit('Unsafe Bridge test endpoint refused')
+          print('Required HTTPS Bridge test endpoint validated')
           PY
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
