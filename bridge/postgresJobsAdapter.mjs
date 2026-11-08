@@ -127,7 +127,7 @@ export class BridgePostgresJobsAdapter {
       const next=await this.#rpc('bridge_server_claim_read',{
         p_device_id:deviceId,p_session_binding_hex:binding
       });
-      if(next===null)return null;
+      if(next!==null){
       if(!next||typeof next!=='object'||Array.isArray(next)||
          Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,length,offset,operation,state'||
          !UUID.test(next.jobId)||next.deviceId!==deviceId||
@@ -136,6 +136,7 @@ export class BridgePostgresJobsAdapter {
       validateBridgeReadRequest({handle:next.handle,offset:next.offset,length:next.length});
       if(next.length>32768)throw Error('bridge_jobs_invalid_response');
       return next;
+      }
     }
     if(data===null && this.readJobsEnabled){
       const next=await this.#rpc('bridge_server_claim_browse',{
