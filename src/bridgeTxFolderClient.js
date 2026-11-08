@@ -5,6 +5,7 @@
  */
 import {validateBridgeFolderPage,validateBridgeJobIdentity,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 import {normalizeBridgeApiUrl} from './bridgeAdminClient.js';
+import {bridgePollRetry} from './bridgePollRetry.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX=/^[0-9a-f]{64}$/;
 const SHAPES=new Set(['connect','poll','folder','chunk','browse','disconnect']);
@@ -21,11 +22,14 @@ export function createBridgeFolderTransmitter({
     if(!SHAPES.has(action)||closed)throw Error('bridge_tx_disabled');
     let response;
     try{
-      response=await fetchImpl(url+'/bridge/tx/'+action,{
+      const send=()=>fetchImpl(url+'/bridge/tx/'+action,{
         method:'POST',headers:{'content-type':'application/json'},
         body:JSON.stringify({deviceId,...body}),
         cache:'no-store',redirect:'error'
       });
+      // Only confirmed gateway throttling (429) can be retried.
+      // Poll may already have claimed a job after any ambiguous failure.
+      response=action==='poll'?await bridgePollRetry(send):await send();
     }catch{throw Error('bridge_tx_network_unavailable');}
     if(!response?.ok)throw Error('bridge_tx_request_denied');
     try{return await response.json();}
