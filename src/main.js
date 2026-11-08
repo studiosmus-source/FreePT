@@ -4,10 +4,14 @@ import { Capacitor } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
+import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 
-const URL = import.meta.env.VITE_SUPABASE_URL || 'https://cpopqsvzzxfjgnlawlvc.supabase.co';
-const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Q74UCgQUXO6f_7vZhXcbyg_2KRl2OSN';
-const db = createClient(URL, KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+const config=getFreePtSupabaseConfig({
+  url:import.meta.env.VITE_SUPABASE_URL,
+  key:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
+});
+const db = createClient(config.url, config.key, { auth: { persistSession: true, autoRefreshToken: true } });
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
   baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,auth:db.auth
