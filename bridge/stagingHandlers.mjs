@@ -15,7 +15,7 @@ import { createBridgeTxRequestHandler } from './txRequestHandler.mjs';
 
 export function createBridgeStagingHandlers({
   authClient, profilesClient, rpcClient, authenticateDevice,
-  newJobId
+  newJobId,readJobsEnabled=false
 }) {
   if (typeof authClient?.auth?.getUser !== 'function' ||
       typeof profilesClient?.from !== 'function' ||
@@ -30,7 +30,7 @@ export function createBridgeStagingHandlers({
     rpcClient, authenticateDevice
   });
   const jobs = new BridgePostgresJobsAdapter({
-    rpcClient, sessions, authenticateAdmin
+    rpcClient, sessions, authenticateAdmin,readJobsEnabled
   });
   // TX must prove device identity before receiving a database session.
   // The PostgreSQL RPCs independently enforce current consent and session
