@@ -289,33 +289,77 @@ async function requestAdminBridgeList(panel,button){
   if(!bridgeClient||!panel.isConnected||profile?.role!=='admin'||
      !adminUnlocked||!me||button.disabled)return;
   const deviceId=button.dataset.bridgeRequest;
+  const row=button.parentElement;
+  // One pending request per visible device; no duplicate submit on rapid taps.
   button.disabled=true;
   const result=document.createElement('p');
   result.setAttribute('role','status');
-  button.parentElement.appendChild(result);
+  row.appendChild(result);
   result.textContent='Invio richiesta Bridge…';
+  const stillAuthorized=()=>panel.isConnected&&row.isConnected&&
+    profile?.role==='admin'&&adminUnlocked&&!!me;
   try{
     const job=await bridgeClient.requestList(deviceId);
-    if(!panel.isConnected||profile?.role!=='admin'||!adminUnlocked)return;
-    result.textContent='Richiesta '+job.state+' (ID '+job.jobId+').';
+    if(!stillAuthorized())return;
+    const controls=document.createElement('span');
+    controls.className='bridge-job-controls';
+    row.appendChild(controls);
     const statusButton=document.createElement('button');
     statusButton.type='button';
     statusButton.textContent='Controlla stato';
+    const cancelButton=document.createElement('button');
+    cancelButton.type='button';
+    cancelButton.textContent='Annulla richiesta';
+    controls.append(statusButton,cancelButton);
+    let state=job.state;
+    let inFlight=false;
+    const render=()=>{
+      if(!stillAuthorized())return;
+      result.textContent='Richiesta '+state+' (ID '+job.jobId+').';
+      const terminal=state==='done'||state==='cancelled';
+      statusButton.disabled=inFlight||terminal;
+      cancelButton.disabled=inFlight||terminal;
+      button.disabled=!terminal;
+    };
     statusButton.onclick=async()=>{
-      if(!panel.isConnected||profile?.role!=='admin'||!adminUnlocked)return;
-      statusButton.disabled=true;
+      if(!stillAuthorized()||inFlight)return;
+      inFlight=true;
+      render();
       try{
         const updated=await bridgeClient.getStatus(job.jobId);
-        if(panel.isConnected&&profile?.role==='admin'&&adminUnlocked)
-          result.textContent='Richiesta '+updated.state+' (ID '+job.jobId+').';
+        if(!stillAuthorized())return;
+        state=updated.state;
+        render();
       }catch{
-        if(panel.isConnected)result.textContent='Stato Bridge non disponibile.';
-      }finally{statusButton.disabled=false;}
+        if(stillAuthorized())result.textContent='Stato Bridge non disponibile.';
+      }finally{
+        inFlight=false;
+        render();
+      }
     };
-    if(panel.isConnected)button.parentElement.appendChild(statusButton);
+    cancelButton.onclick=async()=>{
+      if(!stillAuthorized()||inFlight||state==='done'||state==='cancelled')return;
+      inFlight=true;
+      render();
+      try{
+        const updated=await bridgeClient.cancel(job.jobId);
+        if(!stillAuthorized())return;
+        state=updated.state;
+        render();
+      }catch{
+        if(stillAuthorized())result.textContent='Impossibile annullare: controlla lo stato.';
+      }finally{
+        inFlight=false;
+        render();
+      }
+    };
+    render();
   }catch{
-    if(panel.isConnected)result.textContent='Richiesta Bridge non disponibile.';
-  }finally{button.disabled=false;}
+    if(stillAuthorized())result.textContent='Richiesta Bridge non disponibile.';
+  }finally{
+    // Remain disabled while the job is nonterminal, until cancelled/done.
+    if(!row.querySelector('.bridge-job-controls'))button.disabled=false;
+  }
 }
 
 function showAdminBridge(){
