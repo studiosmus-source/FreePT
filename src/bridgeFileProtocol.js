@@ -61,9 +61,18 @@ export function validateBridgeFileChunk(chunk, requestedLength){
       typeof chunk.base64!=='string'||typeof chunk.eof!=='boolean'||
       !safeInteger(chunk.bytesRead,0,requestedLength))
     throw Error('bridge_file_chunk_invalid');
-  // Enforce canonical, unpadded Base64 equivalence without Buffer for Android WebView.
-  if(chunk.base64.length!==Math.ceil(chunk.bytesRead/3)*4||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(chunk.base64))
+  // Enforce canonical, padded Base64 equivalence without Buffer for Android WebView.
+  const encoded=chunk.base64;
+  const pad=encoded.endsWith('==')?2:encoded.endsWith('=')?1:0;
+  const decodedBytes=encoded.length/4*3-pad;
+  if(encoded.length!==Math.ceil(chunk.bytesRead/3)*4||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)||
+      decodedBytes!==chunk.bytesRead)
+    throw Error('bridge_file_chunk_invalid');
+  // Reject non-canonical tail bits that could let two strings encode one chunk.
+  const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  if((pad===2&&alphabet.indexOf(encoded.at(-3))%16!==0)||
+     (pad===1&&alphabet.indexOf(encoded.at(-2))%4!==0))
     throw Error('bridge_file_chunk_invalid');
   if(!chunk.eof && chunk.bytesRead!==requestedLength)
     throw Error('bridge_file_chunk_invalid');
