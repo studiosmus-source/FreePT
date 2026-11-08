@@ -7,6 +7,7 @@ import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
+import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -511,7 +512,7 @@ async function showOwnerBridgeFolder(){
     const current=stack.at(-1);
     if(offset===0)area.textContent='Lettura cartella…';
     try{
-      const response=await bridgeFiles.list({handle:current.handle,offset});
+      const response=validateBridgeFolderPage(await bridgeFiles.list({handle:current.handle,offset}));
       if(!alive()||revision!==generation)return;
       if(offset===0)area.innerHTML='<div class="bridge-owner-path">'+esc(stack.map(x=>x.name).join(' / '))+'</div>'+
         (stack.length>1?'<button type="button" id="ownerBridgeBack">‹ Indietro</button>':'')+
@@ -531,7 +532,8 @@ async function showOwnerBridgeFolder(){
             const rev=++generation;
             area.textContent='Lettura anteprima…';
             try{
-              const data=await bridgeFiles.readChunk({handle:item.handle,offset:0,length:Math.max(1,item.size)});
+              const request=validateBridgeReadRequest({handle:item.handle,offset:0,length:Math.max(1,item.size)});
+              const data=validateBridgeFileChunk(await bridgeFiles.readChunk(request),request.length);
               if(!alive()||rev!==generation)return;
               const binary=atob(data.base64||'');
               const bytes=Uint8Array.from(binary,ch=>ch.charCodeAt(0));
