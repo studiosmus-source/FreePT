@@ -1,0 +1,72 @@
+name: Bridge Android isolated compile check
+on:
+  push:
+    branches:
+      - feature/bridge-chunk-receiver-20261108
+    paths:
+      - 'android-bridge/**'
+      - 'src/**'
+      - 'bridge/**'
+      - 'capacitor.config.json'
+      - '.github/workflows/bridge-android-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-isolated-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build isolated, nonfunctional test web bundle
+        env:
+          VITE_SUPABASE_URL: https://bridge-build-only.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_aaaaaaaaaaaaaaaaaaaaaaaa
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
+          VITE_BRIDGE_TEST_API_URL: ''
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          test -s dist/index.html
+      - name: Generate isolated Android project and register SAF plugins
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('capacitor.config.json')
+          data=json.loads(p.read_text())
+          if data.get('appId')!='it.freept.app':
+              raise SystemExit('Unexpected app identity, refusing')
+          data['appId']='it.freept.bridge'
+          data['appName']='FreePT Bridge Compile Only'
+          p.write_text(json.dumps(data,indent=2)+'\n')
+          PY
+          npx cap add android
+          npx cap sync android
+          python3 android-bridge/install.py
+          grep -Fq 'BridgeDestinationPlugin.class' android/app/src/main/java/it/freept/bridge/MainActivity.java
+      - name: Verify Android Gradle project compiles
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify this is not the production app
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='it.freept.bridge'"
+          unzip -t "$APK" > /dev/null
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridge-android-compile-only-not-configured
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
