@@ -22,7 +22,7 @@ if package != "it.freept.bridge":
 
 if "extends BridgeActivity" not in source:
     raise SystemExit("Unexpected Capacitor Android activity")
-if "BridgeFilesPlugin.class" in source:
+if "BridgeFilesPlugin.class" in source or "BridgeCredentialsPlugin.class" in source:
     raise SystemExit("Plugin already registered: refuse stacking patches")
 anchor = "public class MainActivity extends BridgeActivity {"
 if source.count(anchor) != 1:
@@ -37,6 +37,7 @@ source = source.replace(
   @Override
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(BridgeFilesPlugin.class);
+    registerPlugin(BridgeCredentialsPlugin.class);
     super.onCreate(savedInstanceState);
   }
 """,
@@ -48,4 +49,11 @@ if template.count("__PACKAGE__") != 1:
 main.with_name("BridgeFilesPlugin.java").write_text(
     template.replace("__PACKAGE__", package)
 )
-print("BridgeFiles SAF plugin installed in isolated app only:", package)
+
+credential_template = Path("android-bridge/BridgeCredentialsPlugin.java.template").read_text()
+if credential_template.count("__PACKAGE__") != 1:
+    raise SystemExit("Unexpected credentials template")
+main.with_name("BridgeCredentialsPlugin.java").write_text(
+    credential_template.replace("__PACKAGE__", package)
+)
+print("BridgeFiles and BridgeCredentials plugins installed in isolated app:", package)
