@@ -53,10 +53,20 @@ jobs:
           node-version: '22'
       - name: Install FreePT dependencies
         run: npm install --no-audit --no-fund
-      - name: Build FreePT web bundle
+      - name: Build FreePT web bundle with nonfunctional isolated CI configuration
+        env:
+          VITE_SUPABASE_URL: https://bridge-build-only.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_aaaaaaaaaaaaaaaaaaaaaaaa
+          VITE_BRIDGE_TEST_API_URL: ''
         run: npm run build
-      - name: Verify generated entrypoint
-        run: test -s dist/index.html
+      - name: Verify generated entrypoint and prevent production URL embedding
+        run: |
+          test -s dist/index.html
+          if grep -R -F -q 'cpopqsvzzxfjgnlawlvc.supabase.co' dist; then
+            echo 'Refusing experimental web bundle containing production Supabase URL'
+            exit 1
+          fi
+          grep -R -F -q 'bridge-build-only.supabase.co' dist
 
   bridge-postgres:
     runs-on: ubuntu-latest
