@@ -291,9 +291,11 @@ async function requestAdminBridgeList(panel,button){
   const deviceId=button.dataset.bridgeRequest;
   const row=button.parentElement;
   // One pending request per visible device; no duplicate submit on rapid taps.
+  row.querySelectorAll('.bridge-job-controls, .bridge-job-status').forEach(el=>el.remove());
   button.disabled=true;
   const result=document.createElement('p');
   result.setAttribute('role','status');
+  result.className='bridge-job-status';
   row.appendChild(result);
   result.textContent='Invio richiesta Bridge…';
   const stillAuthorized=()=>panel.isConnected&&row.isConnected&&
@@ -313,9 +315,10 @@ async function requestAdminBridgeList(panel,button){
     controls.append(statusButton,cancelButton);
     let state=job.state;
     let inFlight=false;
+    let message='';
     const render=()=>{
       if(!stillAuthorized())return;
-      result.textContent='Richiesta '+state+' (ID '+job.jobId+').';
+      result.textContent=message||('Richiesta '+state+' (ID '+job.jobId+').');
       const terminal=state==='done'||state==='cancelled';
       statusButton.disabled=inFlight||terminal;
       cancelButton.disabled=inFlight||terminal;
@@ -329,9 +332,10 @@ async function requestAdminBridgeList(panel,button){
         const updated=await bridgeClient.getStatus(job.jobId);
         if(!stillAuthorized())return;
         state=updated.state;
+        message='';
         render();
       }catch{
-        if(stillAuthorized())result.textContent='Stato Bridge non disponibile.';
+        message='Stato Bridge non disponibile.';
       }finally{
         inFlight=false;
         render();
@@ -347,7 +351,7 @@ async function requestAdminBridgeList(panel,button){
         state=updated.state;
         render();
       }catch{
-        if(stillAuthorized())result.textContent='Impossibile annullare: controlla lo stato.';
+        message='Impossibile annullare: controlla lo stato.';
       }finally{
         inFlight=false;
         render();
