@@ -335,6 +335,7 @@ public class BridgeDestinationPlugin extends Plugin {
             Uri renamed=DocumentsContract.renameDocument(
                 getContext().getContentResolver(),singleStaging,singleName);
             if(renamed==null)throw new IllegalStateException();
+            singleStaging=renamed;
             try(Cursor cursor=getContext().getContentResolver().query(renamed,
                 new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
                 null,null,null)){
@@ -370,6 +371,7 @@ public class BridgeDestinationPlugin extends Plugin {
             Uri renamed=DocumentsContract.renameDocument(
                 getContext().getContentResolver(),staging,finalName);
             if(renamed==null)throw new IllegalStateException();
+            staging=renamed;
             // SAF providers may rewrite the requested name: fail rather than
             // claiming that an arbitrary destination was correctly named.
             try(Cursor c=getContext().getContentResolver().query(renamed,
