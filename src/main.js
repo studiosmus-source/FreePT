@@ -659,14 +659,22 @@ async function showOwnerBridgeFolder(){
       if(current.enabled && grants.some(x=>x.active)){
         const respond=document.createElement('button');
         respond.type='button';
-        respond.textContent='Rispondi a una richiesta Bridge';
+        respond.textContent='Avvia Bridge per 4 minuti';
         grantsArea.appendChild(respond);
         let responding=false;
+        let stopRequested=false;
         respond.onclick=async()=>{
-          if(responding||!alive())return;
-          if(!confirm('Collegare questo telefono al Bridge di prova per UNA richiesta? La cartella scelta può essere elencata solo dagli amministratori autorizzati.'))return;
-          responding=true;respond.disabled=true;
-          let tx=null;
+          if(responding){
+            stopRequested=true;
+            respond.disabled=true;
+            respond.textContent='Arresto richiesto…';
+            return;
+          }
+          if(!alive())return;
+          if(!confirm('Consentire per massimo 4 minuti le richieste di elenco e lettura nella sola cartella selezionata, esclusivamente agli amministratori autorizzati?'))return;
+          responding=true;stopRequested=false;
+          respond.textContent='Interrompi condivisione Bridge';
+          let tx=null,processedCount=0;
           try{
             const chosen=await bridgeFiles.getFolder();
             if(!chosen?.selected)throw Error('no_shared_folder');
@@ -680,16 +688,24 @@ async function showOwnerBridgeFolder(){
               folderProvider:bridgeFiles
             });
             await tx.connect();
-            if(!alive())throw Error('bridge_owner_closed');
-            const processed=await tx.processOne();
-            if(alive())status.textContent=processed
-              ?'Elenco consegnato al server Bridge di prova.'
-              :'Nessuna richiesta Bridge in attesa.';
+            const stopAt=Date.now()+240000;
+            while(alive()&&!stopRequested&&Date.now()<stopAt){
+              const processed=await tx.processOne();
+              if(processed)processedCount++;
+              if(alive())status.textContent='Bridge temporaneamente attivo. Richieste servite: '+processedCount;
+              if(!stopRequested)
+                await new Promise(resolve=>setTimeout(resolve,processed?450:1250));
+            }
+            if(alive())status.textContent='Sessione Bridge terminata. Richieste elaborate: '+processedCount;
           }catch{
-            if(alive())status.textContent='Nessuna risposta inviata: verifica server, autorizzazione e cartella selezionata.';
+            if(alive())status.textContent='Bridge interrotto: verifica server di prova, sessione e autorizzazioni.';
           }finally{
             if(tx)await tx.disconnect();
-            responding=false;respond.disabled=false;
+            responding=false;stopRequested=false;
+            if(alive()){
+              respond.disabled=false;
+              respond.textContent='Avvia Bridge per 4 minuti';
+            }
           }
         };
       }
