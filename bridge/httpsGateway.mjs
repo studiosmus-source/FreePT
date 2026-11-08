@@ -12,6 +12,8 @@ import {createServer} from 'node:http';
 const ROUTES=Object.freeze({
   '/bridge/admin/list':'admin',
   '/bridge/admin/read':'admin',
+  '/bridge/admin/browse':'admin',
+  '/bridge/admin/browse-page':'admin',
   '/bridge/admin/chunk':'admin',
   '/bridge/admin/status':'admin',
   '/bridge/admin/cancel':'admin',
@@ -23,6 +25,7 @@ const ROUTES=Object.freeze({
   '/bridge/tx/complete':'tx',
   '/bridge/tx/folder':'tx',
   '/bridge/tx/chunk':'tx',
+  '/bridge/tx/browse':'tx',
   '/bridge/tx/disconnect':'tx'
 });
 const MAX_SMALL=2048;
@@ -121,7 +124,7 @@ export function createBridgeHttpsGateway({
     const time=now();
     if(time-windowStart>=60000){windowStart=time;globalCount=0;}
     if(++globalCount>180){write(res,429,{error:'rate_limited'},origin);return;}
-    const parsed=await readJson(req,req.url==='/bridge/tx/chunk'?49152:req.url==='/bridge/tx/folder'?MAX_CATALOGUE:MAX_SMALL);
+    const parsed=await readJson(req,req.url==='/bridge/tx/chunk'?49152:(req.url==='/bridge/tx/folder'||req.url==='/bridge/tx/browse')?MAX_CATALOGUE:MAX_SMALL);
     if(parsed.error){write(res,parsed.error.status,parsed.error.body,origin);return;}
     try{
       const handler=route==='admin'?admin:route==='tx'?tx:owner;
