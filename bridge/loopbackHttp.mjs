@@ -8,7 +8,8 @@
 import { createServer } from 'node:http';
 
 // Max 100 bounded file entries in a single authenticated catalogue response.
-const MAX_BYTES = 32768;
+const MAX_BYTES = 2048;
+const MAX_CATALOGUE_BYTES = 32768;
 class RequestBodyError extends Error {
   constructor(status, code) {
     super(code);
@@ -24,18 +25,18 @@ function reply(res, status, body) {
   });
   res.end(JSON.stringify(body));
 }
-async function parseBody(req) {
+async function parseBody(req,maxBytes = MAX_BYTES) {
   if (req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json')
     throw new RequestBodyError(415, 'unsupported_media_type');
   const contentLength = req.headers['content-length'];
   if (contentLength !== undefined && (/^\d+$/.test(contentLength) === false ||
-      Number(contentLength) > MAX_BYTES))
+      Number(contentLength) > maxBytes))
     throw new RequestBodyError(413, 'payload_too_large');
   const buffers = [];
   let bytes = 0;
   for await (const part of req) {
     bytes += part.length;
-    if (bytes > MAX_BYTES) throw new RequestBodyError(413, 'payload_too_large');
+    if (bytes > maxBytes) throw new RequestBodyError(413, 'payload_too_large');
     buffers.push(part);
   }
   try {
@@ -61,7 +62,8 @@ export function createBridgeLoopbackTestServer({ handler, txHandler = null }) {
         reply(res, 404, {error:'not_found'});
         return;
       }
-      const body = await parseBody(req);
+      const body = await parseBody(req,
+        req.url === '/bridge/tx/folder' ? MAX_CATALOGUE_BYTES : MAX_BYTES);
       const response = await (txRoute ? txHandler : handler)({
         method:req.method, path:req.url,
         headers:{authorization:req.headers.authorization}, body
