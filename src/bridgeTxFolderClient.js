@@ -3,11 +3,11 @@
  * No auto-start, background service, credential persistence or prod fallback.
  * Server revalidates ownership/grants/session on dispatch and completion.
  */
-import {validateBridgeFolderPage,validateBridgeJobIdentity} from './bridgeFileProtocol.js';
+import {validateBridgeFolderPage,validateBridgeJobIdentity,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 import {normalizeBridgeApiUrl} from './bridgeAdminClient.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX=/^[0-9a-f]{64}$/;
-const SHAPES=new Set(['connect','poll','folder','disconnect']);
+const SHAPES=new Set(['connect','poll','folder','chunk','disconnect']);
 export function createBridgeFolderTransmitter({
   baseUrl,deviceId,deviceSecret,folderProvider,fetchImpl=fetch
 }={}){
@@ -46,10 +46,29 @@ export function createBridgeFolderTransmitter({
       const job=await request('poll',{sessionToken:session});
       if(job?.job===null)return false;
       const item=job?.job;
-      if(!item||item.operation!=='list'||item.state!=='sent')
+      if(!item||!['list','read'].includes(item.operation)||item.state!=='sent')
         throw Error('bridge_tx_invalid_job');
       validateBridgeJobIdentity({jobId:item.jobId,deviceId:item.deviceId});
       if(item.deviceId!==deviceId)throw Error('bridge_tx_wrong_device');
+      if(item.operation==='read'){
+        if(typeof folderProvider.readChunk!=='function')
+          throw Error('bridge_tx_read_unavailable');
+        const requestData=validateBridgeReadRequest({
+          handle:item.handle,offset:item.offset,length:item.length
+        });
+        if(requestData.length>32768)throw Error('bridge_tx_chunk_too_large');
+        const chunk=validateBridgeFileChunk(
+          await folderProvider.readChunk(requestData),requestData.length
+        );
+        if(chunk.bytesRead!==requestData.length)
+          throw Error('bridge_tx_chunk_truncated');
+        const finished=await request('chunk',{
+          sessionToken:session,jobId:item.jobId,chunk
+        });
+        if(finished?.jobId!==item.jobId||finished?.deviceId!==deviceId||
+           finished?.state!=='done')throw Error('bridge_tx_invalid_response');
+        return true;
+      }
       // Only the explicitly selected local root; no supplied paths or handles.
       const page=validateBridgeFolderPage(
         await folderProvider.list({handle:'root',offset:0})
