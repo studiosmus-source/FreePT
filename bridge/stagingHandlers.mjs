@@ -41,7 +41,9 @@ export function createBridgeStagingHandlers({
     pollDevice: ({ deviceId, sessionToken }) =>
       jobs.pollDevice({ deviceId, sessionToken }),
     completeDevice: ({ deviceId, sessionToken, jobId }) =>
-      jobs.completeDevice({ deviceId, sessionToken, jobId })
+      jobs.completeDevice({ deviceId, sessionToken, jobId }),
+    completeFolderPage: ({ deviceId, sessionToken, jobId, entries }) =>
+      jobs.completeFolderPage({ deviceId, sessionToken, jobId, entries })
   };
   const adminHandler = createBridgeAdminRequestHandler({
     service: jobs,
