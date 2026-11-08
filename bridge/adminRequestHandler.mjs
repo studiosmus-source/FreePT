@@ -10,6 +10,7 @@
  * authenticator checks the user and profiles table on every operation.
  */
 import { randomUUID } from 'node:crypto';
+import {validateBridgeReadRequest} from '../src/bridgeFileProtocol.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -44,19 +45,28 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
     const method = request?.method;
     const path = request?.path;
     if (method !== 'POST') return fail(405, 'method_not_allowed');
-    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel', '/bridge/admin/folder'].includes(path))
+    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel', '/bridge/admin/folder','/bridge/admin/read','/bridge/admin/chunk'].includes(path))
       return fail(404, 'not_found');
     const token = bearer(request?.headers);
     if (!token) return fail(401, 'authentication_required');
     const body = request?.body;
-    if (!onlyKeys(body, path === '/bridge/admin/list' ? ['deviceId'] : ['jobId']))
+    if (!onlyKeys(body, path === '/bridge/admin/list' ? ['deviceId'] :
+        path === '/bridge/admin/read' ? ['deviceId','handle','offset','length'] : ['jobId']))
       return fail(400, 'invalid_request');
-    if (path === '/bridge/admin/list') {
+    if (path === '/bridge/admin/list'||path === '/bridge/admin/read') {
       if (!own(body, 'deviceId') || typeof body.deviceId !== 'string' ||
           !UUID.test(body.deviceId)) return fail(400, 'invalid_device_id');
     } else if (!own(body, 'jobId') || typeof body.jobId !== 'string' ||
                !UUID.test(body.jobId)) return fail(400, 'invalid_job_id');
 
+    if (path === '/bridge/admin/read') {
+      try {
+        const request=validateBridgeReadRequest({
+          handle:body.handle,offset:body.offset,length:body.length
+        });
+        if(request.length>32768)return fail(400,'bridge_read_invalid');
+      }catch{return fail(400,'bridge_read_invalid');}
+    }
     const authContext = { accessToken: token };
     try {
       if (path === '/bridge/admin/list') {
@@ -67,6 +77,20 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
           authContext, deviceId: body.deviceId, jobId
         });
         return { status: 202, body: result };
+      }
+      if (path === '/bridge/admin/read') {
+        if(typeof service.requestRead!=='function')return fail(404,'not_found');
+        const jobId=newJobId();
+        if(typeof jobId!=='string'||!UUID.test(jobId))
+          throw Error('invalid_generated_job_id');
+        return {status:202,body:await service.requestRead({
+          authContext,deviceId:body.deviceId,jobId,
+          handle:body.handle,offset:body.offset,length:body.length
+        })};
+      }
+      if(path === '/bridge/admin/chunk'){
+        if(typeof service.getReadChunk!=='function')return fail(404,'not_found');
+        return {status:200,body:await service.getReadChunk({authContext,jobId:body.jobId})};
       }
       if (path === '/bridge/admin/folder') {
         if (typeof service.getFolderPage !== 'function') return fail(404,'not_found');
