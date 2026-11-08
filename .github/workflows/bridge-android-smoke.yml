@@ -51,7 +51,7 @@ jobs:
           npx cap add android
           npx cap sync android
           python3 android-bridge/install.py
-          grep -Fq 'BridgeDestinationPlugin.class' android/app/src/main/java/it/freept/bridge/MainActivity.java
+          grep -Fq 'BridgeDestinationPlugin.class' android/app/src/main/java/it/freept/bridge/next/MainActivity.java
       - name: Verify Android Gradle project compiles
         run: |
           cd android
@@ -65,8 +65,4 @@ jobs:
           "$AAPT" dump badging "$APK" | grep -F "package: name='it.freept.bridge.next'"
           unzip -t "$APK" > /dev/null
           sha256sum "$APK"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bridge-android-compile-only-not-configured
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+      # Compile-only: never publish an unconfigured or ephemeral-signed APK.
