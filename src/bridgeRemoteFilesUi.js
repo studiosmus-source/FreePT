@@ -8,6 +8,7 @@ import {downloadBridgeFolder} from './bridgeFolderDownloadClient.js';
 import {downloadBridgeFile} from './bridgeDownloadClient.js';
 import {createBridgeAndroidFolderDestination,createBridgeAndroidSingleFileWriter} from './bridgeAndroidDestination.js';
 import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
+import {filterOwnerAuthorizedDevices} from './bridgeChatDeviceFilter.js';
 
 function create(node,label,parent){
   const el=document.createElement(node);
@@ -114,9 +115,7 @@ export function renderBridgeRemoteFiles({
       const {data,error}=await query.limit(100);
       if(error)throw error;
       if(!alive()||marker!==revision)return;
-      const allowed=(data||[]).map(row=>row.bridge_devices)
-        .filter(device=>device&&device.bridge_enabled===true&&
-          (!ownerId||device.owner_id===ownerId));
+      const allowed=filterOwnerAuthorizedDevices(data,{ownerId});
       if(!allowed.length){
         setStatus(ownerId?'Nessun telefono Bridge autorizzato per questa persona.':
           'Nessun dispositivo condiviso con questo amministratore.');
