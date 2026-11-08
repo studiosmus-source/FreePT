@@ -575,7 +575,7 @@ async function showOwnerBridgeFolder(){
         await bridgeOwnerClient.enroll(label.value);
         if(alive())status.textContent='Telefono registrato. Nessuna cartella condivisa automaticamente.';
       }catch{if(alive())status.textContent='Registrazione non completata. Controlla il collegamento al server di prova.';}
-      finally{pairing=false;await refresh();}
+      finally{pairing=false;await refresh();if(alive())await renderGrants();}
     };
     revoke.onclick=async()=>{
       if(pairing||!alive())return;
@@ -586,7 +586,7 @@ async function showOwnerBridgeFolder(){
         await bridgeOwnerClient.remove();
         if(alive())status.textContent='Dispositivo revocato.';
       }catch{if(alive())status.textContent='Revoca non completata: ritenta quando il server è disponibile.';}
-      finally{pairing=false;await refresh();}
+      finally{pairing=false;await refresh();if(alive())await renderGrants();}
     };
     const grantsArea=panel.querySelector('#bridgeOwnerGrantControls');
     let grantBusy=false;
@@ -656,11 +656,7 @@ async function showOwnerBridgeFolder(){
         grantsArea.appendChild(line);
       }
     };
-    const originalRefresh=refresh;
-    // Run separate owner controls only after a confirmed local credential.
-    void (async()=>{await originalRefresh();if(alive())await renderGrants();})();
-    enroll.addEventListener('click',()=>setTimeout(()=>{if(alive())void renderGrants();},1000));
-    revoke.addEventListener('click',()=>setTimeout(()=>{if(alive())void renderGrants();},1000));
+    void (async()=>{await refresh();if(alive())await renderGrants();})();
   }
   const draw=async(offset=0)=>{
     if(!alive())return;
