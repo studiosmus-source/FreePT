@@ -7,6 +7,7 @@ import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
 import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
 import {createBridgeFolderTransmitter} from './bridgeTxFolderClient.js';
+import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
@@ -21,6 +22,7 @@ const db = createClient(config.url, config.key, { auth: { persistSession: true, 
 const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
   ? registerPlugin('BridgeFiles') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
+const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
@@ -505,15 +507,20 @@ function showAdminBridge(){
     '<nav><button type="button" data-bridge-view="approvals">Approvazioni</button><button type="button" data-bridge-view="files">File</button></nav>'+
     '<div id="bridgeAdminContent" aria-live="polite"></div></section>';
   document.body.appendChild(panel);
+  let disposeRemote=null;
   const show=view=>{
+    disposeRemote?.();disposeRemote=null;
     const content=panel.querySelector('#bridgeAdminContent');
     panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.bridgeView===view)));
     if(view==='approvals')void loadAdminBridgeDevices(panel);
     else {
       panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
-      content.innerHTML='<p>Trasferimento remoto non ancora disponibile. Puoi collaudare la lettura di una cartella di questo telefono.</p>'+
-        (bridgeFiles?'<button type="button" id="testOwnBridgeFolder">Prova cartella locale</button>':'');
-      if(bridgeFiles)content.querySelector('#testOwnBridgeFolder').onclick=showOwnerBridgeFolder;
+      disposeRemote=renderBridgeRemoteFiles({
+        host:content,db,bridgeClient,bridgeDestination,
+        adminId:me.id,
+        isAuthorized:()=>panel.isConnected&&me?.id&&profile?.role==='admin'&&adminUnlocked&&
+          panel.querySelector('[data-bridge-view="files"]')?.getAttribute('aria-pressed')==='true'
+      });
     }
   };
   panel.querySelectorAll('[data-bridge-view]').forEach(b=>b.onclick=()=>show(b.dataset.bridgeView));
@@ -524,7 +531,7 @@ function showAdminBridge(){
       if(el)el.textContent='Copia non disponibile: seleziona il codice.';
     }
   };
-  panel.querySelector('#closeAdminBridge').onclick=()=>panel.remove();
+  panel.querySelector('#closeAdminBridge').onclick=()=>{disposeRemote?.();panel.remove()};
   show('approvals');
 }
 
