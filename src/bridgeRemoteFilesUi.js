@@ -17,7 +17,7 @@ function create(node,label,parent){
 }
 
 export function renderBridgeRemoteFiles({
-  host,db,bridgeClient,bridgeDestination,adminId,isAuthorized
+  host,db,bridgeClient,bridgeDestination,adminId,ownerId=null,isAuthorized
 }={}){
   if(!host||typeof db?.from!=='function'||typeof isAuthorized!=='function')
     throw Error('bridge_remote_ui_invalid_options');
@@ -27,7 +27,9 @@ export function renderBridgeRemoteFiles({
   let controller=null;
   let activeDownload=false;
   const alive=()=>!disposed&&host.isConnected&&isAuthorized();
-  const notice=create('p','Seleziona un dispositivo autorizzato. Il telefono proprietario deve avere Bridge attivo e rispondere alle richieste.',host);
+  const notice=create('p',ownerId?
+    'File e cartelle del telefono associato a questa persona.':
+    'Seleziona un dispositivo autorizzato. Il telefono proprietario deve avere Bridge attivo e rispondere alle richieste.',host);
   const status=create('p','',host);
   status.setAttribute('role','status');
   const toolbar=create('div',undefined,host);
@@ -103,18 +105,28 @@ export function renderBridgeRemoteFiles({
       return;
     }
     try{
-      const {data,error}=await db.from('bridge_grants')
-        .select('device_id,bridge_devices!inner(id,label,bridge_enabled)')
-        .eq('receiver_id',adminId).is('revoked_at',null).limit(100);
+      // Join the authenticated owner's id to each receiver grant: never show
+      // a different family member's phone just because the receiver is admin.
+      let query=db.from('bridge_grants')
+        .select('device_id,bridge_devices!inner(id,label,bridge_enabled,owner_id)')
+        .eq('receiver_id',adminId).is('revoked_at',null);
+      if(ownerId)query=query.eq('bridge_devices.owner_id',ownerId);
+      const {data,error}=await query.limit(100);
       if(error)throw error;
       if(!alive()||marker!==revision)return;
       const allowed=(data||[]).map(row=>row.bridge_devices)
-        .filter(device=>device&&device.bridge_enabled===true);
+        .filter(device=>device&&device.bridge_enabled===true&&
+          (!ownerId||device.owner_id===ownerId));
       if(!allowed.length){
-        setStatus('Nessun dispositivo condiviso con questo amministratore.');
+        setStatus(ownerId?'Nessun telefono Bridge autorizzato per questa persona.':
+          'Nessun dispositivo condiviso con questo amministratore.');
         return;
       }
-      create('h3','Telefoni condivisi con te',devices);
+      if(ownerId&&allowed.length===1){
+        await showDevice(allowed[0].id,allowed[0].label||'Cartella condivisa');
+        return;
+      }
+      create('h3',ownerId?'Telefoni di questa persona':'Telefoni condivisi con te',devices);
       for(const device of allowed){
         const row=create('div',undefined,devices);
         create('span',device.label||'Telefono Bridge',row);

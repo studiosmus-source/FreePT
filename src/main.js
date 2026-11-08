@@ -47,6 +47,7 @@ let awaySince = 0;
 let deleteMigrationReady = true;
 let adminPeopleQuery = '';
 let adminPeopleStatus = 'all';
+let chatFilesCleanup=null;
 let filePickerActive = false;
 let filePickerReturned = false;
 let filePickerClearTimer = null;
@@ -320,6 +321,9 @@ async function refreshOnVisible(){
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
 }
 function closeAdminOverlays(){
+  if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+  chatFilesCleanup=null;
+  document.getElementById('chatRemoteFilesPanel')?.remove();
   document.getElementById('adminBridgePanel')?.remove();
   document.getElementById('chatActions')?.remove();
   document.getElementById('ownerBridgePanel')?.remove();
@@ -846,6 +850,8 @@ function renderLayout(){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
     document.getElementById('chatMessagesView').onclick=()=>{
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      chatFilesCleanup=null;
       document.getElementById('feed').hidden=false;
       document.getElementById('send').hidden=false;
       document.getElementById('chatRemoteFilesPanel')?.remove();
@@ -862,16 +868,23 @@ function renderLayout(){
         panel.setAttribute('role','status');
         document.getElementById('feed').after(panel);
       }
-      panel.replaceChildren();
-      const heading=document.createElement('h3');
-      heading.textContent='File e cartelle · '+user.full_name;
-      panel.appendChild(heading);
-      const info=document.createElement('p');
-      info.textContent='Nessun collegamento al dispositivo verificato per questa persona. I file remoti resteranno non accessibili finché il relay supporterà dispositivi distinti.';
-      panel.appendChild(info);
+      if(!bridgeClient||!bridgeDestination){
+        panel.textContent='Collegamento file non disponibile: il server Bridge HTTPS non è configurato.';
+        return;
+      }
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      const ownerId=user.id;
+      chatFilesCleanup=renderBridgeRemoteFiles({
+        host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,
+        isAuthorized:()=>panel.isConnected&&selected===ownerId&&
+          me?.id&&profile?.role==='admin'&&adminUnlocked
+      });
     };
     renderPeople();
     document.getElementById('back').onclick=()=>{
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      chatFilesCleanup=null;
+      document.getElementById('chatRemoteFilesPanel')?.remove();
       document.getElementById('chat').classList.add('off');
       document.getElementById('people').classList.remove('off');
     };
@@ -958,6 +971,8 @@ function bindAdminPeopleActions(p){
       const user=people.find(x=>x.id===id);
       if(user?.status!=='approved')return;
       selected=id;messageRequest++;
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      chatFilesCleanup=null;
       document.getElementById('chatRemoteFilesPanel')?.remove();
       document.getElementById('feed').hidden=false;
       document.getElementById('send').hidden=false;
