@@ -25,7 +25,8 @@ if "extends BridgeActivity" not in source:
 if any(name in source for name in ("BridgeFilesPlugin.class",
                                       "BridgeCredentialsPlugin.class",
                                       "BridgeDestinationPlugin.class",
-                                      "BridgeRxKeysPlugin.class")):
+                                      "BridgeRxKeysPlugin.class",
+                                      "BridgeAllFilesPlugin.class")):
     raise SystemExit("Plugin already registered: refuse stacking patches")
 anchor = "public class MainActivity extends BridgeActivity {"
 if source.count(anchor) != 1:
@@ -42,6 +43,7 @@ source = source.replace(
     registerPlugin(BridgeFilesPlugin.class);
     registerPlugin(BridgeCredentialsPlugin.class);\n    registerPlugin(BridgeDestinationPlugin.class);
     registerPlugin(BridgeRxKeysPlugin.class);
+    registerPlugin(BridgeAllFilesPlugin.class);
     super.onCreate(savedInstanceState);
   }
 """,
@@ -72,4 +74,18 @@ if rx_template.count("__PACKAGE__") != 1:
 main.with_name("BridgeRxKeysPlugin.java").write_text(
     rx_template.replace("__PACKAGE__", package)
 )
-print("Four Bridge plugins installed in isolated app:", package)
+all_files_template = Path("android-bridge/BridgeAllFilesPlugin.java.template").read_text()
+if all_files_template.count("__PACKAGE__") != 1:
+    raise SystemExit("Unexpected all-files plugin template")
+main.with_name("BridgeAllFilesPlugin.java").write_text(
+    all_files_template.replace("__PACKAGE__", package)
+)
+manifest = Path("android/app/src/main/AndroidManifest.xml")
+xml = manifest.read_text()
+permission = '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />'
+if 'android.permission.MANAGE_EXTERNAL_STORAGE' in xml:
+    raise SystemExit("Existing all-files permission; refuse double patch")
+if xml.count("<application") != 1:
+    raise SystemExit("Unexpected AndroidManifest.xml layout")
+manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
+print("Five Bridge plugins installed in isolated app:", package)

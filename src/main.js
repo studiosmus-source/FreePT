@@ -22,6 +22,7 @@ const config=getFreePtSupabaseConfig({
 const db = createClient(config.url, config.key, { auth: { persistSession: true, autoRefreshToken: true } });
 const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
   ? registerPlugin('BridgeFiles') : null;
+const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
@@ -576,8 +577,8 @@ async function showOwnerBridgeFolder(){
   panel.id='ownerBridgePanel';panel.className='bridge-admin-shade';
   panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Cartella Bridge">'+
     '<header><h2>Cartella Bridge</h2><button type="button" id="closeOwnerBridge">Chiudi</button></header>'+
-    '<p>Seleziona una cartella del tuo telefono. Per ora resta soltanto sul dispositivo: il collegamento remoto non è ancora attivo.</p>'+
-    '<div class="bridge-owner-actions"><button type="button" id="chooseOwnerFolder">Scegli cartella</button>'+
+    '<p>Memoria condivisa del telefono: Android può proteggere alcune cartelle.</p>'+
+    '<div class="bridge-owner-actions"><button type="button" id="allowAllOwnerFiles">Consenti accesso ai file</button><button type="button" id="chooseOwnerFolder">Scegli cartella</button>'+
     '<button type="button" id="clearOwnerFolder">Rimuovi autorizzazione</button></div>'+
     (bridgeOwnerClient?'<section class="bridge-owner-pairing"><h3>Associazione telefono Bridge</h3>'+
       '<p>Associazione esplicita sul server di prova. La registrazione non concede accesso remoto e non avvia la trasmissione.</p>'+
@@ -589,6 +590,7 @@ async function showOwnerBridgeFolder(){
     '<div id="ownerBridgeContents" role="status"></div></section>';
   document.body.appendChild(panel);
   const area=panel.querySelector('#ownerBridgeContents');
+  let browsingProvider=bridgeFiles;
   const stack=[{handle:'root',name:'Cartella scelta'}];
   let generation=0;
   const ownerId=me.id;
@@ -700,13 +702,17 @@ async function showOwnerBridgeFolder(){
             return;
           }
           if(!alive())return;
-          if(!confirm('Consentire per massimo 4 minuti le richieste di elenco e lettura nella sola cartella selezionata, esclusivamente agli amministratori autorizzati?'))return;
+          if(!confirm('Attivare la condivisione con gli amministratori autorizzati per questa sessione?'))return;
           responding=true;stopRequested=false;
           respond.textContent='Interrompi condivisione Bridge';
           let tx=null,processedCount=0;
           try{
-            const chosen=await bridgeFiles.getFolder();
-            if(!chosen?.selected)throw Error('no_shared_folder');
+            const all=await bridgeAllFiles?.status();
+            const folderProvider=all?.granted ? bridgeAllFiles : bridgeFiles;
+            if(!all?.granted){
+              const chosen=await bridgeFiles.getFolder();
+              if(!chosen?.selected)throw Error('no_shared_folder');
+            }
             const credentials=await bridgeCredentials.getForConnection();
             if(!alive()||credentials?.deviceId!==account.deviceId)
               throw Error('bridge_owner_changed');
@@ -714,7 +720,7 @@ async function showOwnerBridgeFolder(){
               baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
               deviceId:credentials.deviceId,
               deviceSecret:credentials.deviceSecret,
-              folderProvider:bridgeFiles
+              folderProvider
             });
             await tx.connect();
             const stopAt=Date.now()+240000;
@@ -763,7 +769,7 @@ async function showOwnerBridgeFolder(){
     const current=stack.at(-1);
     if(offset===0)area.textContent='Lettura cartella…';
     try{
-      const response=validateBridgeFolderPage(await bridgeFiles.list({handle:current.handle,offset}));
+      const response=validateBridgeFolderPage(await browsingProvider.list({handle:current.handle,offset}));
       if(!alive()||revision!==generation)return;
       if(offset===0)area.innerHTML='<div class="bridge-owner-path">'+esc(stack.map(x=>x.name).join(' / '))+'</div>'+
         (stack.length>1?'<button type="button" id="ownerBridgeBack">‹ Indietro</button>':'')+
@@ -784,7 +790,7 @@ async function showOwnerBridgeFolder(){
             area.textContent='Lettura anteprima…';
             try{
               const request=validateBridgeReadRequest({handle:item.handle,offset:0,length:Math.max(1,item.size)});
-              const data=validateBridgeFileChunk(await bridgeFiles.readChunk(request),request.length);
+              const data=validateBridgeFileChunk(await browsingProvider.readChunk(request),request.length);
               if(!alive()||rev!==generation)return;
               const binary=atob(data.base64||'');
               const bytes=Uint8Array.from(binary,ch=>ch.charCodeAt(0));
@@ -814,9 +820,20 @@ async function showOwnerBridgeFolder(){
         area.textContent='Impossibile leggere la cartella: '+friendly(error);
     }
   };
+  panel.querySelector('#allowAllOwnerFiles').onclick=async()=>{
+    if(!alive()||!bridgeAllFiles)return;
+    try{
+      const permission=await bridgeAllFiles.requestPermission();
+      if(!alive())return;
+      if(!permission?.granted){area.textContent='Autorizzazione non concessa da Android.';return;}
+      browsingProvider=bridgeAllFiles;
+      stack.splice(0,stack.length,{handle:'root',name:'Memoria condivisa'});
+      await draw();
+    }catch{if(alive())area.textContent='Impossibile aprire le autorizzazioni Android.';}
+  };
   panel.querySelector('#closeOwnerBridge').onclick=()=>{generation++;panel.remove();};
   panel.querySelector('#chooseOwnerFolder').onclick=async()=>{
-    try{await bridgeFiles.chooseFolder();stack.splice(0,stack.length,{handle:'root',name:'Cartella scelta'});await draw();}
+    try{await bridgeFiles.chooseFolder();browsingProvider=bridgeFiles;stack.splice(0,stack.length,{handle:'root',name:'Cartella scelta'});await draw();}
     catch(error){if(alive())area.textContent='Selezione annullata o non disponibile.';}
   };
   panel.querySelector('#clearOwnerFolder').onclick=async()=>{
@@ -825,10 +842,17 @@ async function showOwnerBridgeFolder(){
     catch{area.textContent='Non è stato possibile rimuovere il permesso.';}
   };
   try{
-    const selected=await bridgeFiles.getFolder();
-    if(alive())if(selected.selected)await draw();
-    else area.textContent='Nessuna cartella selezionata.';
-  }catch{if(alive())area.textContent='Accesso alle cartelle Android non disponibile.';}
+    const all=await bridgeAllFiles?.status();
+    if(all?.granted){
+      browsingProvider=bridgeAllFiles;
+      stack.splice(0,stack.length,{handle:'root',name:'Memoria condivisa'});
+      if(alive())await draw();
+    }else{
+      const selected=await bridgeFiles.getFolder();
+      if(alive())if(selected.selected)await draw();
+      else area.textContent='Autorizza i file tramite Android per continuare.';
+    }
+  }catch{if(alive())area.textContent='Accesso ai file Android non disponibile.';}
 }
 
 function renderLayout(){

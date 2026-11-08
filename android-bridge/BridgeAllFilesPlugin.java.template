@@ -1,0 +1,184 @@
+package __PACKAGE__;
+
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
+import android.util.Base64;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.File;
+import java.io.RandomAccessFile;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Storage provider only for the isolated FreePT Bridge APK.
+ * User must explicitly grant Android's "All files access" setting.
+ * Still obeys OS inaccessible locations. No network, no auto-start.
+ * Remote requests use opaque handles discovered beneath shared storage.
+ */
+@CapacitorPlugin(name="BridgeAllFiles")
+public class BridgeAllFilesPlugin extends Plugin {
+    private static final int PAGE=100, MAX_HANDLES=3000, MAX_CHUNK=32768;
+    private static final long MAX_BYTES=1099511627776L;
+    private final Map<String, Entry> entries=new HashMap<>();
+    private final Map<String,String> reverse=new HashMap<>();
+    private File root;
+
+    private static final class Entry {
+        final File file;
+        final int depth;
+        Entry(File file,int depth){this.file=file;this.depth=depth;}
+    }
+
+    private boolean granted(){
+        return Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager();
+    }
+    private boolean prepare(){
+        if(!granted()){entries.clear();reverse.clear();root=null;return false;}
+        try{
+            File candidate=Environment.getExternalStorageDirectory().getCanonicalFile();
+            if(root==null||!root.equals(candidate)){
+                root=candidate;
+                entries.clear();reverse.clear();
+                entries.put("root",new Entry(root,0));
+            }
+            return true;
+        }catch(IOException error){return false;}
+    }
+    private boolean within(File file)throws IOException{
+        String base=root.getCanonicalPath(),path=file.getCanonicalPath();
+        return path.startsWith(base+File.separator) && !file.isDirectory() || 
+            path.startsWith(base+File.separator) && file.isDirectory();
+    }
+    private boolean valid(File file){
+        String name=file.getName();
+        if(name.isEmpty()||name.length()>255||name.equals(".")||name.equals("..")||
+           name.indexOf('/')>=0||name.indexOf('\\')>=0)return false;
+        for(int i=0;i<name.length();i++){
+            char c=name.charAt(i);
+            if(c<32||c==127)return false;
+        }
+        try{
+            if(!within(file)||!file.canRead())return false;
+            // Don't follow symlinks to outside/other trees.
+            if(!file.getCanonicalFile().equals(file.getAbsoluteFile()))return false;
+            return file.isDirectory() || file.isFile()&&file.length()<=MAX_BYTES;
+        }catch(IOException error){return false;}
+    }
+
+    @PluginMethod public void status(PluginCall call){
+        JSObject out=new JSObject();
+        out.put("granted",prepare());
+        call.resolve(out);
+    }
+
+    @PluginMethod public void requestPermission(PluginCall call){
+        if(prepare()){
+            JSObject out=new JSObject();out.put("granted",true);call.resolve(out);return;
+        }
+        if(Build.VERSION.SDK_INT<30){call.reject("bridge_android_version_unsupported");return;}
+        Intent intent=new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+        intent.setData(Uri.parse("package:"+getContext().getPackageName()));
+        startActivityForResult(call,intent,"permissionReturned");
+    }
+
+    @ActivityCallback private void permissionReturned(PluginCall call,ActivityResult result){
+        if(call==null)return;
+        JSObject out=new JSObject();out.put("granted",prepare());call.resolve(out);
+    }
+
+    @PluginMethod public void list(PluginCall call){
+        if(!prepare()){call.reject("bridge_all_files_not_granted");return;}
+        String handle=call.getString("handle","root");
+        Integer offset=call.getInt("offset",0);
+        if(offset==null||offset<0||offset>10000){
+            call.reject("bridge_all_files_invalid_offset");return;
+        }
+        Entry parent=entries.get(handle);
+        if(parent==null||!parent.file.isDirectory()||parent.depth>=16){
+            call.reject("bridge_all_files_invalid_directory");return;
+        }
+        File[] children=parent.file.listFiles();
+        if(children==null){call.reject("bridge_all_files_unreadable");return;}
+        Arrays.sort(children,Comparator.comparing(File::getName));
+        JSArray list=new JSArray();
+        int counted=0,emitted=0;
+        for(File file:children){
+            if(!valid(file))continue;
+            if(counted++<offset)continue;
+            if(emitted>=PAGE)break;
+            String key;
+            try{key=file.getCanonicalPath();}
+            catch(IOException error){continue;}
+            String id=reverse.get(key);
+            if(id==null){
+                if(entries.size()>=MAX_HANDLES){
+                    call.reject("bridge_all_files_handle_limit");return;
+                }
+                id=UUID.randomUUID().toString();
+                reverse.put(key,id);
+                entries.put(id,new Entry(file,parent.depth+1));
+            }
+            JSObject item=new JSObject();
+            boolean directory=file.isDirectory();
+            item.put("handle",id);
+            item.put("name",file.getName());
+            item.put("directory",directory);
+            item.put("size",directory?-1:file.length());
+            String mime=directory?"vnd.android.document/directory":
+                java.net.URLConnection.guessContentTypeFromName(file.getName());
+            item.put("mime",mime==null?"application/octet-stream":mime);
+            list.put(item);
+            emitted++;
+        }
+        JSObject out=new JSObject();
+        out.put("entries",list);
+        // Contract mandates a full page whenever nextOffset is nonnegative.
+        out.put("nextOffset",counted>offset+emitted?offset+emitted:-1);
+        call.resolve(out);
+    }
+
+    @PluginMethod public void readChunk(PluginCall call){
+        if(!prepare()){call.reject("bridge_all_files_not_granted");return;}
+        Entry entry=entries.get(call.getString("handle"));
+        Object rawOffset=call.getData().opt("offset");
+        Integer length=call.getInt("length");
+        long offset=rawOffset instanceof Number?((Number)rawOffset).longValue():-1L;
+        if(entry==null||!entry.file.isFile()||!valid(entry.file)||
+           !(rawOffset instanceof Number)||((Number)rawOffset).doubleValue()!=(double)offset||
+           offset<0||offset>MAX_BYTES||length==null||length<1||length>MAX_CHUNK||
+           offset>MAX_BYTES-length){
+            call.reject("bridge_all_files_invalid_read");return;
+        }
+        try(RandomAccessFile file=new RandomAccessFile(entry.file,"r")){
+            file.seek(offset);
+            byte[] buffer=new byte[length];
+            int count=0;
+            while(count<length){
+                int size=file.read(buffer,count,length-count);
+                if(size<0)break;
+                if(size==0)throw new IOException("no_read_progress");
+                count+=size;
+            }
+            byte[] payload=Arrays.copyOf(buffer,count);
+            JSObject out=new JSObject();
+            out.put("base64",Base64.encodeToString(payload,Base64.NO_WRAP));
+            out.put("bytesRead",count);
+            out.put("eof",offset+count>=file.length());
+            call.resolve(out);
+        }catch(Exception error){call.reject("bridge_all_files_read_failed");}
+    }
+}
