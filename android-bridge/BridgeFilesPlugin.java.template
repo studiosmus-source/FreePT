@@ -34,6 +34,7 @@ public class BridgeFilesPlugin extends Plugin {
     private static final int MAX_HANDLES = 3000;
     private static final int MAX_CHUNK = 262144;
     private final Map<String, Entry> handles = new HashMap<>();
+    private final Map<String, String> documentHandles = new HashMap<>();
     private Uri tree;
 
     private static class Entry {
@@ -48,6 +49,7 @@ public class BridgeFilesPlugin extends Plugin {
     private void setTree(Uri uri) {
         tree = uri;
         handles.clear();
+        documentHandles.clear();
         Uri root = DocumentsContract.buildDocumentUriUsingTree(
                 uri, DocumentsContract.getTreeDocumentId(uri));
         handles.put("root", new Entry(root, true, 0));
@@ -122,6 +124,7 @@ public class BridgeFilesPlugin extends Plugin {
         }
         tree = null;
         handles.clear();
+        documentHandles.clear();
         getContext().getSharedPreferences(PREFS,0).edit().remove(TREE_KEY).apply();
         call.resolve();
     }
@@ -140,16 +143,14 @@ public class BridgeFilesPlugin extends Plugin {
             call.reject("bridge_invalid_folder");return;
         }
         if(handles.size() >= MAX_HANDLES) {
-            setTree(tree);
-            if(!"root".equals(token)) {
-                call.reject("bridge_refresh_folder");return;
-            }
-            parent = handles.get("root");
+            call.reject("bridge_handle_limit");return;
         }
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(
                 tree,DocumentsContract.getDocumentId(parent.uri));
         JSArray list = new JSArray();
         int seen = 0;
+        int emitted = 0;
+        boolean more = false;
         try(Cursor cursor = getContext().getContentResolver().query(
                 children,new String[]{
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -160,24 +161,37 @@ public class BridgeFilesPlugin extends Plugin {
             if(cursor == null) {call.reject("bridge_unreadable_folder");return;}
             while(cursor.moveToNext()) {
                 if(seen++ < index) continue;
-                if(seen > index + PAGE_SIZE) break;
+                if(emitted >= PAGE_SIZE) {more = true;break;}
                 String docId = cursor.getString(0);
+                if(docId == null) {
+                    call.reject("bridge_invalid_document");return;
+                }
                 String mime = cursor.getString(2);
                 boolean directory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mime);
-                String handle = UUID.randomUUID().toString();
-                Uri child = DocumentsContract.buildDocumentUriUsingTree(tree,docId);
-                handles.put(handle,new Entry(child,directory,parent.depth + 1));
+                // The handle remains stable for every repeated page/list
+                // within this explicitly selected tree and process lifetime.
+                String handle = documentHandles.get(docId);
+                if(handle == null) {
+                    if(handles.size() >= MAX_HANDLES) {
+                        call.reject("bridge_handle_limit");return;
+                    }
+                    handle = UUID.randomUUID().toString();
+                    Uri child = DocumentsContract.buildDocumentUriUsingTree(tree,docId);
+                    handles.put(handle,new Entry(child,directory,parent.depth + 1));
+                    documentHandles.put(docId,handle);
+                }
                 JSObject item = new JSObject();
                 item.put("handle",handle);
                 item.put("name",cursor.getString(1));
                 item.put("directory",directory);
-                item.put("mime",mime);
+                item.put("mime",mime == null ? "" : mime);
                 item.put("size",cursor.isNull(3) ? -1 : cursor.getLong(3));
                 list.put(item);
+                emitted++;
             }
             JSObject response = new JSObject();
             response.put("entries",list);
-            response.put("nextOffset",seen > index + PAGE_SIZE ? index + PAGE_SIZE : -1);
+            response.put("nextOffset",more ? index + emitted : -1);
             call.resolve(response);
         } catch(Exception error) {
             call.reject("bridge_unreadable_folder");
