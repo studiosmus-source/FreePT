@@ -5,7 +5,7 @@
  *
  * Backend hosting/TLS is NOT supplied by this client.
  */
-import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
+import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATES=new Set(['queued','sent','done','cancelled']);
 const PROD='cpopqsvzzxfjgnlawlvc.supabase.co';
@@ -84,7 +84,46 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
       return {jobId,entries:page.entries,nextOffset:page.nextOffset};
     }catch{throw Error('bridge_invalid_response');}
   };
+  const readCall=async(action,body)=>{
+    const {data,error}=await auth.getSession();
+    const token=data?.session?.access_token;
+    if(error||typeof token!=='string'||token.length<20)
+      throw Error('bridge_auth_required');
+    let response;
+    try{
+      response=await fetchImpl(url+'/bridge/admin/'+action,{
+        method:'POST',headers:{'content-type':'application/json',
+          authorization:'Bearer '+token},
+        body:JSON.stringify(body),cache:'no-store',redirect:'error'
+      });
+    }catch{throw Error('bridge_network_unavailable');}
+    if(!response?.ok)
+      throw Error(response?.status===401||response?.status===403?
+        'bridge_auth_required':'bridge_request_failed');
+    try{return await response.json()}
+    catch{throw Error('bridge_invalid_response');}
+  };
+  const requestRead=async(deviceId,request)=>{
+    if(!UUID.test(deviceId))throw Error('bridge_invalid_id');
+    const valid=validateBridgeReadRequest(request);
+    if(valid.length>32768)throw Error('bridge_read_chunk_limit');
+    const result=await readCall('read',{deviceId,...valid});
+    if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
+       result.state!=='queued'||Object.keys(result).sort().join(',')!=='deviceId,jobId,state')
+      throw Error('bridge_invalid_response');
+    return result;
+  };
+  const getReadChunk=async(jobId)=>{
+    if(!UUID.test(jobId))throw Error('bridge_invalid_id');
+    const result=await readCall('chunk',{jobId});
+    try{
+      if(!Number.isSafeInteger(result?.bytesRead)||result.bytesRead<1||
+         result.bytesRead>32768)throw Error('invalid');
+      return validateBridgeFileChunk(result,result.bytesRead);
+    }catch{throw Error('bridge_invalid_response');}
+  };
   return Object.freeze({
+    requestRead,getReadChunk,
     getFolderPage,
     requestList: deviceId=>perform('list',deviceId),
     getStatus: jobId=>perform('status',jobId),
