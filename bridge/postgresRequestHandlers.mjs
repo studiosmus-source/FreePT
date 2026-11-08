@@ -10,10 +10,10 @@ import {createBridgeTxRequestHandler} from './txRequestHandler.mjs';
 
 export function createBridgePostgresRequestHandlers({
   rpcClient, authenticateAdmin, authenticateDevice,
-  newJobId, txRateLimits
+  newJobId, txRateLimits, readJobsEnabled=false
 } = {}) {
   const service=createBridgePostgresService({
-    rpcClient, authenticateAdmin, authenticateDevice
+    rpcClient, authenticateAdmin, authenticateDevice,readJobsEnabled
   });
   const admin=createBridgeAdminRequestHandler({
     service, ...(newJobId===undefined?{}:{newJobId})
