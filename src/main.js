@@ -808,7 +808,6 @@ function renderLayout(){
       document.getElementById('people').classList.remove('off');
     };
   }
-  if(!admin&&bridgeFiles)document.getElementById('ownerBridgeFolder').onclick=showOwnerBridgeFolder;
   document.getElementById('send').onsubmit=send;
   configureFileInput(document.getElementById('file'));
 }
