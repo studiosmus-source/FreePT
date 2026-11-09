@@ -71,14 +71,14 @@ jobs:
           set -euo pipefail
           WRAPPER=android/gradle/wrapper/gradle-wrapper.properties
           test -f "$WRAPPER"
-          grep -Eq '^distributionUrl=.*gradle-8\\.11\\.1-' "$WRAPPER" || {
+          grep -Eq '^distributionUrl=.*gradle-8\.11\.1-' "$WRAPPER" || {
             echo 'Unexpected Gradle wrapper version; refusing silent override'; exit 1;
           }
           sed -i 's#^distributionUrl=.*#distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.11.1-bin.zip#' "$WRAPPER"
           if grep -q '^networkTimeout=' "$WRAPPER"; then
             sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$WRAPPER"
           else
-            printf '\\nnetworkTimeout=120000\\n' >> "$WRAPPER"
+            printf '\nnetworkTimeout=120000\n' >> "$WRAPPER"
           fi
           grep -Fq 'downloads.gradle.org/distributions/gradle-8.11.1-bin.zip' "$WRAPPER"
       - name: Verify native Bridge and Firebase integration before compiling
