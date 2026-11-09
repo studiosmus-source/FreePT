@@ -12,6 +12,7 @@ on:
       - 'supabase/migrations/20261109_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
       - 'supabase/bridge_staging_install_once.sql'
+      - 'supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql'
       - 'supabase/bridge_sql_safety.test.mjs'
       - 'package.json'
       - 'src/**'
@@ -205,6 +206,18 @@ jobs:
           test "$(wc -l < /tmp/bridge-preflight-results.txt)" -eq 36
           test "$(grep -c 'DA CONFIGURARE' /tmp/bridge-preflight-results.txt || true)" -eq 0
           test "$(grep -c '|OK' /tmp/bridge-preflight-results.txt)" -eq 36
+      - name: Install production candidate in a separate disposable PostgreSQL database
+        run: |
+          set -euo pipefail
+          createdb bridge_production_candidate_ci
+          export PGDATABASE=bridge_production_candidate_ci
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-bootstrap.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql
+          psql -v ON_ERROR_STOP=1 -At -F '|' -f supabase/bridge_preflight.sql > /tmp/bridge-production-candidate-preflight.txt
+          test "$(wc -l < /tmp/bridge-production-candidate-preflight.txt)" -eq 36
+          test "$(grep -c 'DA CONFIGURARE' /tmp/bridge-production-candidate-preflight.txt || true)" -eq 0
+          test "$(grep -c '|OK' /tmp/bridge-production-candidate-preflight.txt)" -eq 36
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
       - name: Verify family activation RPC exists
         run: |
           psql -v ON_ERROR_STOP=1 -Atqc "select to_regprocedure('public.bridge_owner_activate_family(uuid)') is not null" | grep -qx 't'
