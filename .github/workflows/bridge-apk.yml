@@ -1,7 +1,5 @@
 name: FreePT Bridge APK
 on:
-  push:
-    branches: [feature/bridge-chunk-receiver-20261108]
   workflow_dispatch:
 permissions:
   contents: read
