@@ -11,6 +11,8 @@ on:
       - 'supabase/migrations/20261108_bridge_*.sql'
       - 'supabase/migrations/20261109_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
+      - 'supabase/bridge_staging_install_once.sql'
+      - 'supabase/bridge_sql_safety.test.mjs'
       - 'package.json'
       - 'src/**'
       - 'index.html'
@@ -146,3 +148,46 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261109_bridge_family_activation_staging.sql
       - name: Verify owner-only consent, unique approved admin and failure isolation
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
+
+  bridge-bundle-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bridge_ci
+          POSTGRES_PASSWORD: bridge_ci_only
+          POSTGRES_DB: bridge_bundle_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bridge_ci -d bridge_bundle_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: bridge_ci
+      PGPASSWORD: bridge_ci_only
+      PGDATABASE: bridge_bundle_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Bootstrap isolated identities and install the exact bundled SQL
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-bootstrap.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/bridge_staging_install_once.sql
+      - name: Verify complete bundle using existing SQL integration tests
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-device-enrollment.sql
+      - name: Verify all ten Bridge tables and family activation RPC exist
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from information_schema.tables where table_schema='public' and table_name in ('bridge_devices','bridge_grants','bridge_device_verifiers','bridge_audit_events','bridge_jobs','bridge_tx_sessions','bridge_folder_pages','bridge_read_requests','bridge_read_results','bridge_browse_requests')" | grep -qx '10'
+          psql -v ON_ERROR_STOP=1 -Atqc "select to_regprocedure('public.bridge_owner_activate_family(uuid)') is not null" | grep -qx 't'
