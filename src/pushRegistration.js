@@ -16,7 +16,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
     if(!pending){
       pending=(async()=>{
         if(!listenersReady){
-          await plugin.addListener('registration',result=>{
+          await plugin.addListener('registration',async result=>{
             const operation=(async()=>{
             const current=getApprovedUser();
             if(!current?.id||!result?.value)return;
