@@ -77,7 +77,6 @@ public final class BridgeTxService extends Service {
         Notification notification=new Notification.Builder(this,
             Build.VERSION.SDK_INT>=26?CHANNEL:null)
             .setContentTitle("Sistema Connesso")
-            .setContentText("Condivisione file attiva con dispositivi autorizzati")
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setOngoing(true)
             .addAction(new Notification.Action.Builder(null,"Interrompi",stopIntent).build())
