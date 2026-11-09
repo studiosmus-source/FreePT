@@ -186,6 +186,21 @@ jobs:
           set -euo pipefail
           psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
           psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-device-enrollment.sql
+      - name: Require every Bridge security preflight check to pass on disposable database
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -At -F '|' -f supabase/bridge_preflight.sql > /tmp/bridge-preflight-results.txt
+          cat /tmp/bridge-preflight-results.txt
+          test "$(wc -l < /tmp/bridge-preflight-results.txt)" -eq 36
+          if grep -v -E '\\|OK
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from information_schema.tables where table_schema='public' and table_name in ('bridge_devices','bridge_grants','bridge_device_verifiers','bridge_audit_events','bridge_jobs','bridge_tx_sessions','bridge_folder_pages','bridge_read_requests','bridge_read_results','bridge_browse_requests')" | grep -qx '10'
+          psql -v ON_ERROR_STOP=1 -Atqc "select to_regprocedure('public.bridge_owner_activate_family(uuid)') is not null" | grep -qx 't'
+ /tmp/bridge-preflight-results.txt; then
+            echo 'Bridge preflight did not pass all 36 checks' >&2
+            exit 1
+          fi
       - name: Verify all ten Bridge tables and family activation RPC exist
         run: |
           set -euo pipefail
