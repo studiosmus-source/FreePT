@@ -211,7 +211,8 @@ jobs:
           set -euo pipefail
           createdb bridge_production_candidate_ci
           export PGDATABASE=bridge_production_candidate_ci
-          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-bootstrap.sql
+          # PostgreSQL roles are cluster-wide; the first disposable database already created them.
+          sed '/^create role \(anon\|authenticated\|service_role\) nologin;/d' bridge/postgres-ci-bootstrap.sql | psql -v ON_ERROR_STOP=1
           psql -v ON_ERROR_STOP=1 -f supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql
           psql -v ON_ERROR_STOP=1 -At -F '|' -f supabase/bridge_preflight.sql > /tmp/bridge-production-candidate-preflight.txt
           test "$(wc -l < /tmp/bridge-production-candidate-preflight.txt)" -eq 36
