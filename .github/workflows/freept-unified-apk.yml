@@ -34,7 +34,7 @@ jobs:
           PY
       - name: Install dependencies and run regression tests
         run: |
-          npm ci --no-audit --no-fund
+          npm install --no-audit --no-fund
           npm run test:bridge
           node --test src/bridgeRuntimeConfig.test.mjs
           python3 -m py_compile android-bridge/install.py
