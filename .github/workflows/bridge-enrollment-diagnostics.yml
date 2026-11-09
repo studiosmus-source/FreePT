@@ -14,6 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install project dependencies
+        run: npm install --no-audit --no-fund
       - name: Validate source syntax
         run: |
           node --check bridge/ownerEnrollment.mjs
