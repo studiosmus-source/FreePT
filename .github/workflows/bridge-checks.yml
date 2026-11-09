@@ -181,6 +181,17 @@ jobs:
           set -euo pipefail
           psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-bootstrap.sql
           psql -v ON_ERROR_STOP=1 -f supabase/bridge_staging_install_once.sql
+      - name: Verify repeated installation is refused without modifying installed Bridge schema
+        run: |
+          set -euo pipefail
+          before="$(psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from pg_class where relnamespace='public'::regnamespace and relname like 'bridge_%'")"
+          if psql -v ON_ERROR_STOP=1 -f supabase/bridge_staging_install_once.sql > /tmp/bridge-repeat.txt 2>&1; then
+            echo 'Repeated installation unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -Fq 'BRIDGE STOP: Bridge already installed' /tmp/bridge-repeat.txt
+          after="$(psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from pg_class where relnamespace='public'::regnamespace and relname like 'bridge_%'")"
+          test "$before" = "$after"
       - name: Verify complete bundle using existing SQL integration tests
         run: |
           set -euo pipefail
