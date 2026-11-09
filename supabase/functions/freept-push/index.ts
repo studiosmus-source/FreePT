@@ -95,12 +95,14 @@ Deno.serve(async req=>{
         .eq('id',msg.user_id).maybeSingle();
       if(error)throw error;
       if(user?.role==='user'&&user.status==='approved')recipients=[user.id];
-    }else{
+    }else if(sender.role==='user'){
       if(msg.user_id!==msg.sender_id)return json({ignored:true});
       const {data:admins,error}=await db.from('profiles')
         .select('id').eq('role','admin').eq('status','approved');
       if(error)throw error;
       recipients=(admins||[]).map(a=>a.id);
+    }else{
+      return json({ignored:true});
     }
     recipients=recipients.filter(id=>id!==msg.sender_id);
     if(recipients.length===0)return json({delivered:0});
