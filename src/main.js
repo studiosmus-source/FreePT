@@ -600,11 +600,9 @@ async function showOwnerBridgeFolder(){
   const panel=document.createElement('div');
   panel.id='ownerBridgePanel';
   panel.className='bridge-admin-shade bridge-family-shade';
-  panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Accesso per la famiglia">'+
-    '<header><h2>Accesso per la famiglia</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
-    '<p>Premendo Attiva l’accesso, autorizzi l’amministratore approvato della tua famiglia a vedere e scaricare i file accessibili di questo telefono.</p>'+
-    '<p>Android ti chiederà di confermare l’accesso ai file. Alcune cartelle rimangono protette.</p>'+
-    '<button type="button" id="bridgeFamilyStart">Attiva l’accesso</button>'+
+  panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
+    '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
+    '<button type="button" id="bridgeFamilyStart">Attiva</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+
     '</section>';
   document.body.appendChild(panel);
@@ -622,7 +620,7 @@ async function showOwnerBridgeFolder(){
       if(!alive())return;
       if(!permission?.granted||!device?.provisioned){
         button.hidden=false;
-        update('Per iniziare, premi il pulsante qui sopra.');
+        update('');
         return;
       }
       const [settings,grants,service]=await Promise.all([
@@ -633,21 +631,20 @@ async function showOwnerBridgeFolder(){
       if(!alive())return;
       const ready=settings.enabled&&grants.some(g=>g.active);
       button.hidden=ready&&service?.running===true;
-      update(ready&&service?.running?'Accesso attivo. Puoi usare normalmente il telefono.':
-        'L’attivazione non è ancora completa. Premi il pulsante per continuare.');
-    }catch{update('Non è stato possibile verificare il collegamento. Riprova aprendo questa schermata.');}
+      update(ready&&service?.running?'Pronto':'');
+    }catch{update('');}
   };
   button.onclick=async()=>{
     if(working||!alive())return;
     working=true;button.disabled=true;
     try{
-      update('Apertura dei permessi Android…');
+      update('Attivazione…');
       const permission=await bridgeAllFiles.requestPermission();
       if(!alive())return;
       if(permission?.granted!==true){
-        update('Permesso non concesso. Nessun file viene condiviso.');return;
+        update('Non è stato possibile attivare');return;
       }
-      update('Preparazione del telefono…');
+      update('Attivazione…');
       const current=await bridgeOwnerClient.status();
       const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Telefono di famiglia');
       if(!alive())return;
@@ -656,28 +653,15 @@ async function showOwnerBridgeFolder(){
       // No grant is made to guessed or arbitrary recipients.
       await bridgeOwnerControls.activateFamily(device.deviceId);
       if(!alive())return;
-      update('Avvio del collegamento…');
+      update('Attivazione…');
       await bridgeTxControl.start();
       if(!alive())return;
-      update('Attivazione richiesta. Android mostrerà “Sistema Connesso” quando il servizio sarà attivo.');
+      update('Attivazione…');
       await refresh();
     }catch(error){
-      // Only stable internal error codes are shown. Never expose tokens,
-      // server response bodies, filesystem paths or raw exception messages.
-      const safeCodes={
-        bridge_owner_backend_unavailable:'Server Bridge non raggiungibile',
-        bridge_owner_login_required:'Sessione scaduta: accedi di nuovo',
-        bridge_owner_denied:'Accesso al server Bridge negato',
-        bridge_owner_request_failed:'Registrazione telefono non riuscita',
-        bridge_owner_invalid_response:'Risposta del server non valida',
-        bridge_owner_keystore_failed:'Protezione del telefono non disponibile',
-        bridge_owner_invalid_local_registration:'Registrazione locale non valida',
-        bridge_owner_device_unavailable:'Telefono non riconosciuto dal database',
-        bridge_owner_activation_denied:'Autorizzazione familiare rifiutata dal database',
-        bridge_owner_control_denied:'Operazione rifiutata dal database'
-      };
-      const code=error instanceof Error?error.message:'';
-      update('Attivazione non riuscita: '+(safeCodes[code]||'errore Android o collegamento')+'. Nessun file viene condiviso.');
+      // Diagnostics are intentionally kept off the family-facing screen.
+      // No raw exception, access token or device secret is displayed.
+      update('Non è stato possibile attivare');
     }finally{
       working=false;
       if(alive())button.disabled=false;
