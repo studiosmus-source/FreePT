@@ -9,6 +9,7 @@ import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
 import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
 import {renderOriginalTxRx} from './originalTxRxUi.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
+import {resolveBridgeRuntimeConfig} from './bridgeRuntimeConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
 import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
@@ -19,7 +20,13 @@ const config=getFreePtSupabaseConfig({
   isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
 });
 const db = createClient(config.url, config.key, { auth: { persistSession: true, autoRefreshToken: true } });
-const bridgeFiles = Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
+const bridgeRuntime=resolveBridgeRuntimeConfig({
+  isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true',
+  production:import.meta.env.VITE_BRIDGE_PRODUCTION_BUILD==='true',
+  testApiUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
+  productionApiUrl:import.meta.env.VITE_BRIDGE_API_URL
+});
+const bridgeFiles = Capacitor.isNativePlatform() && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
 const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
@@ -28,12 +35,12 @@ const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : nu
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
 const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
-  baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
+  baseUrl:bridgeRuntime.baseUrl,
   auth:db.auth,credentials:bridgeCredentials
 }) : null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
-  baseUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,auth:db.auth
+  baseUrl:bridgeRuntime.baseUrl,auth:db.auth
 });
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
