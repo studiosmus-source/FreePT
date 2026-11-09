@@ -42,7 +42,7 @@ export function validateBridgeGatewayConfig(env={},mode='staging'){
   if(!origins.length||origins.length>5||origins.some(raw=>{
     try{
       const url=new URL(raw);
-      return url.protocol!=='https:'||url.origin!==raw||url.username||
+      return !(url.protocol==='https:'||(mode==='production'&&raw==='http://localhost'))||url.origin!==raw||url.username||
         url.password||url.port||url.hash||url.search||
         url.pathname!=='/'||raw.includes('*');
     }catch{return true;}
