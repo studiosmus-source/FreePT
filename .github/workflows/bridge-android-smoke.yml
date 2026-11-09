@@ -52,6 +52,21 @@ jobs:
           npx cap sync android
           python3 android-bridge/install.py
           grep -Fq 'BridgeDestinationPlugin.class' android/app/src/main/java/it/freept/bridge/next/MainActivity.java
+      - name: Prefer direct Gradle distribution mirror on generated Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          WRAPPER=android/gradle/wrapper/gradle-wrapper.properties
+          test -f "$WRAPPER"
+          # Avoid the GitHub release redirect currently returning 504.
+          # Keep the same Gradle version; use the smaller binary distribution.
+          sed -i 's#^distributionUrl=.*#distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.11.1-bin.zip#' "$WRAPPER"
+          if grep -q '^networkTimeout=' "$WRAPPER"; then
+            sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$WRAPPER"
+          else
+            printf '\\nnetworkTimeout=120000\\n' >> "$WRAPPER"
+          fi
+          grep -Fq 'downloads.gradle.org/distributions/gradle-8.11.1-bin.zip' "$WRAPPER"
       - name: Verify Android Gradle project compiles
         run: |
           cd android
