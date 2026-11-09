@@ -1,5 +1,13 @@
-/** Production Bridge entrypoint. Fail closed until the dedicated production
- * Supabase credentials, origin policy and server implementation are audited.
- * Never fall back to staging or TX.
- */
-throw new Error('freept_bridge_production_not_configured');
+/** Dedicated FreePT production Bridge. Fails closed without explicit config. */
+import {createBridgeProductionService} from './productionServer.mjs';
+const service=createBridgeProductionService({env:process.env});
+await service.start();
+process.stdout.write('Dedicated FreePT production Bridge started behind HTTPS proxy\n');
+let stopping=false;
+async function stop(){
+  if(stopping)return;
+  stopping=true;
+  await service.stop();
+}
+for(const signal of ['SIGINT','SIGTERM'])
+  process.once(signal,()=>void stop().then(()=>process.exit(0),()=>process.exit(1)));
