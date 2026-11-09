@@ -6,6 +6,7 @@ original app or ship broad storage permissions.
 """
 from pathlib import Path
 import re
+import os
 
 root = Path("android/app/src/main/java")
 files = list(root.rglob("MainActivity.java"))
@@ -17,8 +18,15 @@ match = re.search(r"^package\s+([a-zA-Z_][\w.]*)\s*;", source, re.M)
 if not match:
     raise SystemExit("MainActivity missing Java package declaration")
 package = match.group(1)
-if package != "it.freept.bridge.next":
-    raise SystemExit("BridgeFiles may only be installed into isolated test APK")
+target = os.environ.get("FREEPT_BRIDGE_INSTALL_TARGET", "staging")
+if target == "staging":
+    if package != "it.freept.bridge.next":
+        raise SystemExit("Staging installer refuses non-staging app ID")
+elif target == "production":
+    if package != "it.freept.app" or os.environ.get("FREEPT_BRIDGE_PRODUCTION_OPT_IN") != "I_ACCEPT_PRODUCTION_BRIDGE":
+        raise SystemExit("Production installer requires exact app ID and explicit opt-in")
+else:
+    raise SystemExit("Unknown Bridge installation target")
 
 if "extends BridgeActivity" not in source:
     raise SystemExit("Unexpected Capacitor Android activity")
@@ -120,9 +128,13 @@ manifest.write_text(manifest_text.replace("</application>",
     "    " + service + "\n    </application>", 1))
 # The runtime endpoint is injected at APK build time, never committed or guessed.
 from urllib.parse import urlparse
-import os
 from xml.sax.saxutils import escape
-raw = os.environ.get("VITE_BRIDGE_TEST_API_URL", "").strip()
+endpoint_variable = "VITE_BRIDGE_TEST_API_URL" if target == "staging" else "VITE_BRIDGE_API_URL"
+raw = os.environ.get(endpoint_variable, "").strip()
+if target == "production" and not raw:
+    raise SystemExit("Production Bridge requires an explicit HTTPS endpoint")
+if target == "production" and os.environ.get("VITE_BRIDGE_TEST_API_URL"):
+    raise SystemExit("Production Bridge refuses staging endpoint variable")
 if raw:
     parsed = urlparse(raw)
     if (parsed.scheme != "https" or not parsed.hostname or parsed.port or
@@ -137,4 +149,4 @@ values.mkdir(parents=True, exist_ok=True)
     '<resources><string name="bridge_endpoint">' +
     escape(raw) + '</string></resources>\n'
 )
-print("Seven Bridge plugins/classes installed in isolated app:", package)
+print("Bridge native plugins installed for:", target, package)
