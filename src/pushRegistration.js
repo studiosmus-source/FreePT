@@ -10,16 +10,18 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   let tokenOwner=null;
   let pending=null;
   const inFlightRegistrations=new Set();
+  let closingOwner=null;
   async function init(){
     const user=getApprovedUser();
     if(!user?.id)return;
+    closingOwner=null;
     if(!pending){
       pending=(async()=>{
         if(!listenersReady){
           await plugin.addListener('registration',async result=>{
             const operation=(async()=>{
             const current=getApprovedUser();
-            if(!current?.id||!result?.value)return;
+            if(!current?.id||current.id===closingOwner||!result?.value)return;
             const owner=current.id;
             const {error}=await db.from('push_devices').upsert({
               token:result.value,user_id:owner,platform:'android',
@@ -58,6 +60,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   async function clear(ownerId){
     // Await a registration already in flight so logout cannot leave a token
     // behind due to an asynchronous database upsert.
+    closingOwner=ownerId;
     await Promise.allSettled([...inFlightRegistrations]);
     if(token&&tokenOwner===ownerId){
       const {error}=await db.from('push_devices').delete()
