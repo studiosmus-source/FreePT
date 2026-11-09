@@ -205,6 +205,18 @@ public final class BridgeTxService extends Service {
             stopSelf();
         }
     }
+    // Android 15+ limits dataSync foreground-service runtime. Stop promptly
+    // when the OS reports timeout instead of allowing a fatal exception.
+    @Override public void onTimeout(int startId, int fgsType){
+        running.set(false);
+        HttpURLConnection conn=connection;
+        if(conn!=null)conn.disconnect();
+        Thread thread=worker;
+        if(thread!=null)thread.interrupt();
+        active=false;
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf(startId);
+    }
     @Override public void onDestroy(){
         running.set(false);
         HttpURLConnection conn=connection;
