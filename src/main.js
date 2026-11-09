@@ -734,7 +734,7 @@ function renderLayout(){
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
     '<strong class="grow" id="chatTitle">Servizio</strong>'+
     (admin?'<button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
-    (!admin&&bridgeOwnerClient?'<button type="button" id="ownerBridgeFolder">Accesso famiglia</button>':'')+'</div>'+
+    '</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
