@@ -49,3 +49,22 @@ test('all Bridge security-definer function definitions set an empty search path'
    if(/security\s+definer/i.test(def))assert.match(def,/set\s+search_path\s*=\s*''/i);
  }
 });
+
+test('final list RPCs retain session fencing and list-only job guards',()=>{
+ for(const name of ['bridge_server_claim_list','bridge_server_complete_list']){
+   const needle='create or replace function public.'+name+'(';
+   const starts=[];
+   for(let at=sql.indexOf(needle);at!==-1;at=sql.indexOf(needle,at+needle.length))starts.push(at);
+   assert.equal(starts.length,3,name+' must have three known migration revisions');
+   const end=sql.indexOf('\n$$;',starts.at(-1));
+   assert.ok(end>starts.at(-1),name+' final definition must terminate');
+   const definition=sql.slice(starts.at(-1),end+4);
+   assert.match(definition,/perform\s+public\.bridge_server_assert_tx_session\s*\(/i);
+   assert.match(definition,/p_device_id\s*,\s*p_session_binding_hex/i);
+   if(name==='bridge_server_claim_list'){
+     assert.match(definition,/j\.operation\s*=\s*'list'/i);
+   }else{
+     assert.match(definition,/v_job\.operation\s*<>\s*'list'/i);
+   }
+ }
+});
