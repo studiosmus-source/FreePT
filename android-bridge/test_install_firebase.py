@@ -26,8 +26,8 @@ class FirebaseInstallerTests(unittest.TestCase):
         return temp, root
 
     def run_installer(self, root, package="it.freept.app", valid=True):
-        payload = {"project_info": {"project_id": "freept-test"},
-                   "client": [{"client_info": {"android_client_info": {
+        payload = {"project_info": {"project_id": "freept-test", "project_number": "123456789"},
+                   "client": [{"api_key": [{"current_key": "test-only"}], "client_info": {"android_client_info": {
                        "package_name": package if valid else "wrong.package"
                    }}}]}
         env = dict(os.environ)
@@ -54,6 +54,19 @@ class FirebaseInstallerTests(unittest.TestCase):
             original = gradle.read_text()
             result = self.run_installer(root, valid=False)
             self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(gradle.read_text(), original)
+            self.assertFalse((root / "android/app/google-services.json").exists())
+
+    def test_invalid_manifest_is_not_modified(self):
+        temp, root = self.prepare()
+        with temp:
+            manifest = root / "android/app/src/main/AndroidManifest.xml"
+            manifest.write_text("<manifest><application>")
+            gradle = root / "android/build.gradle"
+            original = gradle.read_text()
+            result = self.run_installer(root)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(manifest.read_text(), "<manifest><application>")
             self.assertEqual(gradle.read_text(), original)
             self.assertFalse((root / "android/app/google-services.json").exists())
 
