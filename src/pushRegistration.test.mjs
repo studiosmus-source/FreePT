@@ -34,3 +34,22 @@ test('registration callback refuses token after logout',async()=>{
   await onRegistration({value:'token'});
   assert.equal(writes,0);
 });
+
+test('logout waits for an in-flight token registration and removes it',async()=>{
+  let user={id:'user-a'},onRegistration,resolveWrite,removed=[];
+  const writeGate=new Promise(resolve=>{resolveWrite=resolve});
+  const push=createPushRegistration({
+    plugin:{addListener:async(name,fn)=>{if(name==='registration')onRegistration=fn},
+      checkPermissions:async()=>({receive:'granted'}),register:async()=>{}},
+    db:{from:()=>({
+      upsert:async()=>{await writeGate;return {error:null}},
+      delete:()=>({eq:(k,v)=>({eq:async(k2,v2)=>{removed.push([k,v,k2,v2]);return {error:null}}})})
+    })},getApprovedUser:()=>user,onMessage:()=>{}
+  });
+  await push.init();
+  const registration=onRegistration({value:'token-a'});
+  const logout=push.clear('user-a');
+  resolveWrite();
+  await Promise.all([registration,logout]);
+  assert.deepEqual(removed,[['token','token-a','user_id','user-a']]);
+});
