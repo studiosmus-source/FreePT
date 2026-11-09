@@ -14,7 +14,7 @@ test('RX keys are saved locally without contacting unrelated original TX relay',
   assert.match(bridge,/Chiavi salvate in modo sicuro sul telefono/);
 });
 test('existing TX registration is explicitly acknowledged instead of reset',()=>{
-  assert.match(source,/const device=await bridgeOwnerClient.status\(\)/);
-  assert.match(source,/if\(!device\?\.provisioned\)await bridgeOwnerClient.enroll\('Telefono di famiglia'\)/);
+  assert.match(source,/const current=await bridgeOwnerClient.status\(\)/);
+  assert.match(source,/current\?\.provisioned\?current:await bridgeOwnerClient.enroll\('Telefono di famiglia'\)/);
   assert.doesNotMatch(source.slice(source.indexOf('async function showOwnerBridgeFolder(){'),source.indexOf('\nfunction renderLayout(){')),/bridgeOwnerClient.remove\(\)/);
 });
