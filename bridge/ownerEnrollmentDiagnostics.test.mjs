@@ -25,3 +25,15 @@ for(const scenario of ['invalid_token','profile_query_failed','profile_missing',
     assert.equal(JSON.stringify(reasons).includes('secret-value'),false);
   });
 }
+
+test('diagnostic logger failure never overrides rejected authentication',async()=>{
+  const handler=createBridgeOwnerEnrollmentHandler({
+    authClient:{auth:{async getUser(){return {data:{user:null},error:null};}}},
+    profilesClient:{from(){throw Error('profile lookup must not run');}},
+    rpcClient:{async rpc(){throw Error('privileged RPC must not run');}},
+    onAuthDiagnostic(){throw Error('logger unavailable');}
+  });
+  const response=await handler({method:'POST',path:'/bridge/owner/enroll',
+    headers:{authorization:'Bearer '+TOKEN},body:{label:'Phone'}});
+  assert.deepEqual(response,{status:403,body:{error:'bridge_owner_denied'}});
+});
