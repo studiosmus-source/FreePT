@@ -96,3 +96,29 @@ test('all bundled Bridge function bodies have balanced PostgreSQL dollar delimit
    assert.match(part.slice(at+tag.length),/^\s*;/,'function terminator missing near '+start);
  }
 });
+
+test('production candidate matches the reviewed staging migration payload byte for byte',()=>{
+ const production=readFileSync(new URL('./bridge_production_install_CANDIDATE_DO_NOT_RUN.sql',import.meta.url),'utf8');
+ const marker='-- ===== 1/14: 20261106_bridge_foundation.sql =====';
+ const stagingStart=sql.indexOf(marker);
+ const productionStart=production.indexOf(marker);
+ assert.ok(stagingStart>0 && productionStart>0);
+ const stagingEnd=sql.lastIndexOf('\nCOMMIT;');
+ const productionEnd=production.lastIndexOf('\nCOMMIT;');
+ assert.ok(stagingEnd>stagingStart && productionEnd>productionStart);
+ assert.equal(production.slice(productionStart,productionEnd),sql.slice(stagingStart,stagingEnd));
+ assert.match(production,/PRODUCTION CANDIDATE -- NOT APPROVED FOR EXECUTION/);
+ assert.match(production,/verified production backup/);
+ assert.match(production,/BRIDGE STOP: existing Bridge objects/);
+ assert.match(production,/BRIDGE STOP: missing production FreePT prerequisites/);
+ assert.equal((production.match(/^-- ===== \d+\/14:/gm)||[]).length,14);
+ assert.ok(!production.includes('Database target: FreePT-Bridge-Test ONLY'));
+});
+
+test('production candidate has exactly one outer transaction and no destructive top-level operations',()=>{
+ const production=readFileSync(new URL('./bridge_production_install_CANDIDATE_DO_NOT_RUN.sql',import.meta.url),'utf8');
+ assert.equal((production.match(/^BEGIN;$/gm)||[]).length,1);
+ assert.equal((production.match(/^COMMIT;$/gm)||[]).length,1);
+ const beforeMigrations=production.slice(0,production.indexOf('-- ===== 1/14:'));
+ assert.doesNotMatch(beforeMigrations,/\b(?:drop|truncate|delete|update|insert)\s+(?:table\s+|from\s+|into\s+)?public\./i);
+});
