@@ -22,7 +22,11 @@ export function createBridgeOwnerEnrollmentHandler({
      typeof newDeviceId!=='function'||typeof randomBytesFn!=='function')
     throw Error('bridge_owner_enrollment_dependencies_invalid');
   async function ownerId(token){
-    const rejected=reason=>{onAuthDiagnostic(reason);return null;};
+    const rejected=reason=>{
+      // Diagnostics are best-effort: a broken logger must not change auth behavior.
+      try { onAuthDiagnostic(reason); } catch { /* fail closed */ }
+      return null;
+    };
     try{
       const response=await authClient.auth.getUser(token);
       const user=response?.data?.user;
