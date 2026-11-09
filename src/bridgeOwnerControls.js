@@ -6,6 +6,13 @@
  */
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const errorOf=(reply,code)=>{if(reply?.error)throw Error(code);};
+// Report only known SQL failure categories, never raw database errors or identifiers.
+export const familyActivationErrorCode=(error)=>{
+  const allowed=new Set(['bridge_owner_not_approved','bridge_invalid_device',
+    'bridge_owner_required','bridge_unique_admin_required','bridge_admin_not_unique']);
+  const message=typeof error?.message==='string'?error.message:'';
+  return allowed.has(message)?message:'bridge_owner_activation_denied';
+};
 export function createBridgeOwnerControls({db,auth}={}){
   if(typeof db?.rpc!=='function'||typeof db?.from!=='function'||
      typeof auth?.getSession!=='function')
@@ -44,7 +51,8 @@ export function createBridgeOwnerControls({db,auth}={}){
       const {data,error}=await db.rpc('bridge_owner_activate_family',{
         p_device_id:deviceId
       });
-      if(error||!UUID.test(data))throw Error('bridge_owner_activation_denied');
+      if(error)throw Error(familyActivationErrorCode(error));
+      if(!UUID.test(data))throw Error('bridge_owner_activation_denied');
       return true;
     },
     async setEnabled(deviceId,enabled){
