@@ -26,8 +26,8 @@ export function createBridgeOwnerEnrollmentHandler({
     try{
       const response=await authClient.auth.getUser(token);
       const user=response?.data?.user;
-      if(response?.error||!UUID.test(user?.id)||user.is_anonymous===true)
-        return rejected('token_invalid_or_anonymous');
+      if(response?.error||!UUID.test(user?.id))
+        return rejected('token_invalid');
       const answer=await profilesClient.from('profiles')
         .select('id,role,status').eq('id',user.id).maybeSingle();
       if(answer?.error)return rejected('profile_query_failed');
