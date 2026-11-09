@@ -5,7 +5,6 @@
  */
 export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   let listenersReady=false;
-  let permissionGranted=false;
   let token=null;
   let tokenOwner=null;
   let pending=null;
@@ -46,12 +45,11 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
           await plugin.addListener('pushNotificationActionPerformed',()=>onMessage());
           listenersReady=true;
         }
-        if(!permissionGranted){
-          let p=await plugin.checkPermissions();
-          if(p.receive==='prompt')p=await plugin.requestPermissions();
-          if(p.receive!=='granted')return;
-          permissionGranted=true;
-        }
+        // Android permissions may be revoked in Settings after initial grant.
+        // Never rely on a previous render's permission state.
+        let permission=await plugin.checkPermissions();
+        if(permission.receive==='prompt')permission=await plugin.requestPermissions();
+        if(permission.receive!=='granted')return;
         if(getApprovedUser()?.id===user.id)await plugin.register();
       })().finally(()=>{pending=null;});
     }
