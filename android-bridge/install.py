@@ -76,6 +76,25 @@ source = source.replace(
   }
 """,
 )
+# Preflight every required input before touching generated Android files.
+required_templates = [
+    "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin",
+    "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
+    "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin"
+]
+for name in required_templates:
+    path = Path("android-bridge") / (name + ".java.template")
+    if not path.is_file() or path.read_text().count("__PACKAGE__") != 1:
+        raise SystemExit("Missing or invalid native Bridge template: " + name)
+manifest = Path("android/app/src/main/AndroidManifest.xml")
+if not manifest.is_file():
+    raise SystemExit("Missing generated AndroidManifest.xml")
+manifest_preflight = manifest.read_text()
+if (manifest_preflight.count("<application") != 1 or
+        manifest_preflight.count("</application>") != 1 or
+        "android.permission.MANAGE_EXTERNAL_STORAGE" in manifest_preflight or
+        "BridgeTxService" in manifest_preflight):
+    raise SystemExit("Unexpected AndroidManifest.xml; refusing Bridge patch")
 main.write_text(source)
 template = Path("android-bridge/BridgeFilesPlugin.java.template").read_text()
 if template.count("__PACKAGE__") != 1:
