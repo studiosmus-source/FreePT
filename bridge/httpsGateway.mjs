@@ -33,8 +33,10 @@ const MAX_CATALOGUE=32768;
 const MAX_RESPONSE=65536;
 const fail=(status,error)=>({status,body:{error}});
 const jsonType=header=>typeof header==='string'&&header.split(';')[0].trim().toLowerCase()==='application/json';
-export function validateBridgeGatewayConfig(env={}){
-  if(env.FREEPT_BRIDGE_PUBLIC!=='I_UNDERSTAND_STAGING_HTTPS_ONLY')
+export function validateBridgeGatewayConfig(env={},mode='staging'){
+  if(!['staging','production'].includes(mode))throw Error('bridge_gateway_mode_invalid');
+  const expected=mode==='production'?'I_ACCEPT_PRODUCTION_BRIDGE':'I_UNDERSTAND_STAGING_HTTPS_ONLY';
+  if(env.FREEPT_BRIDGE_PUBLIC!==expected)
     throw Error('bridge_gateway_opt_in_required');
   const origins=env.FREEPT_BRIDGE_ALLOWED_ORIGINS?.split(',').map(x=>x.trim())||[];
   if(!origins.length||origins.length>5||origins.some(raw=>{
