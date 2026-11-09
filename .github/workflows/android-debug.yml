@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, feature/bridge-admin-foundation-20261106]
+    branches: [main, feature/bridge-admin-foundation-20261106, feature/bridge-chunk-receiver-20261108]
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,12 +28,12 @@ jobs:
       - name: Install web dependencies
         run: npm install --no-audit --no-fund
       - name: Bridge unit regression tests (development branch only)
-        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
         run: npm run test:bridge
       - name: JavaScript syntax check
         run: node --check src/main.js
       - name: Require isolated Supabase test project for Bridge APK
-        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
         env:
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
@@ -56,7 +56,7 @@ jobs:
           print('Bridge test Supabase configuration present; production project rejected')
           PY
       - name: Validate optional experimental HTTPS Bridge backend endpoint
-        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
         env:
           VITE_BRIDGE_TEST_API_URL: ${{ vars.FREEPT_BRIDGE_TEST_API_URL }}
         run: |
@@ -77,10 +77,10 @@ jobs:
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
         env:
-          VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
-          VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && vars.FREEPT_BRIDGE_TEST_API_URL || '' }}
-          VITE_BRIDGE_ISOLATED_BUILD: ${{ github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' && 'true' || 'false' }}
+          VITE_SUPABASE_URL: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
+          VITE_BRIDGE_TEST_API_URL: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && vars.FREEPT_BRIDGE_TEST_API_URL || '' }}
+          VITE_BRIDGE_ISOLATED_BUILD: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && 'true' || 'false' }}
         run: |
           set -euo pipefail
           echo "Node: $(node --version) / npm: $(npm --version)"
@@ -95,7 +95,7 @@ jobs:
           path: vite-build.log
           if-no-files-found: warn
       - name: Isolate experimental Bridge APK identity
-        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
         run: |
           python3 - <<'PY'
           import json
@@ -118,7 +118,7 @@ jobs:
           npx cap sync android
           test -s android/capacitor.settings.gradle
       - name: Install explicit owner-selected SAF folder provider (Bridge test only)
-        if: github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106'
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
         run: python3 android-bridge/install.py
       - name: Ensure Android biometric permission
         run: |
@@ -172,7 +172,7 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee android-apk-info.txt
-          if [[ "$GITHUB_REF" == "refs/heads/feature/bridge-admin-foundation-20261106" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/feature/bridge-admin-foundation-20261106" || "$GITHUB_REF" == "refs/heads/feature/bridge-chunk-receiver-20261108" ]]; then
             EXPECTED_ID=it.freept.bridge
           else
             EXPECTED_ID=it.freept.app
