@@ -68,3 +68,15 @@ test('final list RPCs retain session fencing and list-only job guards',()=>{
    }
  }
 });
+
+test('bundled staging migrations exactly match individual source files',()=>{
+ const markers=[...sql.matchAll(/^-- ===== \d+\/(?:13|14): ([^\s]+) =====$/gm)];
+ assert.equal(markers.length,14);
+ for(let i=0;i<markers.length;i++){
+   const start=markers[i].index+markers[i][0].length;
+   const end=i+1<markers.length?markers[i+1].index:sql.lastIndexOf('\nCOMMIT;');
+   const actual=sql.slice(start,end).trim();
+   const source=readFileSync(new URL('./migrations/'+markers[i][1],import.meta.url),'utf8').trim();
+   assert.equal(actual,source,'staging bundle drifted from '+markers[i][1]);
+ }
+});
