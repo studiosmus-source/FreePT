@@ -104,3 +104,23 @@ test('HTTP rejects unauthenticated enrollment and preserves legacy routes',async
   assert.equal((await post('/bridge/admin/list',{})).status,404);
   assert.equal((await post('/bridge/owner/delete',{deviceId:DEVICE},'Bearer '+TOKEN)).status,200);
 });
+
+test('approved anonymous FreePT owner may enroll, pending anonymous owner remains denied',async()=>{
+  const f=setup();
+  // Existing fixture uses the same verified account and approved profile.
+  // A separate anonymous auth fixture exercises the production signup mode.
+  const authClient={auth:{async getUser(){return {data:{user:{id:OWNER,is_anonymous:true}},error:null};}}};
+  let approved=true;
+  const profilesClient={from(){return {select(){return {eq(){return {async maybeSingle(){return {data:{id:OWNER,role:'user',status:approved?'approved':'pending'},error:null};}};}};}};}};
+  let rpcCalls=0;
+  const handler=createBridgeOwnerEnrollmentHandler({authClient,profilesClient,
+    rpcClient:{async rpc(name,args){rpcCalls++;return {data:args.p_device_id,error:null};}},
+    newDeviceId:()=>DEVICE,randomBytesFn:n=>Buffer.alloc(n,1)
+  });
+  const request=()=>handler({method:'POST',path:'/bridge/owner/enroll',headers:{authorization:'Bearer '+TOKEN},body:{label:'Phone'}});
+  assert.equal((await request()).status,201);
+  assert.equal(rpcCalls,1);
+  approved=false;
+  assert.equal((await request()).status,403);
+  assert.equal(rpcCalls,1);
+});
