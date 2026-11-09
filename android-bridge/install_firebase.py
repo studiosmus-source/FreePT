@@ -8,6 +8,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 root = Path("android")
 app = root / "app"
@@ -35,6 +36,8 @@ try:
         for c in clients
     )
     assert data.get("project_info", {}).get("project_id")
+    assert data.get("project_info", {}).get("project_number")
+    assert any(c.get("api_key") for c in clients if c.get("client_info", {}).get("android_client_info", {}).get("package_name") == app_id)
 except Exception as exc:
     raise SystemExit("Firebase JSON invalid or package mismatch") from exc
 
@@ -48,6 +51,10 @@ if (top.count("dependencies {") < 1 or
         bottom.count("com.android.application") < 1 or
         xml.count("<application") != 1):
     raise SystemExit("Unexpected generated Android project; no files modified")
+try:
+    ET.fromstring(xml)
+except ET.ParseError as exc:
+    raise SystemExit("Invalid generated AndroidManifest.xml; no files modified") from exc
 if dependency in top or plugin in bottom or (app / "google-services.json").exists():
     raise SystemExit("Firebase installer already applied; refuse stacked patch")
 # Add plugin classpath inside buildscript dependencies only.
@@ -60,6 +67,7 @@ top = top[:insertion] + "\n        " + dependency + top[insertion:]
 bottom = bottom.rstrip() + "\n\n" + plugin + "\n"
 if "android.permission.POST_NOTIFICATIONS" not in xml:
     xml = xml.replace("<application", permission + "\n    <application", 1)
+ET.fromstring(xml)
 
 # All preflight checks completed. This file contains public Firebase client
 # configuration, NOT the FCM server service-account secret.
