@@ -36,7 +36,9 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run test:bridge
-          node --test src/bridgeRuntimeConfig.test.mjs
+          node --test src/bridgeRuntimeConfig.test.mjs src/pushRegistration.test.mjs
+          node --check src/main.js
+          node --check src/pushRegistration.js
           python3 -m py_compile android-bridge/install.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Build production web bundle with native Bridge enabled
