@@ -29,6 +29,15 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: JavaScript syntax check
         run: node --check src/main.js
+      - name: Bridge regression tests when Bridge sources are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G 'bridge/*.test.mjs' > /dev/null; then
+            npm run test:bridge
+          else
+            echo 'No Bridge tests on this branch; skipping.'
+          fi
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
         run: |
