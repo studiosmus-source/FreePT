@@ -81,6 +81,26 @@ jobs:
             printf '\\nnetworkTimeout=120000\\n' >> "$WRAPPER"
           fi
           grep -Fq 'downloads.gradle.org/distributions/gradle-8.11.1-bin.zip' "$WRAPPER"
+      - name: Verify native Bridge and Firebase integration before compiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s android/app/google-services.json
+          grep -Fq "com.google.gms.google-services" android/app/build.gradle
+          grep -Fq "com.google.gms:google-services" android/build.gradle
+          grep -Fq "BridgeTxService" android/app/src/main/AndroidManifest.xml
+          grep -Fq "android.permission.POST_NOTIFICATIONS" android/app/src/main/AndroidManifest.xml
+          grep -Fq "android.permission.USE_BIOMETRIC" android/app/src/main/AndroidManifest.xml
+          grep -Fq "BridgeFilesPlugin.class" "$(find android/app/src/main/java -name MainActivity.java -print -quit)"
+          grep -Fq "BridgeTxControlPlugin.class" "$(find android/app/src/main/java -name MainActivity.java -print -quit)"
+          test -f android/capacitor-cordova-android-plugins/build.gradle
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          ET.parse('android/app/src/main/AndroidManifest.xml')
+          files=list(Path('android/app/src/main/java').rglob('BridgeTxService.java'))
+          assert len(files)==1, 'Native Bridge TX service missing'
+          PY
       - name: Compile unified Android APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
       - name: Verify APK identity and integrity
