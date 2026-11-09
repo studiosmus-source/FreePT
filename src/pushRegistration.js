@@ -9,13 +9,15 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   let token=null;
   let tokenOwner=null;
   let pending=null;
+  let inFlightRegistration=null;
   async function init(){
     const user=getApprovedUser();
     if(!user?.id)return;
     if(!pending){
       pending=(async()=>{
         if(!listenersReady){
-          await plugin.addListener('registration',async result=>{
+          await plugin.addListener('registration',result=>{
+            const operation=(async()=>{
             const current=getApprovedUser();
             if(!current?.id||!result?.value)return;
             const owner=current.id;
@@ -25,6 +27,17 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
             },{onConflict:'token'});
             if(error)throw error;
             if(getApprovedUser()?.id===owner){token=result.value;tokenOwner=owner;}
+            else {
+              // The login changed during the network request. Revoke the
+              // just-written token before allowing logout to finish.
+              const removed=await db.from('push_devices').delete()
+                .eq('token',result.value).eq('user_id',owner);
+              if(removed.error)throw removed.error;
+            }
+            })();
+            inFlightRegistration=operation;
+            try{return await operation;}
+            finally{if(inFlightRegistration===operation)inFlightRegistration=null;}
           });
           await plugin.addListener('registrationError',()=>{});
           await plugin.addListener('pushNotificationReceived',()=>onMessage());
@@ -43,6 +56,9 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
     return pending;
   }
   async function clear(ownerId){
+    // Await a registration already in flight so logout cannot leave a token
+    // behind due to an asynchronous database upsert.
+    if(inFlightRegistration)await inFlightRegistration;
     if(token&&tokenOwner===ownerId){
       const {error}=await db.from('push_devices').delete()
         .eq('token',token).eq('user_id',ownerId);
