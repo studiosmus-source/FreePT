@@ -28,3 +28,12 @@ test('support diagnostics can be revealed without developer tools or a PC',()=>{
  assert.doesNotMatch(setup,/localStorage\.setItem\(/);
  assert.doesNotMatch(setup,/fetch\([^\n]*Diagnostic/);
 });
+
+test('activation succeeds only after verified server grant and running foreground service',()=>{
+ assert.match(setup,/let verified=false/);
+ assert.match(setup,/settings\?\.enabled===true/);
+ assert.match(setup,/grants\.some\(grant=>grant\.active===true\)/);
+ assert.match(setup,/service\?\.running===true/);
+ assert.match(setup,/if\(!verified\)throw Error\('bridge_tx_start_not_confirmed'\)/);
+ assert.ok(setup.indexOf('if(!verified)throw')<setup.indexOf("diagnostic('success')"));
+});

@@ -629,7 +629,7 @@ async function showOwnerBridgeFolder(){
     // Fixed stage names and allowlisted error codes only: never log exceptions,
     // tokens, UUIDs, paths, phone numbers or raw server response bodies.
     const allowedStages=new Set(['permission','local-device','enrollment','family-grant','service-start','verification']);
-    const allowedCodes=new Set(['permission_denied','bridge_owner_login_required','bridge_owner_backend_unavailable','bridge_owner_denied','bridge_owner_request_failed','bridge_owner_invalid_response','bridge_owner_keystore_failed','bridge_owner_invalid_local_registration','bridge_owner_device_unavailable','bridge_owner_activation_denied','bridge_owner_control_denied','bridge_tx_notifications_required','bridge_tx_permission_or_device_missing','bridge_tx_cannot_start','unknown']);
+    const allowedCodes=new Set(['permission_denied','bridge_owner_login_required','bridge_owner_backend_unavailable','bridge_owner_denied','bridge_owner_request_failed','bridge_owner_invalid_response','bridge_owner_keystore_failed','bridge_owner_invalid_local_registration','bridge_owner_device_unavailable','bridge_owner_activation_denied','bridge_owner_control_denied','bridge_tx_notifications_required','bridge_tx_permission_or_device_missing','bridge_tx_cannot_start','bridge_tx_start_not_confirmed','unknown']);
     const stage=allowedStages.has(activationStage)?activationStage:'verification';
     const safeCode=allowedCodes.has(code)?code:'unknown';
     lastDiagnostic='Bridge '+stage+' / '+safeCode;
@@ -692,6 +692,24 @@ async function showOwnerBridgeFolder(){
       if(!alive())return;
       update('Attivazione…');
       activationStage='verification';
+      // start() acknowledges a request, not a running foreground service.
+      // Never mark activation successful until both the server grant and
+      // Android foreground-service state have actually been observed.
+      let verified=false;
+      for(let attempt=0;attempt<5;attempt++){
+        if(!alive())return;
+        const [settings,grants,service]=await Promise.all([
+          bridgeOwnerControls.device(device.deviceId),
+          bridgeOwnerControls.recipients(device.deviceId),
+          bridgeTxControl.status()
+        ]);
+        if(settings?.enabled===true&&Array.isArray(grants)&&
+           grants.some(grant=>grant.active===true)&&service?.running===true){
+          verified=true;break;
+        }
+        if(attempt<4)await new Promise(resolve=>setTimeout(resolve,350));
+      }
+      if(!verified)throw Error('bridge_tx_start_not_confirmed');
       await refresh();
       diagnostic('success');
     }catch(error){
