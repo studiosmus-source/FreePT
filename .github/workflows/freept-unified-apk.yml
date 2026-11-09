@@ -39,7 +39,7 @@ jobs:
           node --test src/bridgeRuntimeConfig.test.mjs src/pushRegistration.test.mjs
           node --check src/main.js
           node --check src/pushRegistration.js
-          python3 -m py_compile android-bridge/install.py
+          python3 -m py_compile android-bridge/install.py android-bridge/install_firebase.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Build production web bundle with native Bridge enabled
         env:
@@ -59,6 +59,10 @@ jobs:
           FREEPT_BRIDGE_PRODUCTION_OPT_IN: I_ACCEPT_PRODUCTION_BRIDGE
           VITE_BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_PRODUCTION_API_URL }}
         run: python3 android-bridge/install.py
+      - name: Install native Firebase push configuration
+        env:
+          FREEPT_FIREBASE_ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.FREEPT_FIREBASE_ANDROID_GOOGLE_SERVICES_JSON_B64 }}
+        run: python3 android-bridge/install_firebase.py
       - name: Ensure biometric permission
         run: |
           python3 - <<'PY'
