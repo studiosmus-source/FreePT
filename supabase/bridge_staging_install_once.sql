@@ -1785,7 +1785,7 @@ grant execute on function public.bridge_server_delete_device(uuid,uuid)
 create or replace function public.bridge_owner_activate_family(p_device_id uuid)
 returns uuid
 language plpgsql security definer set search_path = ''
-as $
+as $$
 declare
   v_admins uuid[];
   v_receiver uuid;
@@ -1821,10 +1821,9 @@ begin
     where id=p_device_id and owner_id=(select auth.uid());
   return v_receiver;
 end;
-$;
+$$;
 revoke all on function public.bridge_owner_activate_family(uuid) from public,anon;
 grant execute on function public.bridge_owner_activate_family(uuid) to authenticated;
-
 
 COMMIT;
 -- CHECK (read only):
