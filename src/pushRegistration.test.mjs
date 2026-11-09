@@ -94,3 +94,37 @@ test('revoked Android permission prevents a later native registration',async()=>
   await push.init();
   assert.equal(registers,1);
 });
+
+test('logout during delayed permission check cannot start native registration',async()=>{
+  let release,registers=0;
+  const gate=new Promise(resolve=>{release=resolve});
+  const push=createPushRegistration({
+    plugin:{addListener:async()=>{},checkPermissions:async()=>{await gate;return {receive:'granted'}},
+      register:async()=>{registers++}},
+    db:{from:()=>({})},getApprovedUser:()=>({id:'user-a'}),onMessage:()=>{}
+  });
+  const starting=push.init();
+  await push.clear('user-a');
+  release();
+  await starting;
+  assert.equal(registers,0);
+});
+
+test('logout during token upsert revokes completed registration even if profile remains loaded',async()=>{
+  let callback,release,removed=[];
+  const gate=new Promise(resolve=>{release=resolve});
+  const push=createPushRegistration({
+    plugin:{addListener:async(name,fn)=>{if(name==='registration')callback=fn},
+      checkPermissions:async()=>({receive:'granted'}),register:async()=>{}},
+    db:{from:()=>({
+      upsert:async()=>{await gate;return {error:null}},
+      delete:()=>({eq:(k,v)=>({eq:async(k2,v2)=>{removed.push([k,v,k2,v2]);return {error:null}}})})
+    })},getApprovedUser:()=>({id:'user-a'}),onMessage:()=>{}
+  });
+  await push.init();
+  const registration=callback({value:'token-a'});
+  const logout=push.clear('user-a');
+  release();
+  await Promise.all([registration,logout]);
+  assert.deepEqual(removed,[['token','token-a','user_id','user-a']]);
+});
