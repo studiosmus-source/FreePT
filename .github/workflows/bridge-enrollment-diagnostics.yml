@@ -1,0 +1,22 @@
+name: Bridge enrollment diagnostics checks
+on:
+  push:
+    branches: [fix/bridge-enrollment-safe-diagnostics-20261109]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate source syntax
+        run: |
+          node --check bridge/ownerEnrollment.mjs
+          node --check bridge/ownerEnrollmentDiagnostics.test.mjs
+      - name: Run all Bridge regression tests
+        run: npm run test:bridge
