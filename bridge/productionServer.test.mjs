@@ -37,3 +37,11 @@ test('production creates isolated server clients only after validation',()=>{
   assert.equal(typeof service.stop,'function');
   assert.equal(validateBridgeProductionConfig(good).url,good.FREEPT_BRIDGE_PRODUCTION_SUPABASE_URL);
 });
+
+test('production accepts only exact Android Capacitor localhost origin',()=>{
+  const android={...good,FREEPT_BRIDGE_ALLOWED_ORIGINS:'http://localhost'};
+  assert.deepEqual(validateBridgeProductionConfig(android).http.origins,['http://localhost']);
+  for(const origin of ['http://localhost:8080','http://127.0.0.1','http://evil.example','http://localhost.evil.example']){
+    assert.throws(()=>validateBridgeProductionConfig({...good,FREEPT_BRIDGE_ALLOWED_ORIGINS:origin}),/bridge_gateway_origins_invalid/);
+  }
+});
