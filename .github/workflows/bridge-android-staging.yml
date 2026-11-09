@@ -33,7 +33,9 @@ jobs:
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
         run: npm run test:bridge
       - name: Native push registration regression tests
-        run: node --test src/pushRegistration.test.mjs
+        run: |
+          node --check src/pushRegistration.js
+          node --test src/pushRegistration.test.mjs
       - name: Unified Bridge runtime environment regression tests
         run: node --test src/bridgeRuntimeConfig.test.mjs
       - name: JavaScript syntax check
