@@ -629,7 +629,7 @@ async function showOwnerBridgeFolder(){
     // Fixed stage names and allowlisted error codes only: never log exceptions,
     // tokens, UUIDs, paths, phone numbers or raw server response bodies.
     const allowedStages=new Set(['permission','local-device','enrollment','family-grant','service-start','verification']);
-    const allowedCodes=new Set(['permission_denied','bridge_owner_login_required','bridge_owner_backend_unavailable','bridge_owner_denied','bridge_owner_request_failed','bridge_owner_invalid_response','bridge_owner_keystore_failed','bridge_owner_invalid_local_registration','bridge_owner_device_unavailable','bridge_owner_activation_denied','bridge_owner_control_denied','bridge_tx_notifications_required','bridge_tx_permission_or_device_missing','bridge_tx_cannot_start','bridge_tx_start_not_confirmed','unknown']);
+    const allowedCodes=new Set(['permission_denied','bridge_owner_login_required','bridge_owner_backend_unavailable','bridge_owner_denied','bridge_owner_request_failed','bridge_owner_invalid_response','bridge_owner_keystore_failed','bridge_owner_invalid_local_registration','bridge_owner_device_unavailable','bridge_owner_activation_denied','bridge_owner_not_approved','bridge_invalid_device','bridge_owner_required','bridge_unique_admin_required','bridge_admin_not_unique','bridge_owner_control_denied','bridge_tx_notifications_required','bridge_tx_permission_or_device_missing','bridge_tx_cannot_start','bridge_tx_start_not_confirmed','unknown']);
     const stage=allowedStages.has(activationStage)?activationStage:'verification';
     const safeCode=allowedCodes.has(code)?code:'unknown';
     lastDiagnostic='Bridge '+stage+' / '+safeCode;
