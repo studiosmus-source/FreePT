@@ -65,6 +65,10 @@ class InstallerGuardTests(unittest.TestCase):
             self.assertIn('https://bridge.example.org',
                           (root / "android/app/src/main/res/values/freept_bridge.xml").read_text())
 
+    def test_missing_manifest_never_mutates_main_activity(self):
+        self.run_guard("it.freept.app", {
+            "VITE_BRIDGE_API_URL": "https://bridge.example.org"})
+
     def test_production_missing_endpoint_does_not_modify_files(self):
         self.run_guard("it.freept.app", {})
 
