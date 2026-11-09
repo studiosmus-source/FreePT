@@ -603,7 +603,8 @@ async function showOwnerBridgeFolder(){
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
     '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
     '<button type="button" id="bridgeFamilyStart">Attiva</button>'+
-    '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+
+    '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
+    '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
     '</section>';
   document.body.appendChild(panel);
   const button=panel.querySelector('#bridgeFamilyStart');
@@ -611,6 +612,19 @@ async function showOwnerBridgeFolder(){
   const currentOwner=me.id;
   let working=false;
   let activationStage='idle';
+  let lastDiagnostic='';
+  let diagnosticTapCount=0;
+  // Support gesture: five taps on the title reveal only a safe stage/code.
+  // The normal family screen has no diagnostic controls or technical labels.
+  panel.querySelector('h2').onclick=()=>{
+    diagnosticTapCount+=1;
+    if(diagnosticTapCount<5)return;
+    diagnosticTapCount=0;
+    if(!lastDiagnostic)return;
+    const out=panel.querySelector('#bridgeFamilyDiagnostic');
+    out.hidden=false;
+    out.textContent=lastDiagnostic;
+  };
   const diagnostic=(outcome,code='')=>{
     // Fixed stage names and allowlisted error codes only: never log exceptions,
     // tokens, UUIDs, paths, phone numbers or raw server response bodies.
@@ -618,6 +632,7 @@ async function showOwnerBridgeFolder(){
     const allowedCodes=new Set(['permission_denied','bridge_owner_login_required','bridge_owner_backend_unavailable','bridge_owner_denied','bridge_owner_request_failed','bridge_owner_invalid_response','bridge_owner_keystore_failed','bridge_owner_invalid_local_registration','bridge_owner_device_unavailable','bridge_owner_activation_denied','bridge_owner_control_denied','bridge_tx_notifications_required','bridge_tx_permission_or_device_missing','bridge_tx_cannot_start','unknown']);
     const stage=allowedStages.has(activationStage)?activationStage:'verification';
     const safeCode=allowedCodes.has(code)?code:'unknown';
+    lastDiagnostic='Bridge '+stage+' / '+safeCode;
     console.info('[FreePT Bridge activation]',{stage,outcome:outcome==='success'?'success':'failure',code:safeCode});
   };
   const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
@@ -647,6 +662,9 @@ async function showOwnerBridgeFolder(){
   button.onclick=async()=>{
     if(working||!alive())return;
     working=true;button.disabled=true;
+    lastDiagnostic='';
+    const out=panel.querySelector('#bridgeFamilyDiagnostic');
+    out.hidden=true;out.textContent='';
     try{
       update('Attivazione…');
       activationStage='permission';

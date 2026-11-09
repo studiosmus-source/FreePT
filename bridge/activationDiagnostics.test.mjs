@@ -18,3 +18,13 @@ test('family facing UI remains minimal',()=>{
  assert.match(setup,/>Attiva<\/button>/);assert.match(setup,/update\('Non è stato possibile attivare'\)/);
  assert.doesNotMatch(setup,/status\.textContent=error/);
 });
+
+test('support diagnostics can be revealed without developer tools or a PC',()=>{
+ assert.match(setup,/id="bridgeFamilyDiagnostic" hidden/);
+ assert.match(setup,/diagnosticTapCount<5/);
+ assert.match(setup,/lastDiagnostic='Bridge '\+stage\+' \/ '\+safeCode/);
+ assert.match(setup,/out\.textContent=lastDiagnostic/);
+ assert.match(setup,/out\.hidden=false/);
+ assert.doesNotMatch(setup,/localStorage\.setItem\(/);
+ assert.doesNotMatch(setup,/fetch\([^\n]*Diagnostic/);
+});
