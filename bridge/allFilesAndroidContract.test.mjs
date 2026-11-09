@@ -11,7 +11,7 @@ test('isolated Android install registers all-files provider and permission',()=>
   assert.match(installer,/BridgeAllFilesPlugin\.java\.template/);
 });
 test('remote TX uses wide storage only after OS permission granted',()=>{
-  assert.match(main,/const all=await bridgeAllFiles\?\.status\(\)/);
+  assert.match(main,/bridgeAllFiles\.status\(\)/);
   assert.match(main,/registerPlugin\('BridgeTxControl'\)/);
   assert.match(main,/bridgeTxControl\.start\(\)/);
   assert.match(main,/bridgeAllFiles\.requestPermission\(\)/);
