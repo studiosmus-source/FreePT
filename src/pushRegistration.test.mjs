@@ -128,3 +128,25 @@ test('logout during token upsert revokes completed registration even if profile 
   await Promise.all([registration,logout]);
   assert.deepEqual(removed,[['token','token-a','user_id','user-a']]);
 });
+
+test('same approved account can register again after logout completes',async()=>{
+  let user={id:'user-a'},callback,registers=0;
+  const push=createPushRegistration({
+    plugin:{addListener:async(name,fn)=>{if(name==='registration')callback=fn},
+      checkPermissions:async()=>({receive:'granted'}),
+      register:async()=>{registers++;await callback({value:'token-'+registers})}},
+    db:{from:()=>({
+      upsert:async()=>({error:null}),
+      delete:()=>({eq:()=>({eq:async()=>({error:null})})})
+    })},getApprovedUser:()=>user,onMessage:()=>{}
+  });
+  await push.init();
+  await push.clear('user-a');
+  await push.init();
+  assert.equal(registers,1,'logout guard must remain active');
+  user=null;
+  await push.sessionEnded();
+  user={id:'user-a'};
+  await push.init();
+  assert.equal(registers,2,'fresh login must register again');
+});
