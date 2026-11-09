@@ -68,5 +68,14 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
       token=null;tokenOwner=null;
     }
   }
-  return Object.freeze({init,clear});
+  // Called only after the authenticated session and local user are cleared.
+  // Keep the logout guard active until then, but permit a fresh login of
+  // the same account without requiring the Android process to restart.
+  async function sessionEnded(){
+    if(getApprovedUser()?.id)return;
+    if(pending)await Promise.allSettled([pending]);
+    await Promise.allSettled([...inFlightRegistrations]);
+    if(!getApprovedUser()?.id)closingOwner=null;
+  }
+  return Object.freeze({init,clear,sessionEnded});
 }
