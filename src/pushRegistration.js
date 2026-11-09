@@ -9,7 +9,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   let token=null;
   let tokenOwner=null;
   let pending=null;
-  let inFlightRegistration=null;
+  const inFlightRegistrations=new Set();
   async function init(){
     const user=getApprovedUser();
     if(!user?.id)return;
@@ -35,9 +35,9 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
               if(removed.error)throw removed.error;
             }
             })();
-            inFlightRegistration=operation;
+            inFlightRegistrations.add(operation);
             try{return await operation;}
-            finally{if(inFlightRegistration===operation)inFlightRegistration=null;}
+            finally{inFlightRegistrations.delete(operation);}
           });
           await plugin.addListener('registrationError',()=>{});
           await plugin.addListener('pushNotificationReceived',()=>onMessage());
@@ -58,7 +58,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   async function clear(ownerId){
     // Await a registration already in flight so logout cannot leave a token
     // behind due to an asynchronous database upsert.
-    if(inFlightRegistration)await inFlightRegistration;
+    await Promise.allSettled([...inFlightRegistrations]);
     if(token&&tokenOwner===ownerId){
       const {error}=await db.from('push_devices').delete()
         .eq('token',token).eq('user_id',ownerId);
