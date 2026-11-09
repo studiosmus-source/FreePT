@@ -13,7 +13,8 @@ const bearer=headers=>{
 const fail=(status,error)=>({status,body:{error}});
 export function createBridgeOwnerEnrollmentHandler({
   authClient,profilesClient,rpcClient,newDeviceId=randomUUID,
-  randomBytesFn=randomBytes
+  randomBytesFn=randomBytes,
+  onAuthDiagnostic=reason=>console.warn('bridge_owner_auth_rejected',reason)
 }={}){
   if(typeof authClient?.auth?.getUser!=='function'||
      typeof profilesClient?.from!=='function'||
@@ -21,18 +22,20 @@ export function createBridgeOwnerEnrollmentHandler({
      typeof newDeviceId!=='function'||typeof randomBytesFn!=='function')
     throw Error('bridge_owner_enrollment_dependencies_invalid');
   async function ownerId(token){
+    const rejected=reason=>{onAuthDiagnostic(reason);return null;};
     try{
       const response=await authClient.auth.getUser(token);
       const user=response?.data?.user;
       if(response?.error||!UUID.test(user?.id)||user.is_anonymous===true)
-        return null;
+        return rejected('token_invalid_or_anonymous');
       const answer=await profilesClient.from('profiles')
         .select('id,role,status').eq('id',user.id).maybeSingle();
-      if(answer?.error||answer?.data?.id!==user.id||
-         answer.data.status!=='approved'||
-         !['user','admin'].includes(answer.data.role))return null;
+      if(answer?.error)return rejected('profile_query_failed');
+      if(answer?.data?.id!==user.id)return rejected('profile_missing');
+      if(answer.data.status!=='approved')return rejected('profile_not_approved');
+      if(!['user','admin'].includes(answer.data.role))return rejected('profile_role_invalid');
       return user.id;
-    }catch{return null;}
+    }catch{return rejected('auth_or_profile_exception');}
   }
   return async function handleBridgeOwnerEnrollment(req){
     if(req?.method!=='POST')return fail(405,'method_not_allowed');
