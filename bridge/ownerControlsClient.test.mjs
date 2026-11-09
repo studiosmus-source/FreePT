@@ -64,3 +64,29 @@ test('closed session and RPC errors fail closed',async()=>{
   await assert.rejects(()=>noAuth.device(DEVICE),/login_required/);
   assert.equal(f.calls.length,0);
 });
+
+test('family activation uses one owner-scoped server RPC, never recipient ids from the screen',async()=>{
+  const calls=[];
+  const db={
+    from(table){
+      assert.equal(table,'bridge_devices');
+      return {select:()=>({eq:()=>({eq:()=>({
+        maybeSingle:async()=>({data:{id:DEVICE,owner_id:OWNER,bridge_enabled:false},error:null})
+      })})})};
+    },
+    async rpc(name,args){
+      calls.push({name,args});
+      return {data:ADMIN,error:null};
+    }
+  };
+  const auth={getSession:async()=>({data:{session:{
+    access_token:'a'.repeat(40),user:{id:OWNER}
+  }}})};
+  const client=createBridgeOwnerControls({db,auth});
+  assert.equal(await client.activateFamily(DEVICE),true);
+  assert.deepEqual(calls,[{
+    name:'bridge_owner_activate_family',args:{p_device_id:DEVICE}
+  }]);
+  await assert.rejects(()=>client.activateFamily('invalid'),/invalid_control/);
+  assert.equal(calls.length,1);
+});

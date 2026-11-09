@@ -9,6 +9,7 @@ on:
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
+      - 'supabase/migrations/20261109_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
       - 'package.json'
       - 'src/**'
@@ -19,6 +20,7 @@ on:
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
+      - 'supabase/migrations/20261109_bridge_*.sql'
       - 'supabase/bridge_preflight.sql'
       - 'package.json'
       - 'src/**'
@@ -140,3 +142,7 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_device_enrollment_staging.sql
       - name: Verify enrollment privileges, ownership and deletion
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-device-enrollment.sql
+      - name: Install explicit one-tap family activation on disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261109_bridge_family_activation_staging.sql
+      - name: Verify owner-only consent, unique approved admin and failure isolation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql

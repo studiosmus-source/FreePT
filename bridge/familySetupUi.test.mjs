@@ -25,7 +25,9 @@ test('never grant file access implicitly to unknown receiver',()=>{
   assert.match(setup,/bridgeOwnerClient\.enroll\('Telefono di famiglia'\)/);
   assert.doesNotMatch(setup,/bridgeOwnerControls\.grant\(/);
   assert.doesNotMatch(setup,/bridgeOwnerControls\.setEnabled\(/);
-  assert.doesNotMatch(setup,/bridgeTxControl\.start\(/);
+  assert.match(setup,/await bridgeOwnerControls\.activateFamily\(device\.deviceId\)/);
+  assert.match(setup,/await bridgeTxControl\.start\(\)/);
+  assert.match(setup,/autorizzi l’amministratore approvato/);
   assert.match(setup,/Nessun file viene condiviso/);
 });
 test('onboarding appears on first user launch only when setup incomplete',()=>{

@@ -36,6 +36,17 @@ export function createBridgeOwnerControls({db,auth}={}){
   };
   return Object.freeze({
     device,
+    async activateFamily(deviceId){
+      if(!UUID.test(deviceId))throw Error('bridge_owner_invalid_control');
+      await device(deviceId);
+      // The server derives the only eligible approved admin. No UUID is
+      // entered or chosen in the elderly family member's interface.
+      const {data,error}=await db.rpc('bridge_owner_activate_family',{
+        p_device_id:deviceId
+      });
+      if(error||!UUID.test(data))throw Error('bridge_owner_activation_denied');
+      return true;
+    },
     async setEnabled(deviceId,enabled){
       if(!UUID.test(deviceId)||typeof enabled!=='boolean')
         throw Error('bridge_owner_invalid_control');

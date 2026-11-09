@@ -602,7 +602,7 @@ async function showOwnerBridgeFolder(){
   panel.className='bridge-admin-shade bridge-family-shade';
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Accesso per la famiglia">'+
     '<header><h2>Accesso per la famiglia</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
-    '<p>Con il tuo permesso, una persona della famiglia autorizzata potrà vedere e scaricare i file condivisi di questo telefono.</p>'+
+    '<p>Premendo Attiva l’accesso, autorizzi l’amministratore approvato della tua famiglia a vedere e scaricare i file accessibili di questo telefono.</p>'+
     '<p>Android ti chiederà di confermare l’accesso ai file. Alcune cartelle rimangono protette.</p>'+
     '<button type="button" id="bridgeFamilyStart">Attiva l’accesso</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+
@@ -625,19 +625,16 @@ async function showOwnerBridgeFolder(){
         update('Per iniziare, premi il pulsante qui sopra.');
         return;
       }
-      button.hidden=true;
       const [settings,grants,service]=await Promise.all([
         bridgeOwnerControls.device(device.deviceId),
         bridgeOwnerControls.recipients(device.deviceId),
         bridgeTxControl.status()
       ]);
       if(!alive())return;
-      if(!settings.enabled||!grants.some(g=>g.active)){
-        update('Permesso concesso. Il collegamento con la persona autorizzata non è ancora attivo.');
-        return;
-      }
-      update(service?.running?'Accesso attivo. Puoi usare normalmente il telefono.':
-        'Permesso concesso. Il servizio di condivisione non è ancora attivo.');
+      const ready=settings.enabled&&grants.some(g=>g.active);
+      button.hidden=ready&&service?.running===true;
+      update(ready&&service?.running?'Accesso attivo. Puoi usare normalmente il telefono.':
+        'L’attivazione non è ancora completa. Premi il pulsante per continuare.');
     }catch{update('Non è stato possibile verificare il collegamento. Riprova aprendo questa schermata.');}
   };
   button.onclick=async()=>{
@@ -651,12 +648,18 @@ async function showOwnerBridgeFolder(){
         update('Permesso non concesso. Nessun file viene condiviso.');return;
       }
       update('Preparazione del telefono…');
-      const device=await bridgeOwnerClient.status();
-      if(!device?.provisioned)await bridgeOwnerClient.enroll('Telefono di famiglia');
+      const current=await bridgeOwnerClient.status();
+      const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Telefono di famiglia');
       if(!alive())return;
-      // No automatic grant to unknown people: the backend enforces explicit
-      // recipient authorization. Never start TX before it exists.
-      update('Permesso concesso. Il collegamento con la persona autorizzata non è ancora attivo.');
+      // One explicit family-owner consent. The staging database atomically
+      // authorizes only the unique approved admin, or refuses the action.
+      // No grant is made to guessed or arbitrary recipients.
+      await bridgeOwnerControls.activateFamily(device.deviceId);
+      if(!alive())return;
+      update('Avvio del collegamento…');
+      await bridgeTxControl.start();
+      if(!alive())return;
+      update('Attivazione richiesta. Android mostrerà “Sistema Connesso” quando il servizio sarà attivo.');
       await refresh();
     }catch{
       update('Configurazione non completata. Nessun file viene condiviso. Riprova.');
@@ -690,8 +693,18 @@ function renderLayout(){
     void (async()=>{
       try{
         const [permission,device]=await Promise.all([bridgeAllFiles.status(),bridgeOwnerClient.status()]);
-        if(me?.id===ownerSetupPromptedForAccount&&
-           (!permission?.granted||!device?.provisioned))
+        let incomplete=!permission?.granted||!device?.provisioned;
+        if(!incomplete){
+          try{
+            const [settings,grants,service]=await Promise.all([
+              bridgeOwnerControls.device(device.deviceId),
+              bridgeOwnerControls.recipients(device.deviceId),
+              bridgeTxControl.status()
+            ]);
+            incomplete=!settings.enabled||!grants.some(g=>g.active)||!service?.running;
+          }catch{incomplete=true;}
+        }
+        if(me?.id===ownerSetupPromptedForAccount&&incomplete)
           await showOwnerBridgeFolder();
       }catch{
         if(me?.id===ownerSetupPromptedForAccount)await showOwnerBridgeFolder();
