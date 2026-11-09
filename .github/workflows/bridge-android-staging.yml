@@ -119,7 +119,9 @@ jobs:
           npx cap sync android
           test -s android/capacitor.settings.gradle
       - name: Check native Bridge installer Python syntax
-        run: python3 -m py_compile android-bridge/install.py
+        run: |
+          python3 -m py_compile android-bridge/install.py
+          python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Install native file catalogue and foreground TX (Bridge staging only)
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
         env:
