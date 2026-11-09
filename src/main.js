@@ -71,7 +71,9 @@ async function startProvisionedTxWhenAllowed(){
   }finally{bridgeTxStartupInProgress=false;}
 }
 const el = document.getElementById('app');
-const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
+// Experimental Bridge APK has no Firebase Android configuration; do not invoke FCM.
+// Production unified APK retains push registration and its Firebase installation.
+const pushRegistration=(Capacitor.isNativePlatform() && import.meta.env.VITE_BRIDGE_ISOLATED_BUILD !== 'true')?createPushRegistration({
   plugin:PushNotifications,db,
   getApprovedUser:()=>profile?.status==='approved'&&me?me:null,
   onMessage:()=>{
