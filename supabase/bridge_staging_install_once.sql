@@ -2,7 +2,7 @@
 -- Source: studiosmus-source/FreePT @ 98235b8446e598a801bf44c07a45f4d18ff62dcd
 -- Database target: FreePT-Bridge-Test ONLY (aqjuixbuxtnjfzxmzuj).
 -- NEVER run on the production FreePT project.
--- Combined in exact migration order of .github/workflows/bridge-checks.yml.
+-- Combined in migration order, including the family consent RPC.
 -- Transaction: if any statement fails, ROLLBACK all changes.
 -- Before running: confirm SQL Editor header reads FreePT-Bridge-Test.
 BEGIN;
@@ -20,7 +20,7 @@ END;
 $bridge_staging_preflight$;
 
 
--- ===== 1/13: 20261106_bridge_foundation.sql =====
+-- ===== 1/14: 20261106_bridge_foundation.sql =====
 -- Bridge schema DRAFT: review and test on an isolated Supabase project FIRST.
 -- Do not run against production until backend authentication and transaction
 -- boundaries are implemented. No changes to existing FreePT chat tables.
@@ -1777,6 +1777,54 @@ grant execute on function public.bridge_server_enroll_device(uuid,uuid,text,text
   to service_role;
 grant execute on function public.bridge_server_delete_device(uuid,uuid)
   to service_role;
+
+-- ===== 14/14: 20261109_bridge_family_activation_staging.sql =====
+-- STAGING ONLY: the device owner explicitly approves one named FreePT
+-- family administrator through a single guided action.
+-- Never apply to FreePT production. Fail closed when no unique approved admin.
+create or replace function public.bridge_owner_activate_family(p_device_id uuid)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $
+declare
+  v_admins uuid[];
+  v_receiver uuid;
+begin
+  if (select auth.uid()) is null
+     or not (select public.freept_is_approved()) then
+    raise exception 'bridge_owner_not_approved' using errcode='42501';
+  end if;
+  if p_device_id is null then
+    raise exception 'bridge_invalid_device' using errcode='22023';
+  end if;
+  -- Lock owner device before altering either access state. The owner is
+  -- derived from the authenticated session, never supplied by the client.
+  perform 1 from public.bridge_devices d
+    where d.id=p_device_id and d.owner_id=(select auth.uid())
+    for update;
+  if not found then
+    raise exception 'bridge_owner_required' using errcode='42501';
+  end if;
+  select array_agg(p.id order by p.id) into v_admins
+  from public.profiles p
+  where p.role='admin' and p.status='approved';
+  if coalesce(array_length(v_admins,1),0)<>1 then
+    raise exception 'bridge_unique_admin_required' using errcode='42501';
+  end if;
+  v_receiver:=v_admins[1];
+  insert into public.bridge_grants(device_id,receiver_id,approved_at,revoked_at)
+  values(p_device_id,v_receiver,clock_timestamp(),null)
+  on conflict(device_id,receiver_id) do update
+    set approved_at=excluded.approved_at,revoked_at=null;
+  update public.bridge_devices
+    set bridge_enabled=true,updated_at=clock_timestamp()
+    where id=p_device_id and owner_id=(select auth.uid());
+  return v_receiver;
+end;
+$;
+revoke all on function public.bridge_owner_activate_family(uuid) from public,anon;
+grant execute on function public.bridge_owner_activate_family(uuid) to authenticated;
+
 
 COMMIT;
 -- CHECK (read only):

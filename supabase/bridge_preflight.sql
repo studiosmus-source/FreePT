@@ -44,6 +44,12 @@ with checks as (
     and not coalesce(has_function_privilege(
       'anon', to_regprocedure('public.bridge_owner_revoke(uuid,uuid)'), 'EXECUTE'
     ), false)
+  union all select 'Attivazione famiglia disponibile solo agli utenti approvati',
+    to_regprocedure('public.bridge_owner_activate_family(uuid)') is not null
+    and coalesce(has_function_privilege('authenticated',
+      to_regprocedure('public.bridge_owner_activate_family(uuid)'), 'EXECUTE'),false)
+    and not coalesce(has_function_privilege('anon',
+      to_regprocedure('public.bridge_owner_activate_family(uuid)'), 'EXECUTE'),false)
   union all select 'Credenziali per dispositivo presenti',
     to_regclass('public.bridge_device_verifiers') is not null
   union all select 'Credenziali Bridge con RLS',
