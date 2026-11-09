@@ -53,3 +53,17 @@ test('logout waits for an in-flight token registration and removes it',async()=>
   await Promise.all([registration,logout]);
   assert.deepEqual(removed,[['token','token-a','user_id','user-a']]);
 });
+
+test('late registration event is ignored during logout',async()=>{
+  let user={id:'user-a'},callback,writes=0;
+  const push=createPushRegistration({
+    plugin:{addListener:async(name,fn)=>{if(name==='registration')callback=fn},
+      checkPermissions:async()=>({receive:'granted'}),register:async()=>{}},
+    db:{from:()=>({upsert:async()=>{writes++;return {error:null}}})},
+    getApprovedUser:()=>user,onMessage:()=>{}
+  });
+  await push.init();
+  await push.clear('user-a');
+  await callback({value:'late-token'});
+  assert.equal(writes,0);
+});
