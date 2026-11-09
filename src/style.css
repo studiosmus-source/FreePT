@@ -89,3 +89,14 @@ html,body,#app{min-height:100%;height:100%}
 .bridge-owner-pairing label{display:block;font-size:13px;margin:8px 0 4px}
 .bridge-owner-pairing input{width:100%;min-width:0;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #bcc8d5}
 .bridge-owner-pairing button:disabled{opacity:.55}
+
+/* Family-facing setup: a single clear action; system consent remains Android-owned. */
+.bridge-family-shade{padding:12px;align-items:center}
+.bridge-family-panel{width:min(100%,420px);max-height:min(78dvh,650px);overflow-y:auto;padding:22px 18px;box-sizing:border-box}
+.bridge-family-panel header{gap:12px}
+.bridge-family-panel header button{flex:none;min-width:auto}
+.bridge-family-panel>p{font-size:16px;line-height:1.5;margin:16px 0;overflow-wrap:break-word}
+.bridge-family-panel #bridgeFamilyStart{display:block;width:100%;font-size:18px;min-height:54px;white-space:normal}
+.bridge-family-panel #bridgeFamilyStart[hidden]{display:none!important}
+.bridge-family-panel #bridgeFamilyStatus{font-size:16px;font-weight:600;color:#194969}
+@media(max-height:480px){.bridge-family-panel{max-height:calc(100dvh - 24px)}}

@@ -72,6 +72,7 @@ let deleteMigrationReady = true;
 let adminPeopleQuery = '';
 let adminPeopleStatus = 'all';
 let chatFilesCleanup=null;
+let ownerSetupPromptedForAccount = null;
 let filePickerActive = false;
 let filePickerReturned = false;
 let filePickerClearTimer = null;
@@ -593,264 +594,78 @@ function showAdminBridge(){
  * The user selects exactly one tree through Android's system picker.
  */
 async function showOwnerBridgeFolder(){
-  if(!bridgeFiles||!me||profile?.status!=='approved'||
-     (profile.role!=='user' && !(profile.role==='admin'&&adminUnlocked)))return;
+  if(!bridgeAllFiles||!bridgeOwnerClient||!bridgeCredentials||
+     !me||profile?.status!=='approved'||profile.role!=='user')return;
   document.getElementById('ownerBridgePanel')?.remove();
   const panel=document.createElement('div');
-  panel.id='ownerBridgePanel';panel.className='bridge-admin-shade';
-  panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Cartella Bridge">'+
-    '<header><h2>Cartella Bridge</h2><button type="button" id="closeOwnerBridge">Chiudi</button></header>'+
-    '<p>Memoria condivisa del telefono: Android può proteggere alcune cartelle.</p>'+
-    '<div class="bridge-owner-actions"><button type="button" id="allowAllOwnerFiles">Consenti accesso ai file</button><button type="button" id="chooseOwnerFolder">Scegli cartella</button>'+
-    '<button type="button" id="clearOwnerFolder">Rimuovi autorizzazione</button></div>'+
-    (bridgeOwnerClient?'<section class="bridge-owner-pairing"><h3>Associazione telefono Bridge</h3>'+
-      '<p>Associazione esplicita sul server di prova. La registrazione non concede accesso remoto e non avvia la trasmissione.</p>'+
-      '<label for="bridgeOwnerLabel">Nome telefono</label><input id="bridgeOwnerLabel" maxlength="100" placeholder="Il mio Android">'+
-      '<div class="bridge-owner-actions"><button type="button" id="bridgeOwnerEnroll">Registra telefono</button>'+
-      '<button type="button" id="bridgeOwnerDelete">Revoca telefono</button></div>'+
-      '<p id="bridgeOwnerPairStatus" role="status"></p>'+
-      '<div id="bridgeOwnerGrantControls"></div></section>':'')+
-    '<div id="ownerBridgeContents" role="status"></div></section>';
+  panel.id='ownerBridgePanel';
+  panel.className='bridge-admin-shade bridge-family-shade';
+  panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Accesso per la famiglia">'+
+    '<header><h2>Accesso per la famiglia</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
+    '<p>Con il tuo permesso, una persona della famiglia autorizzata potrà vedere e scaricare i file condivisi di questo telefono.</p>'+
+    '<p>Android ti chiederà di confermare l’accesso ai file. Alcune cartelle rimangono protette.</p>'+
+    '<button type="button" id="bridgeFamilyStart">Attiva l’accesso</button>'+
+    '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+
+    '</section>';
   document.body.appendChild(panel);
-  const area=panel.querySelector('#ownerBridgeContents');
-  let browsingProvider=bridgeFiles;
-  const stack=[{handle:'root',name:'Cartella scelta'}];
-  let generation=0;
-  const ownerId=me.id;
-  const alive=()=>panel.isConnected&&me?.id===ownerId&&profile?.status==='approved'&&
-    (profile.role==='user'||(profile.role==='admin'&&adminUnlocked));
-  if(bridgeOwnerClient){
-    const label=panel.querySelector('#bridgeOwnerLabel');
-    const enroll=panel.querySelector('#bridgeOwnerEnroll');
-    const revoke=panel.querySelector('#bridgeOwnerDelete');
-    const status=panel.querySelector('#bridgeOwnerPairStatus');
-    let pairing=false;
-    const refresh=async()=>{
+  const button=panel.querySelector('#bridgeFamilyStart');
+  const status=panel.querySelector('#bridgeFamilyStatus');
+  const currentOwner=me.id;
+  let working=false;
+  const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
+  const update=message=>{if(alive())status.textContent=message;};
+  panel.querySelector('#closeOwnerBridge').onclick=()=>panel.remove();
+  const refresh=async()=>{
+    if(!alive())return;
+    try{
+      const [permission,device]=await Promise.all([bridgeAllFiles.status(),bridgeOwnerClient.status()]);
       if(!alive())return;
-      try{
-        const current=await bridgeOwnerClient.status();
-        if(!alive())return;
-        status.textContent=current?.provisioned
-          ?'Telefono registrato (disattivato finché non autorizzi una condivisione).'
-          :'Questo telefono non è ancora registrato sul Bridge.';
-        enroll.disabled=!!current?.provisioned;
-        revoke.disabled=!current?.provisioned;
-        label.disabled=!!current?.provisioned;
-        enroll.textContent=current?.provisioned?'Telefono già collegato':'Registra telefono';
-      }catch{if(alive())status.textContent='Stato credenziale non disponibile.';}
-    };
-    enroll.onclick=async()=>{
-      if(pairing||!alive())return;
-      if(!confirm('Registrare questo telefono sul Bridge di prova? Non avvia la condivisione.'))return;
-      pairing=true;enroll.disabled=true;revoke.disabled=true;
-      status.textContent='Registrazione del telefono…';
-      try{
-        const linked=await bridgeOwnerClient.enroll(label.value);
-        if(alive())status.textContent=linked.alreadyProvisioned?
-          'Telefono già registrato: configurazione conservata.':
-          'Telefono registrato. Puoi continuare senza ripetere la registrazione.';
-      }catch{if(alive())status.textContent='Registrazione non completata. Controlla il collegamento al server di prova.';}
-      finally{pairing=false;await refresh();if(alive())await renderGrants();}
-    };
-    revoke.onclick=async()=>{
-      if(pairing||!alive())return;
-      if(!confirm('Revocare definitivamente questo telefono sul server Bridge?'))return;
-      pairing=true;enroll.disabled=true;revoke.disabled=true;
-      status.textContent='Revoca del dispositivo…';
-      try{
-        await bridgeOwnerClient.remove();
-        if(alive())status.textContent='Dispositivo revocato.';
-      }catch{if(alive())status.textContent='Revoca non completata: ritenta quando il server è disponibile.';}
-      finally{pairing=false;await refresh();if(alive())await renderGrants();}
-    };
-    const grantsArea=panel.querySelector('#bridgeOwnerGrantControls');
-    let grantBusy=false;
-    const renderGrants=async()=>{
-      if(!alive()||grantBusy)return;
-      const account=await bridgeOwnerClient.status();
-      if(!alive())return;
-      grantsArea.replaceChildren();
-      if(!account?.provisioned)return;
-      let current,grants;
-      try{
-        current=await bridgeOwnerControls.device(account.deviceId);
-        grants=await bridgeOwnerControls.recipients(account.deviceId);
-      }catch{
-        grantsArea.textContent='Le autorizzazioni Bridge non sono ancora disponibili sul server di prova.';
+      if(!permission?.granted||!device?.provisioned){
+        button.hidden=false;
+        update('Per iniziare, premi il pulsante qui sopra.');
         return;
       }
-      const enabled=document.createElement('button');
-      enabled.type='button';
-      enabled.textContent=current.enabled?'Disattiva condivisione Bridge':'Attiva condivisione Bridge';
-      grantsArea.appendChild(enabled);
-      const heading=document.createElement('p');
-      heading.textContent='Consenti l’accesso soltanto a un amministratore approvato. La cartella resta quella scelta da te.';
-      grantsArea.appendChild(heading);
-      const field=document.createElement('input');
-      field.placeholder='ID amministratore autorizzato (UUID)';
-      field.setAttribute('aria-label','Identificativo amministratore da autorizzare');
-      field.maxLength=36;
-      const grant=document.createElement('button');
-      grant.type='button';grant.textContent='Autorizza amministratore';
-      grantsArea.append(field,grant);
-      const update=async action=>{
-        if(grantBusy||!alive())return;
-        grantBusy=true;
-        for(const button of grantsArea.querySelectorAll('button'))button.disabled=true;
-        try{
-          await action();
-          if(alive())status.textContent='Autorizzazioni aggiornate. Il trasferimento richiede comunque un collegamento remoto attivo.';
-        }catch{
-          if(alive())status.textContent='Autorizzazione non aggiornata. Controlla il server Bridge di prova.';
-        }finally{grantBusy=false;if(alive())void renderGrants();}
-      };
-      enabled.onclick=()=>void update(async()=>{
-        if(current.enabled||confirm('Attivare Bridge per il telefono e gli amministratori autorizzati?'))
-          await bridgeOwnerControls.setEnabled(account.deviceId,!current.enabled);
-      });
-      grant.onclick=()=>void update(async()=>{
-        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(field.value.trim()))
-          throw Error('bridge_invalid_receiver');
-        if(!confirm('Autorizzare questo amministratore alla cartella Bridge selezionata?'))return;
-        await bridgeOwnerControls.grant(account.deviceId,field.value.trim());
-      });
-      if(current.enabled && grants.some(x=>x.active)&&bridgeTxControl){
-        const respond=document.createElement('button');
-        respond.type='button';
-        grantsArea.appendChild(respond);
-        const updateState=async()=>{
-          const result=await bridgeTxControl.status();
-          if(alive())respond.textContent=result?.running?
-            'Interrompi Sistema Connesso':'Avvia Sistema Connesso';
-        };
-        respond.onclick=async()=>{
-          if(!alive())return;
-          respond.disabled=true;
-          try{
-            const state=await bridgeTxControl.status();
-            if(state?.running){
-              await bridgeTxControl.stop();
-              status.textContent='Condivisione interrotta. Rimarrà sospesa.';
-            }else{
-              await bridgeTxControl.start();
-              status.textContent='Sistema Connesso avviato sul telefono.';
-            }
-            await updateState();
-          }catch{
-            if(alive())status.textContent='Controlla autorizzazioni Android e collegamento Bridge.';
-          }finally{if(alive())respond.disabled=false;}
-        };
-        void updateState();
+      button.hidden=true;
+      const [settings,grants,service]=await Promise.all([
+        bridgeOwnerControls.device(device.deviceId),
+        bridgeOwnerControls.recipients(device.deviceId),
+        bridgeTxControl.status()
+      ]);
+      if(!alive())return;
+      if(!settings.enabled||!grants.some(g=>g.active)){
+        update('Permesso concesso. Il collegamento con la persona autorizzata non è ancora attivo.');
+        return;
       }
-      for(const item of grants){
-        const line=document.createElement('div');
-        const label=document.createElement('span');
-        label.textContent='Amministratore '+item.receiverId+' · '+(item.active?'autorizzato':'revocato');
-        line.appendChild(label);
-        if(item.active){
-          const revoke=document.createElement('button');
-          revoke.type='button';revoke.textContent='Revoca';
-          revoke.onclick=()=>void update(async()=>{
-            if(confirm('Revocare immediatamente l’accesso di questo amministratore?'))
-              await bridgeOwnerControls.revoke(account.deviceId,item.receiverId);
-          });
-          line.appendChild(revoke);
-        }
-        grantsArea.appendChild(line);
-      }
-    };
-    void (async()=>{await refresh();if(alive())await renderGrants();})();
-  }
-  const draw=async(offset=0)=>{
-    if(!alive())return;
-    const revision=++generation;
-    const current=stack.at(-1);
-    if(offset===0)area.textContent='Lettura cartella…';
-    try{
-      const response=validateBridgeFolderPage(await browsingProvider.list({handle:current.handle,offset}));
-      if(!alive()||revision!==generation)return;
-      if(offset===0)area.innerHTML='<div class="bridge-owner-path">'+esc(stack.map(x=>x.name).join(' / '))+'</div>'+
-        (stack.length>1?'<button type="button" id="ownerBridgeBack">‹ Indietro</button>':'')+
-        '<div id="ownerBridgeEntries"></div>';
-      const back=area.querySelector('#ownerBridgeBack');
-      if(back)back.onclick=()=>{stack.pop();void draw();};
-      const entries=area.querySelector('#ownerBridgeEntries');
-      for(const item of response.entries||[]){
-        const row=document.createElement('button');
-        row.type='button';row.className='bridge-owner-entry';
-        row.textContent=(item.directory?'📁 ':'📄 ')+String(item.name||'Senza nome');
-        row.onclick=async()=>{
-          if(!alive())return;
-          if(item.directory){stack.push({handle:item.handle,name:item.name||'Cartella'});await draw();}
-          else if(item.size>=0&&item.size<=65536 &&
-              (/^text\//.test(item.mime)||item.mime==='application/json')){
-            const rev=++generation;
-            area.textContent='Lettura anteprima…';
-            try{
-              const request=validateBridgeReadRequest({handle:item.handle,offset:0,length:Math.max(1,item.size)});
-              const data=validateBridgeFileChunk(await browsingProvider.readChunk(request),request.length);
-              if(!alive()||rev!==generation)return;
-              const binary=atob(data.base64||'');
-              const bytes=Uint8Array.from(binary,ch=>ch.charCodeAt(0));
-              area.innerHTML='<button type="button" id="ownerBridgePreviewBack">‹ Indietro</button>'+
-                '<h3>'+esc(item.name)+'</h3><pre class="bridge-owner-preview">'+
-                esc(new TextDecoder().decode(bytes))+'</pre>';
-              area.querySelector('#ownerBridgePreviewBack').onclick=()=>void draw();
-            }catch{if(alive())area.textContent='Anteprima non disponibile per questo file.';}
-          }else{
-            area.textContent='File riconosciuto. La lettura di anteprime grandi e il download remoto non sono ancora attivati.';
-          }
-        };
-        entries.appendChild(row);
-      }
-      if(response.nextOffset>=0){
-        const more=document.createElement('button');
-        more.type='button';more.textContent='Carica altri file';
-        more.onclick=()=>{more.remove();void draw(response.nextOffset);};
-        entries.appendChild(more);
-      }
-      if(!response.entries?.length&&offset===0){
-        const empty=document.createElement('p');
-        empty.textContent='Cartella vuota.';entries.appendChild(empty);
-      }
-    }catch(error){
-      if(alive()&&revision===generation)
-        area.textContent='Impossibile leggere la cartella: '+friendly(error);
-    }
+      update(service?.running?'Accesso attivo. Puoi usare normalmente il telefono.':
+        'Permesso concesso. Il servizio di condivisione non è ancora attivo.');
+    }catch{update('Non è stato possibile verificare il collegamento. Riprova aprendo questa schermata.');}
   };
-  panel.querySelector('#allowAllOwnerFiles').onclick=async()=>{
-    if(!alive()||!bridgeAllFiles)return;
+  button.onclick=async()=>{
+    if(working||!alive())return;
+    working=true;button.disabled=true;
     try{
+      update('Apertura dei permessi Android…');
       const permission=await bridgeAllFiles.requestPermission();
       if(!alive())return;
-      if(!permission?.granted){area.textContent='Autorizzazione non concessa da Android.';return;}
-      browsingProvider=bridgeAllFiles;
-      stack.splice(0,stack.length,{handle:'root',name:'Memoria condivisa'});
-      await draw();
-    }catch{if(alive())area.textContent='Impossibile aprire le autorizzazioni Android.';}
-  };
-  panel.querySelector('#closeOwnerBridge').onclick=()=>{generation++;panel.remove();};
-  panel.querySelector('#chooseOwnerFolder').onclick=async()=>{
-    try{await bridgeFiles.chooseFolder();browsingProvider=bridgeFiles;stack.splice(0,stack.length,{handle:'root',name:'Cartella scelta'});await draw();}
-    catch(error){if(alive())area.textContent='Selezione annullata o non disponibile.';}
-  };
-  panel.querySelector('#clearOwnerFolder').onclick=async()=>{
-    if(!confirm('Rimuovere il permesso di lettura della cartella da FreePT Bridge?'))return;
-    try{await bridgeFiles.clearFolder();generation++;area.textContent='Autorizzazione rimossa dal telefono.';}
-    catch{area.textContent='Non è stato possibile rimuovere il permesso.';}
-  };
-  try{
-    const all=await bridgeAllFiles?.status();
-    if(all?.granted){
-      browsingProvider=bridgeAllFiles;
-      stack.splice(0,stack.length,{handle:'root',name:'Memoria condivisa'});
-      if(alive())await draw();
-    }else{
-      const selected=await bridgeFiles.getFolder();
-      if(alive())if(selected.selected)await draw();
-      else area.textContent='Autorizza i file tramite Android per continuare.';
+      if(permission?.granted!==true){
+        update('Permesso non concesso. Nessun file viene condiviso.');return;
+      }
+      update('Preparazione del telefono…');
+      const device=await bridgeOwnerClient.status();
+      if(!device?.provisioned)await bridgeOwnerClient.enroll('Telefono di famiglia');
+      if(!alive())return;
+      // No automatic grant to unknown people: the backend enforces explicit
+      // recipient authorization. Never start TX before it exists.
+      update('Permesso concesso. Il collegamento con la persona autorizzata non è ancora attivo.');
+      await refresh();
+    }catch{
+      update('Configurazione non completata. Nessun file viene condiviso. Riprova.');
+    }finally{
+      working=false;
+      if(alive())button.disabled=false;
     }
-  }catch{if(alive())area.textContent='Accesso ai file Android non disponibile.';}
+  };
+  await refresh();
 }
 
 function renderLayout(){
@@ -862,12 +677,27 @@ function renderLayout(){
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
     '<strong class="grow" id="chatTitle">Servizio</strong>'+
     (admin?'<button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
-    (!admin&&bridgeFiles?'<button type="button" id="ownerBridgeFolder">Cartella Bridge</button>':'')+'</div>'+
+    (!admin&&bridgeOwnerClient?'<button type="button" id="ownerBridgeFolder">Accesso famiglia</button>':'')+'</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
     '<button id="sendBtn">Invia</button><span class="chosen-file" data-file-name></span></form>'+
     '<p id="status" class="hint"></p></section></div></div>';
+  if(!admin&&bridgeOwnerClient&&me?.id&&ownerSetupPromptedForAccount!==me.id){
+    ownerSetupPromptedForAccount=me.id;
+    // Opening a consent sheet does not request any Android permission:
+    // only the user's explicit button press begins Android system prompts.
+    void (async()=>{
+      try{
+        const [permission,device]=await Promise.all([bridgeAllFiles.status(),bridgeOwnerClient.status()]);
+        if(me?.id===ownerSetupPromptedForAccount&&
+           (!permission?.granted||!device?.provisioned))
+          await showOwnerBridgeFolder();
+      }catch{
+        if(me?.id===ownerSetupPromptedForAccount)await showOwnerBridgeFolder();
+      }
+    })();
+  }
   if(admin){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
