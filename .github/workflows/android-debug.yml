@@ -29,6 +29,13 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: JavaScript syntax check
         run: node --check src/main.js
+      - name: Verify unified Bridge runtime configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f src/bridgeRuntimeConfig.test.mjs; then
+            node --test src/bridgeRuntimeConfig.test.mjs
+          fi
       - name: Bridge regression tests when Bridge sources are present
         shell: bash
         run: |
