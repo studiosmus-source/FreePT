@@ -67,3 +67,16 @@ test('late registration event is ignored during logout',async()=>{
   await callback({value:'late-token'});
   assert.equal(writes,0);
 });
+
+test('denied notification permission never calls native register on later renders',async()=>{
+  let checks=0,registers=0;
+  const push=createPushRegistration({
+    plugin:{addListener:async()=>{},checkPermissions:async()=>{checks++;return {receive:'denied'}},
+      register:async()=>{registers++}},
+    db:{from:()=>({})},getApprovedUser:()=>({id:'user-a'}),onMessage:()=>{}
+  });
+  await push.init();
+  await push.init();
+  assert.equal(checks,2);
+  assert.equal(registers,0);
+});
