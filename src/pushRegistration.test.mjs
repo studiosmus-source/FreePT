@@ -150,3 +150,24 @@ test('same approved account can register again after logout completes',async()=>
   await push.init();
   assert.equal(registers,2,'fresh login must register again');
 });
+
+test('logout while permission is pending allows safe same-account re-login',async()=>{
+  let user={id:'user-a'},release,registers=0;
+  const gate=new Promise(resolve=>{release=resolve});
+  const push=createPushRegistration({
+    plugin:{addListener:async()=>{},
+      checkPermissions:async()=>{if(registers===0)await gate;return {receive:'granted'}},
+      register:async()=>{registers++}},
+    db:{from:()=>({})},getApprovedUser:()=>user,onMessage:()=>{}
+  });
+  const starting=push.init();
+  await push.clear('user-a');
+  user=null;
+  const ending=push.sessionEnded();
+  release();
+  await Promise.all([starting,ending]);
+  assert.equal(registers,0,'pending registration must not survive logout');
+  user={id:'user-a'};
+  await push.init();
+  assert.equal(registers,1,'fresh login should register');
+});
