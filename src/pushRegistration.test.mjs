@@ -80,3 +80,17 @@ test('denied notification permission never calls native register on later render
   assert.equal(checks,2);
   assert.equal(registers,0);
 });
+
+test('revoked Android permission prevents a later native registration',async()=>{
+  let permission='granted',registers=0;
+  const push=createPushRegistration({
+    plugin:{addListener:async()=>{},checkPermissions:async()=>({receive:permission}),
+      register:async()=>{registers++}},
+    db:{from:()=>({})},getApprovedUser:()=>({id:'user-a'}),onMessage:()=>{}
+  });
+  await push.init();
+  assert.equal(registers,1);
+  permission='denied';
+  await push.init();
+  assert.equal(registers,1);
+});
