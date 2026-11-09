@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test:bridge": "node --test bridge/*.test.mjs",
     "bridge:staging": "node bridge/runStaging.mjs",
-    "bridge:serve:staging": "node bridge/runHttpsStaging.mjs"
+    "bridge:serve:staging": "node bridge/runHttpsStaging.mjs",
+    "bridge:serve:production": "node bridge/runProduction.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.0",
