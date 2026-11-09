@@ -13,6 +13,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   async function init(){
     const user=getApprovedUser();
     if(!user?.id)return;
+    if(closingOwner===user.id)return;
     closingOwner=null;
     if(!pending){
       pending=(async()=>{
@@ -27,7 +28,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
               updated_at:new Date().toISOString()
             },{onConflict:'token'});
             if(error)throw error;
-            if(getApprovedUser()?.id===owner){token=result.value;tokenOwner=owner;}
+            if(getApprovedUser()?.id===owner&&closingOwner!==owner){token=result.value;tokenOwner=owner;}
             else {
               // The login changed during the network request. Revoke the
               // just-written token before allowing logout to finish.
@@ -50,7 +51,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
         let permission=await plugin.checkPermissions();
         if(permission.receive==='prompt')permission=await plugin.requestPermissions();
         if(permission.receive!=='granted')return;
-        if(getApprovedUser()?.id===user.id)await plugin.register();
+        if(getApprovedUser()?.id===user.id&&closingOwner!==user.id)await plugin.register();
       })().finally(()=>{pending=null;});
     }
     return pending;
