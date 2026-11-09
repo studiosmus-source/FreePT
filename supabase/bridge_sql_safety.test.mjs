@@ -31,3 +31,21 @@ test('production read-only readiness check does not contain writes',()=>{
  const withoutComments=preflight.replace(/^--.*$/gm,'');
  assert.doesNotMatch(withoutComments,/\b(?:insert|update|delete|drop|alter|truncate|create|grant|revoke)\s+(?:into|from|table|function|policy|trigger|on|role)?\b/i);
 });
+
+test('Bridge bundle does not create or replace unrelated FreePT functions',()=>{
+ const declared=[...sql.matchAll(/create\\s+or\\s+replace\\s+function\\s+public\\.([a-z_]+)/gi)].map(m=>m[1]);
+ assert.ok(declared.length>20);
+ assert.ok(declared.every(name=>name.startsWith('bridge_')));
+});
+test('Bridge table foreign keys reference only existing profiles or Bridge tables',()=>{
+ const refs=[...sql.matchAll(/references\\s+public\\.([a-z_]+)/gi)].map(m=>m[1]);
+ assert.ok(refs.length>5);
+ assert.ok(refs.every(name=>name==='profiles'||name.startsWith('bridge_')));
+});
+test('all Bridge security-definer function definitions set an empty search path',()=>{
+ const definitions=[...sql.matchAll(/create\\s+or\\s+replace\\s+function\\s+public\\.[a-z_]+\\s*\\([\\s\\S]*?\\)\\s*returns\\s+[\\s\\S]*?\\bas\\s+\\$\\$/gi)].map(m=>m[0]);
+ assert.ok(definitions.length>15);
+ for(const def of definitions){
+   if(/security\\s+definer/i.test(def))assert.match(def,/set\\s+search_path\\s*=\\s*''/i);
+ }
+});
