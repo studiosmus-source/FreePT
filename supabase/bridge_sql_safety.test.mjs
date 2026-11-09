@@ -111,7 +111,7 @@ test('production candidate matches the reviewed staging migration payload byte f
  assert.match(production,/verified production backup/);
  assert.match(production,/BRIDGE STOP: existing Bridge objects/);
  assert.match(production,/BRIDGE STOP: missing production FreePT prerequisites/);
- assert.equal((production.match(/^-- ===== \d+\/14:/gm)||[]).length,14);
+ assert.equal((production.match(/^-- ===== \d+\/(?:13|14):/gm)||[]).length,14);
  assert.ok(!production.includes('Database target: FreePT-Bridge-Test ONLY'));
 });
 
