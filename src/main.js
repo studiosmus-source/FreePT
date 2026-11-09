@@ -661,8 +661,23 @@ async function showOwnerBridgeFolder(){
       if(!alive())return;
       update('Attivazione richiesta. Android mostrerà “Sistema Connesso” quando il servizio sarà attivo.');
       await refresh();
-    }catch{
-      update('Configurazione non completata. Nessun file viene condiviso. Riprova.');
+    }catch(error){
+      // Only stable internal error codes are shown. Never expose tokens,
+      // server response bodies, filesystem paths or raw exception messages.
+      const safeCodes={
+        bridge_owner_backend_unavailable:'Server Bridge non raggiungibile',
+        bridge_owner_login_required:'Sessione scaduta: accedi di nuovo',
+        bridge_owner_denied:'Accesso al server Bridge negato',
+        bridge_owner_request_failed:'Registrazione telefono non riuscita',
+        bridge_owner_invalid_response:'Risposta del server non valida',
+        bridge_owner_keystore_failed:'Protezione del telefono non disponibile',
+        bridge_owner_invalid_local_registration:'Registrazione locale non valida',
+        bridge_owner_device_unavailable:'Telefono non riconosciuto dal database',
+        bridge_owner_activation_denied:'Autorizzazione familiare rifiutata dal database',
+        bridge_owner_control_denied:'Operazione rifiutata dal database'
+      };
+      const code=error instanceof Error?error.message:'';
+      update('Attivazione non riuscita: '+(safeCodes[code]||'errore Android o collegamento')+'. Nessun file viene condiviso.');
     }finally{
       working=false;
       if(alive())button.disabled=false;

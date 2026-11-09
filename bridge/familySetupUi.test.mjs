@@ -35,3 +35,11 @@ test('onboarding appears on first user launch only when setup incomplete',()=>{
   assert.match(source,/!permission\?\.granted\|\|!device\?\.provisioned/);
   assert.match(source,/Accesso famiglia/);
 });
+
+test('activation errors are shown by safe category without leaking raw messages',()=>{
+  assert.match(setup,/catch\(error\)/);
+  assert.match(setup,/bridge_owner_backend_unavailable:'Server Bridge non raggiungibile'/);
+  assert.match(setup,/bridge_owner_activation_denied:'Autorizzazione familiare rifiutata dal database'/);
+  assert.match(setup,/safeCodes\[code\]\|\|'errore Android o collegamento'/);
+  assert.doesNotMatch(setup,/update\(error\.message\)/);
+});
