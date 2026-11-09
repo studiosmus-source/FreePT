@@ -610,6 +610,16 @@ async function showOwnerBridgeFolder(){
   const status=panel.querySelector('#bridgeFamilyStatus');
   const currentOwner=me.id;
   let working=false;
+  let activationStage='idle';
+  const diagnostic=(outcome,code='')=>{
+    // Fixed stage names and allowlisted error codes only: never log exceptions,
+    // tokens, UUIDs, paths, phone numbers or raw server response bodies.
+    const allowedStages=new Set(['permission','local-device','enrollment','family-grant','service-start','verification']);
+    const allowedCodes=new Set(['permission_denied','bridge_owner_login_required','bridge_owner_backend_unavailable','bridge_owner_denied','bridge_owner_request_failed','bridge_owner_invalid_response','bridge_owner_keystore_failed','bridge_owner_invalid_local_registration','bridge_owner_device_unavailable','bridge_owner_activation_denied','bridge_owner_control_denied','bridge_tx_notifications_required','bridge_tx_permission_or_device_missing','bridge_tx_cannot_start','unknown']);
+    const stage=allowedStages.has(activationStage)?activationStage:'verification';
+    const safeCode=allowedCodes.has(code)?code:'unknown';
+    console.info('[FreePT Bridge activation]',{stage,outcome:outcome==='success'?'success':'failure',code:safeCode});
+  };
   const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
   const update=message=>{if(alive())status.textContent=message;};
   panel.querySelector('#closeOwnerBridge').onclick=()=>panel.remove();
@@ -639,26 +649,35 @@ async function showOwnerBridgeFolder(){
     working=true;button.disabled=true;
     try{
       update('Attivazione…');
+      activationStage='permission';
       const permission=await bridgeAllFiles.requestPermission();
       if(!alive())return;
       if(permission?.granted!==true){
+        diagnostic('failure','permission_denied');
         update('Non è stato possibile attivare');return;
       }
       update('Attivazione…');
+      activationStage='local-device';
       const current=await bridgeOwnerClient.status();
+      activationStage='enrollment';
       const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Telefono di famiglia');
       if(!alive())return;
       // One explicit family-owner consent. The staging database atomically
       // authorizes only the unique approved admin, or refuses the action.
       // No grant is made to guessed or arbitrary recipients.
+      activationStage='family-grant';
       await bridgeOwnerControls.activateFamily(device.deviceId);
       if(!alive())return;
       update('Attivazione…');
+      activationStage='service-start';
       await bridgeTxControl.start();
       if(!alive())return;
       update('Attivazione…');
+      activationStage='verification';
       await refresh();
+      diagnostic('success');
     }catch(error){
+      diagnostic('failure',error instanceof Error?error.message:'unknown');
       // Diagnostics are intentionally kept off the family-facing screen.
       // No raw exception, access token or device secret is displayed.
       update('Non è stato possibile attivare');
