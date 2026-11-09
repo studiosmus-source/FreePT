@@ -70,6 +70,27 @@ class FirebaseInstallerTests(unittest.TestCase):
             self.assertEqual(gradle.read_text(), original)
             self.assertFalse((root / "android/app/google-services.json").exists())
 
+    def test_duplicate_install_refused_without_modifying_gradle(self):
+        temp, root = self.prepare()
+        with temp:
+            first = self.run_installer(root)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            gradle = root / "android/build.gradle"
+            original = gradle.read_text()
+            second = self.run_installer(root)
+            self.assertNotEqual(second.returncode, 0)
+            self.assertEqual(gradle.read_text(), original)
+
+    def test_missing_firebase_secret_fails_closed(self):
+        temp, root = self.prepare()
+        with temp:
+            env = dict(os.environ)
+            env.pop("FREEPT_FIREBASE_ANDROID_GOOGLE_SERVICES_JSON_B64", None)
+            result = subprocess.run([sys.executable, str(SCRIPT)], cwd=root, env=env,
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((root / "android/app/google-services.json").exists())
+
     def test_staging_package_refused(self):
         temp, root = self.prepare("it.freept.bridge.next")
         with temp:
