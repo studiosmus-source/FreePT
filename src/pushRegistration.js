@@ -5,7 +5,7 @@
  */
 export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
   let listenersReady=false;
-  let permissionAttempted=false;
+  let permissionGranted=false;
   let token=null;
   let tokenOwner=null;
   let pending=null;
@@ -46,11 +46,11 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
           await plugin.addListener('pushNotificationActionPerformed',()=>onMessage());
           listenersReady=true;
         }
-        if(!permissionAttempted){
-          permissionAttempted=true;
+        if(!permissionGranted){
           let p=await plugin.checkPermissions();
           if(p.receive==='prompt')p=await plugin.requestPermissions();
           if(p.receive!=='granted')return;
+          permissionGranted=true;
         }
         if(getApprovedUser()?.id===user.id)await plugin.register();
       })().finally(()=>{pending=null;});
