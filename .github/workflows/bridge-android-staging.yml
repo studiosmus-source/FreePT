@@ -32,6 +32,8 @@ jobs:
       - name: Bridge unit regression tests (development branch only)
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
         run: npm run test:bridge
+      - name: Unified Bridge runtime environment regression tests
+        run: node --test src/bridgeRuntimeConfig.test.mjs
       - name: JavaScript syntax check
         run: node --check src/main.js
       - name: Require isolated Supabase test project for Bridge APK
