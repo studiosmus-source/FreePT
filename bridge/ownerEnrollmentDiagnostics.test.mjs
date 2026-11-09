@@ -21,7 +21,7 @@ for(const scenario of ['invalid_token','profile_query_failed','profile_missing',
     });
     const response=await handler({method:'POST',path:'/bridge/owner/enroll',headers:{authorization:'Bearer '+TOKEN},body:{label:'Phone'}});
     assert.equal(response.status,403);
-    assert.deepEqual(reasons,[scenario==='invalid_token'?'token_invalid_or_anonymous':scenario==='exception'?'auth_or_profile_exception':scenario]);
+    assert.deepEqual(reasons,[scenario==='invalid_token'?'token_invalid':scenario==='exception'?'auth_or_profile_exception':scenario]);
     assert.equal(JSON.stringify(reasons).includes('secret-value'),false);
   });
 }
