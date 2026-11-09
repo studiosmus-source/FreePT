@@ -80,3 +80,19 @@ test('bundled staging migrations exactly match individual source files',()=>{
    assert.equal(actual,source,'staging bundle drifted from '+markers[i][1]);
  }
 });
+
+test('all bundled Bridge function bodies have balanced PostgreSQL dollar delimiters',()=>{
+ const definitions=[...sql.matchAll(/create\s+or\s+replace\s+function\s+public\.[a-z_]+\s*\(/gi)];
+ assert.equal(definitions.length,27);
+ for(let i=0;i<definitions.length;i++){
+   const start=definitions[i].index;
+   const end=i+1<definitions.length?definitions[i+1].index:sql.lastIndexOf('\nCOMMIT;');
+   const part=sql.slice(start,end);
+   const open=part.match(/\bas\s+(\$[a-z_0-9]*\$)\s*\n/i);
+   assert.ok(open,'missing dollar-quoted function body near '+start);
+   const tag=open[1];
+   const at=part.indexOf(tag,part.indexOf(open[0])+open[0].length);
+   assert.ok(at>=0,'unclosed function body near '+start);
+   assert.match(part.slice(at+tag.length),/^\s*;/,'function terminator missing near '+start);
+ }
+});
