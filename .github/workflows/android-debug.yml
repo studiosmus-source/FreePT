@@ -66,6 +66,10 @@ jobs:
           echo "Vite path: $(readlink -f node_modules/.bin/vite)"
           timeout --signal=TERM --kill-after=10s 180s npm run build 2>&1 | tee vite-build.log
           test -s dist/index.html
+          if ! grep -R -l 'freept-bridge-production.onrender.com' dist/assets >/dev/null; then
+            echo '::error::Production Bridge URL missing from Android web bundle'
+            exit 1
+          fi
       - name: Upload Vite build diagnostic log
         if: failure()
         uses: actions/upload-artifact@v4
