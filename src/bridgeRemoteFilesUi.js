@@ -58,6 +58,51 @@ export function renderBridgeRemoteFiles({
       onProgress:p=>setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte')
     });
   };
+  // Explicit, bounded previews use the same authorized Bridge read path as downloads.
+  // Never fetch arbitrary remote URLs or read an entire large file for a thumbnail.
+  const PREVIEW_LIMIT=2*1024*1024;
+  const previewable=item=>!item.directory&&item.size>0&&item.size<=PREVIEW_LIMIT&&
+    (/^image\\/(?:png|jpeg|gif|webp)$/i.test(item.mime)||
+     item.mime==='application/pdf');
+  const showPreview=async(item,deviceId)=>{
+    if(activeDownload||!alive())return;
+    const panel=create('section',undefined,browser);
+    panel.className='bridge-file-preview';
+    const heading=create('strong',item.name,panel);
+    const close=create('button','Chiudi anteprima',panel);
+    const message=create('p','Caricamento anteprima…',panel);
+    const abort=new AbortController();
+    let url=null;
+    close.onclick=()=>{abort.abort();if(url)URL.revokeObjectURL(url);panel.remove()};
+    const parts=[];
+    let position=0;
+    const destination={
+      write:async(bytes,offset)=>{
+        if(offset!==position||position+bytes.length>PREVIEW_LIMIT)throw Error('bridge_preview_limit');
+        parts.push(new Uint8Array(bytes));position+=bytes.length;
+      },
+      commit:async()=>{},
+      discard:async()=>{parts.length=0}
+    };
+    try{
+      await downloadBridgeFile({
+        api:bridgeClient,deviceId,handle:item.handle,size:item.size,
+        destination,signal:abort.signal
+      });
+      if(abort.signal.aborted||!alive())return;
+      url=URL.createObjectURL(new Blob(parts,{type:item.mime}));
+      message.remove();
+      const view=document.createElement(item.mime==='application/pdf'?'iframe':'img');
+      view.src=url;
+      view.setAttribute('aria-label','Anteprima '+item.name);
+      view.style.maxWidth='100%';
+      view.style.maxHeight='65vh';
+      if(view.tagName==='IFRAME'){view.style.width='100%';view.style.height='55vh';view.setAttribute('sandbox','');}
+      panel.appendChild(view);
+    }catch(error){
+      if(!abort.signal.aborted)message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
+    }
+  };
   const startDownload=async(item,deviceId,root=false)=>{
     if(activeDownload||!alive())return;
     const title=root?'Cartella condivisa':item.name;
@@ -167,6 +212,10 @@ export function renderBridgeRemoteFiles({
         for(const item of page.entries){
           const line=create('div',undefined,list);
           create('span',(item.directory?'📁 ':'📄 ')+item.name,line);
+          if(previewable(item)){
+            const preview=create('button','Anteprima',line);
+            preview.onclick=()=>void showPreview(item,deviceId);
+          }
           if(item.directory){
             const open=create('button','Apri',line);
             open.onclick=()=>{stack.push({handle:item.handle,name:item.name});void display()};
