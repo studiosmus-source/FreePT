@@ -77,10 +77,10 @@ final class BridgeAllFilesCore {
         if(children==null)throw new IOException("unreadable_directory");
         Arrays.sort(children,Comparator.comparing(File::getName));
         JSArray list=new JSArray();
-        int counted=0,emitted=0;
+        int counted=0,emitted=0,skipped=0;
         boolean hasMore=false;
         for(File file:children){
-            if(!valid(file))continue;
+            if(!valid(file)){skipped++;continue;}
             if(counted++<offset)continue;
             if(emitted>=PAGE){hasMore=true;break;}
             String key=file.getCanonicalPath();
@@ -104,6 +104,8 @@ final class BridgeAllFilesCore {
             emitted++;
         }
         JSObject out=new JSObject();
+        if(offset==0 && counted==0 && skipped>0)
+            throw new IOException("directory_entries_inaccessible");
         out.put("entries",list);
         out.put("nextOffset",hasMore?offset+emitted:-1);
         return out;
