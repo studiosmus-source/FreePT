@@ -1,5 +1,9 @@
 name: Build unified FreePT Android APK (manual)
 on:
+  push:
+    branches: [feature/bridge-chunk-receiver-20261108]
+    paths:
+      - '.github/workflows/freept-unified-apk.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,7 +24,7 @@ jobs:
           java-version: '21'
       - name: Validate explicit production Bridge configuration
         env:
-          VITE_BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_PRODUCTION_API_URL }}
+          VITE_BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_API_URL }}
         run: |
           python3 - <<'PY'
           import os
@@ -44,7 +48,7 @@ jobs:
       - name: Build production web bundle with native Bridge enabled
         env:
           VITE_BRIDGE_PRODUCTION_BUILD: 'true'
-          VITE_BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_PRODUCTION_API_URL }}
+          VITE_BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_API_URL }}
         run: |
           npm run build
           test -s dist/index.html
@@ -57,7 +61,7 @@ jobs:
         env:
           FREEPT_BRIDGE_INSTALL_TARGET: production
           FREEPT_BRIDGE_PRODUCTION_OPT_IN: I_ACCEPT_PRODUCTION_BRIDGE
-          VITE_BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_PRODUCTION_API_URL }}
+          VITE_BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_API_URL }}
         run: python3 android-bridge/install.py
       - name: Install native Firebase push configuration
         env:
