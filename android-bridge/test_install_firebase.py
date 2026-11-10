@@ -75,13 +75,13 @@ class FirebaseInstallerTests(unittest.TestCase):
         with temp:
             app_gradle = root / "android/app/build.gradle"
             app_gradle.write_text(
-                "apply plugin: 'com.android.application'\\n"
-                "try {\\n"
-                "    def servicesJSON = file('google-services.json')\\n"
-                "    if (servicesJSON.text) {\\n"
-                "        apply plugin: 'com.google.gms.google-services'\\n"
-                "    }\\n"
-                "} catch(Exception e) {}\\n"
+                "apply plugin: 'com.android.application'\n"
+                "try {\n"
+                "    def servicesJSON = file('google-services.json')\n"
+                "    if (servicesJSON.text) {\n"
+                "        apply plugin: 'com.google.gms.google-services'\n"
+                "    }\n"
+                "} catch(Exception e) {}\n"
             )
             original = app_gradle.read_text()
             result = self.run_installer(root)
