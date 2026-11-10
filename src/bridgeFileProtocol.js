@@ -6,7 +6,7 @@
  */
 export const BRIDGE_FILE_LIMITS = Object.freeze({
   pageSize: 100,
-  maxDepth: 16,
+  maxDepth: 32,
   maxName: 255,
   maxMime: 160,
   maxFileBytes: 1024 ** 4,
