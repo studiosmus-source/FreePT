@@ -263,7 +263,10 @@ export function renderBridgeRemoteFiles({
           // Bound remote requests to avoid unbounded background transfers.
           if(page.nextOffset<=PAGE_CAP*3){
             more.remove();
-            void display(page.nextOffset);
+            // Keep the current navigation revision: display() increments it,
+            // which previously discarded the first page before it rendered.
+            await display(page.nextOffset);
+            return;
           }
         }
         if(!page.entries.length&&offset===0)create('p','Cartella vuota.',list);
