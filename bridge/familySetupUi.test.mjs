@@ -25,7 +25,7 @@ test('Android permission is explicitly requested on user action',()=>{
   assert.match(setup,/permission\?\.granted!==true/);
 });
 test('only backend-authorized receiver gets access, before service starts',()=>{
-  assert.match(setup,/bridgeOwnerClient\.enroll\('Telefono di famiglia'\)/);
+  assert.match(setup,/bridgeOwnerClient\.enroll\('Dispositivo FreePT'\)/);
   assert.doesNotMatch(setup,/bridgeOwnerControls\.grant\(/);
   assert.match(setup,/await bridgeOwnerControls\.activateFamily\(device\.deviceId\)/);
   assert.match(setup,/await bridgeTxControl\.start\(\)/);
