@@ -61,7 +61,7 @@ final class BridgeAllFilesCore {
         try{
             String base=root.getCanonicalPath();
             String canonical=file.getCanonicalPath();
-            if(!canonical.startsWith(base+File.separator)||!file.canRead())return false;
+            if(!canonical.startsWith(base+File.separator))return false;
             // Never follow filesystem symlinks or directory traversal.
             if(!file.getCanonicalFile().equals(file.getAbsoluteFile()))return false;
             return file.isDirectory()||(file.isFile()&&file.length()<=MAX_BYTES);
@@ -113,7 +113,7 @@ final class BridgeAllFilesCore {
     static synchronized JSObject read(String handle,long offset,int length)throws Exception{
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
         Entry entry=entries.get(handle);
-        if(entry==null||!entry.file.isFile()||!valid(entry.file)||
+        if(entry==null||!entry.file.isFile()||!valid(entry.file)||!entry.file.canRead()||
            offset<0||offset>MAX_BYTES||length<1||length>MAX_CHUNK||
            offset>MAX_BYTES-length)
             throw new SecurityException("invalid_file_request");
