@@ -104,6 +104,16 @@ final class BridgeAllFilesCore {
             list.put(item);
             emitted++;
         }
+        // Aggregate-only diagnostics; never log names, paths or contents.
+        if(offset==0){
+            int rawFiles=0,rawDirs=0;
+            for(File child:children){
+                if(child.isFile())rawFiles++;
+                else if(child.isDirectory())rawDirs++;
+            }
+            Log.i("FreePTBridgeCatalogue","files="+rawFiles+" dirs="+rawDirs+
+                " accepted="+counted+" skipped="+skipped+" emitted="+emitted);
+        }
         JSObject out=new JSObject();
         if(offset==0 && counted==0 && skipped>0)
             throw new IOException("directory_entries_inaccessible");
