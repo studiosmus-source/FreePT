@@ -52,7 +52,10 @@ public final class BridgeTxService extends Service {
             worker=new Thread(this::runWorker,"freept-bridge-tx");
             worker.start();
         }
-        return START_NOT_STICKY;
+        // Allow Android to recreate an unexpectedly killed service when permitted.
+        // Every restart still rechecks file consent, provisioning and pause state.
+        // Explicit stop, invalid setup and foreground-service timeout stop normally.
+        return START_STICKY;
     }
     private static boolean validEndpoint(String endpoint){
         try{
