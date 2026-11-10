@@ -187,15 +187,23 @@ export function renderBridgeRemoteFiles({
     const stack=[{handle:'root',name:label}];
     const lister=createBridgeRemoteFolderLister({api:bridgeClient,deviceId});
     const history=()=>stack.map(x=>x.name).join(' / ');
+    // Session-only cache: navigating Back must not issue the same remote jobs.
+    // Do not persist remote filenames or ephemeral file handles to storage.
+    const folderPages=new Map();
+    let navigation=0;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
       if(activeDownload){setStatus('Completa o annulla il download prima di navigare.');return;}
+      const view=++navigation;
+      const current=stack[stack.length-1];
+      const key=current.handle+'|'+offset;
       if(offset===0)browser.replaceChildren();
-      setStatus('Richiesta elenco '+history()+'…');
+      if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
-        const current=stack[stack.length-1];
-        const page=validateBridgeFolderPage(await lister({handle:current.handle,offset}));
-        if(!alive()||marker!==revision)return;
+        const cached=folderPages.get(key);
+        const page=cached??validateBridgeFolderPage(await lister({handle:current.handle,offset}));
+        if(!alive()||marker!==revision||view!==navigation)return;
+        if(!cached)folderPages.set(key,page);
         if(offset===0){
           create('h3',history(),browser);
           if(stack.length>1){
@@ -228,7 +236,7 @@ export function renderBridgeRemoteFiles({
           more.onclick=()=>{more.remove();void display(page.nextOffset)};
         }
         if(!page.entries.length&&offset===0)create('p','Cartella vuota.',list);
-        setStatus('Elenco aggiornato. Puoi aprire o scaricare file e cartelle.');
+        setStatus(cached?'Elenco già caricato.':'Elenco aggiornato. Puoi aprire o scaricare file e cartelle.');
       }catch(error){
         setStatus('Elenco non disponibile: '+(error?.message||'errore remoto'));
       }
