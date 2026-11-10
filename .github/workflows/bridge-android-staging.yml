@@ -129,6 +129,36 @@ jobs:
           npx cap add android
           npx cap sync android
           test -s android/capacitor.settings.gradle
+      - name: Install verified Firebase configuration for isolated Bridge
+        shell: bash
+        env:
+          FIREBASE_CONFIG_B64: ${{ secrets.FREEPT_BRIDGE_GOOGLE_SERVICES_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$FIREBASE_CONFIG_B64" || { echo "::error::Missing Bridge Firebase configuration"; exit 1; }
+          umask 077
+          printf '%s' "$FIREBASE_CONFIG_B64" | base64 --decode > android/app/google-services.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('android/app/google-services.json')
+          data=json.loads(p.read_text())
+          clients=[c for c in data.get('client',[]) if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='it.freept.bridge.next']
+          if len(clients)!=1 or not data.get('project_info',{}).get('project_number'):
+              raise SystemExit('Firebase config does not identify exactly one Bridge Android app')
+          root=Path('android/build.gradle')
+          s=root.read_text()
+          marker='dependencies {'
+          if s.count(marker)!=1: raise SystemExit('Unexpected root Gradle dependencies block')
+          s=s.replace(marker,marker+"\n        classpath 'com.google.gms:google-services:4.4.4'",1)
+          root.write_text(s)
+          app=Path('android/app/build.gradle')
+          a=app.read_text()
+          if 'com.google.gms.google-services' in a: raise SystemExit('Unexpected duplicate Firebase Gradle plugin')
+          a+="\napply plugin: 'com.google.gms.google-services'\n"
+          app.write_text(a)
+          print('Bridge Firebase client and Android Gradle integration validated')
+          PY
       - name: Check native Bridge installer Python syntax
         run: |
           python3 -m py_compile android-bridge/install.py
