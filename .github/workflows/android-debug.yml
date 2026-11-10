@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/bridge-chunk-receiver-20261108']
   workflow_dispatch:
 permissions:
   contents: read
