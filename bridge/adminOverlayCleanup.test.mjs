@@ -45,5 +45,8 @@ test('every admin exit or screen replacement invokes overlay cleanup',()=>{
     assert.ok(pos>=0,startText+' missing');
     assert.match(entry.slice(pos,pos+145),/closeAdminOverlays\(\)/,startText+' must clean overlays');
   }
-  assert.match(entry,/if\(document.visibilityState==='hidden'&&profile\?\.role==='admin'[\s\S]{0,140}closeAdminOverlays\(\)/);
+  // Switching apps must not clear the unlocked admin workspace. Cold starts
+  // still pass through boot() and the native biometric unlock path.
+  assert.doesNotMatch(entry,/if\(document.visibilityState==='hidden'&&profile\?\.role==='admin'/);
+  assert.match(entry,/if\(profile.role==='admin' && !\(await unlockAdmin\(\)\)\)return;/);
 });
