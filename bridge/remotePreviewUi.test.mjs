@@ -5,7 +5,8 @@ const source=readFileSync(new URL('../src/bridgeRemoteFilesUi.js',import.meta.ur
 test('remote preview is explicit and bounded',()=>{
   assert.match(source,/PREVIEW_LIMIT=2\*1024\*1024/);
   assert.match(source,/previewable\(item\)/);
-  assert.match(source,/create\('button','Anteprima',line\)/);
+  assert.match(source,/create\('button','Anteprima',options\)/);
+  assert.match(source,/preview.onclick=\(\)=>\{menu.open=false;void showPreview\(item,deviceId\)\}/);
   assert.match(source,/item\.size<=PREVIEW_LIMIT/);
 });
 test('preview uses authorized chunk download and local blob URL',()=>{
