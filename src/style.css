@@ -112,3 +112,20 @@ html,body,#app{min-height:100%;height:100%}
 .chat{min-height:0}
 #chatRemoteFilesPanel{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding:10px 14px 20px}
 #feed[hidden],#send[hidden]{display:none!important}
+
+
+/* Compact Android-style remote explorer. Scoped to Bridge only. */
+.bridge-breadcrumbs{display:flex!important;flex-wrap:nowrap;align-items:center;gap:3px;overflow-x:auto;white-space:nowrap;padding:8px 0;scrollbar-width:thin}
+.bridge-breadcrumbs button{flex:0 0 auto!important;min-width:0;padding:7px 9px;font-size:13px;background:#edf3f8;color:#17435f;border-radius:8px}
+.bridge-breadcrumbs button:disabled{background:transparent;color:#263b4b;font-weight:700;opacity:1}
+.bridge-folder-actions{display:flex;gap:8px;margin:8px 0}
+.bridge-folder-actions button{flex:1;min-width:0;font-size:13px}
+.bridge-remote-entries{gap:0}
+.bridge-remote-entries>.bridge-entry{display:flex;align-items:center;flex-wrap:nowrap;gap:4px;padding:0 4px;border:0;border-bottom:1px solid #e4e9ee;border-radius:0;background:#fff;min-height:54px}
+.bridge-entry>.bridge-entry-primary{flex:1 1 auto;min-width:0;min-height:52px;padding:10px 8px;text-align:left;background:transparent;color:#18202d;font-size:14px;font-weight:500;white-space:normal;overflow-wrap:anywhere;border:0}
+.bridge-entry>.bridge-entry-menu{position:relative;flex:0 0 auto}
+.bridge-entry-menu>summary{display:grid;place-items:center;width:42px;min-height:46px;cursor:pointer;list-style:none;font-size:23px;color:#34465a}
+.bridge-entry-menu>summary::-webkit-details-marker{display:none}
+.bridge-entry-menu[open]>div{position:absolute;right:0;top:100%;z-index:30;min-width:170px;max-width:75vw;background:#fff;border:1px solid #cbd5df;border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.18);padding:6px;display:grid;gap:3px}
+.bridge-entry-menu button{width:100%;text-align:left;background:#f1f5f9;color:#18202d;font-size:13px;padding:10px}
+.bridge-entry-menu small{display:block;overflow-wrap:anywhere;padding:8px;color:#475569}
