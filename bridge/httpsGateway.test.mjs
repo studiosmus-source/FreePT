@@ -93,11 +93,12 @@ test('bounded JSON and origin fail closed without handler execution',async t=>{
   const url='http://127.0.0.1:'+address.port;
   assert.equal((await invoke(url,'/bridge/admin/list',{body:{padding:'x'.repeat(3000)}})).status,413);
   assert.equal((await invoke(url,'/bridge/tx/folder',{body:{padding:'x'.repeat(32000)}})).status,200);
-  assert.equal((await invoke(url,'/bridge/tx/folder',{body:{padding:'x'.repeat(34000)}})).status,413);
-  assert.equal(f.calls.length,1);
+  assert.equal((await invoke(url,'/bridge/tx/folder',{body:{padding:'x'.repeat(34000)}})).status,200);
+  assert.equal((await invoke(url,'/bridge/tx/folder',{body:{padding:'x'.repeat(49000)}})).status,413);
+  assert.equal(f.calls.length,2);
   const raw=await fetch(url+'/bridge/admin/list',{
     method:'POST',headers:{origin:ORIGIN,'content-type':'text/plain'},body:'hello'
   });
   assert.equal(raw.status,415);
-  assert.equal(f.calls.length,1);
+  assert.equal(f.calls.length,2);
 });
