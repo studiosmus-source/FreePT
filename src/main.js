@@ -770,18 +770,18 @@ function renderLayout(){
         let incomplete=!permission?.granted||!device?.provisioned;
         if(!incomplete){
           try{
-            const [settings,grants,service]=await Promise.all([
+            const [settings,grants]=await Promise.all([
               bridgeOwnerControls.device(device.deviceId),
-              bridgeOwnerControls.recipients(device.deviceId),
-              bridgeTxControl.status()
+              bridgeOwnerControls.recipients(device.deviceId)
             ]);
-            incomplete=!settings.enabled||!grants.some(g=>g.active)||!service?.running;
+            // A stopped service is a reconnect condition, not a new consent request.
+            incomplete=!settings.enabled||!grants.some(g=>g.active);
           }catch{incomplete=true;}
         }
         if(me?.id===ownerSetupPromptedForAccount&&incomplete)
           await showOwnerBridgeFolder();
       }catch{
-        if(me?.id===ownerSetupPromptedForAccount)await showOwnerBridgeFolder();
+        // A temporary backend failure must not trigger an unexpected setup dialog.
       }
     })();
   }
