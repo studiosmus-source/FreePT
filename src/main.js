@@ -1081,13 +1081,10 @@ document.addEventListener('visibilitychange',()=>{
     // permanent bypass of the background biometric lock.
     filePickerClearTimer=setTimeout(finishFilePicker,1800);
   }
-  if(document.visibilityState==='hidden'&&profile?.role==='admin'&&Capacitor.isNativePlatform()&&!filePickerActive){
-    closeAdminOverlays();
-    adminUnlocked=false;
-    if(sub){db.removeChannel(sub);sub=null}
-    selected=null;messageRequest++;
-    el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Area amministratore bloccata</h2><p>Riapri FreePT per sbloccare con l’impronta.</p></main></div>';
-  }
+  // Backgrounding is not logout: retain the authenticated workspace and
+  // biometric unlock until the Android WebView process is restarted or the
+  // user explicitly signs out. Cold starts still run boot()/unlockAdmin().
+
 });
 boot();
 // Polling leggero quando l'app è in primo piano: recupera anche eventi realtime persi.
