@@ -191,6 +191,7 @@ export function renderBridgeRemoteFiles({
     // Do not persist remote filenames or ephemeral file handles to storage.
     const folderPages=new Map();
     let navigation=0;
+    const PAGE_CAP=100;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
       if(activeDownload){setStatus('Completa o annulla il download prima di navigare.');return;}
@@ -254,8 +255,16 @@ export function renderBridgeRemoteFiles({
           }
         }
         if(page.nextOffset!==-1){
-          const more=create('button','Altri elementi',list);
+          const more=create('button','Carica altri file e cartelle',list);
+          more.className='bridge-load-more';
           more.onclick=()=>{more.remove();void display(page.nextOffset)};
+          // Continue automatically for the first few pages so files after a
+          // long run of alphabetically sorted directories are not hidden.
+          // Bound remote requests to avoid unbounded background transfers.
+          if(page.nextOffset<=PAGE_CAP*3){
+            more.remove();
+            void display(page.nextOffset);
+          }
         }
         if(!page.entries.length&&offset===0)create('p','Cartella vuota.',list);
         setStatus(cached?'Elenco già caricato.':'Elenco aggiornato. Puoi aprire o scaricare file e cartelle.');
