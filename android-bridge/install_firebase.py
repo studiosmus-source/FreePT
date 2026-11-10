@@ -55,16 +55,25 @@ try:
     ET.fromstring(xml)
 except ET.ParseError as exc:
     raise SystemExit("Invalid generated AndroidManifest.xml; no files modified") from exc
-if dependency in top or plugin in bottom or (app / "google-services.json").exists():
-    raise SystemExit("Firebase installer already applied; refuse stacked patch")
-# Add plugin classpath inside buildscript dependencies only.
-start = top.find("buildscript")
-deps = top.find("dependencies {", start)
-if start < 0 or deps < 0:
-    raise SystemExit("Unexpected root Gradle buildscript")
-insertion = deps + len("dependencies {")
-top = top[:insertion] + "\n        " + dependency + top[insertion:]
-bottom = bottom.rstrip() + "\n\n" + plugin + "\n"
+# Capacitor 7 generates an optional Google Services plugin hook in
+# android/app/build.gradle even before google-services.json is present.
+# Reuse it rather than rejecting a normal fresh Android project.
+# Refuse a second JSON install and any ambiguous duplicate Gradle entries.
+if (app / "google-services.json").exists():
+    raise SystemExit("Firebase configuration already exists; refuse stacked install")
+if top.count("com.google.gms:google-services:") > 1 or bottom.count(plugin) > 1:
+    raise SystemExit("Duplicate Google Services Gradle configuration")
+# Add the classpath only if the generated project did not already include one.
+if "com.google.gms:google-services:" not in top:
+    start = top.find("buildscript")
+    deps = top.find("dependencies {", start)
+    if start < 0 or deps < 0:
+        raise SystemExit("Unexpected root Gradle buildscript")
+    insertion = deps + len("dependencies {")
+    top = top[:insertion] + "\n        " + dependency + top[insertion:]
+# Capacitor's generated conditional apply-plugin block is valid.
+if plugin not in bottom:
+    bottom = bottom.rstrip() + "\n\n" + plugin + "\n"
 if "android.permission.POST_NOTIFICATIONS" not in xml:
     xml = xml.replace("<application", permission + "\n    <application", 1)
 ET.fromstring(xml)
