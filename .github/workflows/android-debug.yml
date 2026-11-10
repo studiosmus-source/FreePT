@@ -45,6 +45,19 @@ jobs:
           else
             echo 'No Bridge tests on this branch; skipping.'
           fi
+      - name: Configure production Bridge for Android
+        env:
+          BRIDGE_API_URL: ${{ vars.FREEPT_BRIDGE_API_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$BRIDGE_API_URL" =~ ^https://[a-zA-Z0-9.-]+/?$ ]]; then
+            echo "::error::Set repository variable FREEPT_BRIDGE_API_URL to the deployed HTTPS Bridge backend before building Android."
+            exit 1
+          fi
+          echo "VITE_BRIDGE_PRODUCTION_BUILD=true" >> "$GITHUB_ENV"
+          echo "VITE_BRIDGE_API_URL=${BRIDGE_API_URL%/}" >> "$GITHUB_ENV"
+          echo "Production Bridge enabled for Android bundle."
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
         run: |
