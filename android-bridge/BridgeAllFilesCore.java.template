@@ -78,10 +78,11 @@ final class BridgeAllFilesCore {
         Arrays.sort(children,Comparator.comparing(File::getName));
         JSArray list=new JSArray();
         int counted=0,emitted=0;
+        boolean hasMore=false;
         for(File file:children){
             if(!valid(file))continue;
             if(counted++<offset)continue;
-            if(emitted>=PAGE)break;
+            if(emitted>=PAGE){hasMore=true;break;}
             String key=file.getCanonicalPath();
             String id=reverse.get(key);
             if(id==null){
@@ -104,7 +105,7 @@ final class BridgeAllFilesCore {
         }
         JSObject out=new JSObject();
         out.put("entries",list);
-        out.put("nextOffset",counted>offset+emitted?offset+emitted:-1);
+        out.put("nextOffset",hasMore?offset+emitted:-1);
         return out;
     }
     static synchronized JSObject read(String handle,long offset,int length)throws Exception{
