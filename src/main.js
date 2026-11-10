@@ -238,8 +238,9 @@ function adminScreen(){
       pendingEmail=await sendAdminEmailCode(db.auth,new FormData(form).get('email'));
       document.getElementById('adminCodeVerify').hidden=false;
       status('Se l’account è abilitato, riceverai un codice via email. Inseriscilo qui.');
-    }catch{
-      status('Impossibile inviare il codice. Verifica email e configurazione Supabase.',true);
+    }catch(error){
+      const detail=String(error?.message||'errore_sconosciuto').slice(0,160);
+      status('Invio codice non riuscito ('+detail+').',true);
     }finally{button.disabled=false;}
   };
   document.getElementById('adminCodeVerify').onsubmit=async e=>{
