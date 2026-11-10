@@ -70,6 +70,41 @@ class FirebaseInstallerTests(unittest.TestCase):
             self.assertEqual(gradle.read_text(), original)
             self.assertFalse((root / "android/app/google-services.json").exists())
 
+    def test_generated_capacitor_google_services_hook_is_reused(self):
+        temp, root = self.prepare()
+        with temp:
+            app_gradle = root / "android/app/build.gradle"
+            app_gradle.write_text(
+                "apply plugin: 'com.android.application'\\n"
+                "try {\\n"
+                "    def servicesJSON = file('google-services.json')\\n"
+                "    if (servicesJSON.text) {\\n"
+                "        apply plugin: 'com.google.gms.google-services'\\n"
+                "    }\\n"
+                "} catch(Exception e) {}\\n"
+            )
+            original = app_gradle.read_text()
+            result = self.run_installer(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(app_gradle.read_text(), original)
+            self.assertEqual(app_gradle.read_text().count("apply plugin: 'com.google.gms.google-services'"), 1)
+            self.assertTrue((root / "android/app/google-services.json").is_file())
+
+    def test_existing_generated_gradle_classpath_is_reused(self):
+        temp, root = self.prepare()
+        with temp:
+            gradle = root / "android/build.gradle"
+            gradle.write_text(
+                "buildscript { repositories { google() } dependencies { "
+                "classpath 'com.android.tools.build:gradle:8.7.2' "
+                "classpath 'com.google.gms:google-services:4.4.4' } }"
+            )
+            original = gradle.read_text()
+            result = self.run_installer(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(gradle.read_text(), original)
+            self.assertTrue((root / "android/app/google-services.json").is_file())
+
     def test_duplicate_install_refused_without_modifying_gradle(self):
         temp, root = self.prepare()
         with temp:
