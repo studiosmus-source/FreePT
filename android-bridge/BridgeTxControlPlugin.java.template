@@ -1,13 +1,6 @@
 package __PACKAGE__;
 
 import android.content.Intent;
-import android.Manifest;
-import android.content.pm.PackageManager;
-import android.os.Build;
-import androidx.core.content.ContextCompat;
-import com.getcapacitor.PermissionState;
-import com.getcapacitor.annotation.Permission;
-import com.getcapacitor.annotation.PermissionCallback;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -15,9 +8,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /** Explicit native bridge foreground controls. Backend still checks grants. */
-@CapacitorPlugin(name="BridgeTxControl",permissions={
-    @Permission(alias="notifications",strings={Manifest.permission.POST_NOTIFICATIONS})
-})
+@CapacitorPlugin(name="BridgeTxControl")
 public class BridgeTxControlPlugin extends Plugin {
     @PluginMethod public void status(PluginCall call){
         JSObject out=new JSObject();
@@ -33,20 +24,8 @@ public class BridgeTxControlPlugin extends Plugin {
            !BridgeDeviceSecretStore.configured(getContext())){
             call.reject("bridge_tx_permission_or_device_missing");return;
         }
-        if(Build.VERSION.SDK_INT>=33&&
-           ContextCompat.checkSelfPermission(getContext(),
-               Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
-            requestPermissionForAlias("notifications",call,"notificationPermissionResult");
-            return;
-        }
-        performStart(call);
-    }
-    @PermissionCallback
-    private void notificationPermissionResult(PluginCall call){
-        if(call==null)return;
-        if(getPermissionState("notifications")!=PermissionState.GRANTED){
-            call.reject("bridge_tx_notifications_required");return;
-        }
+        // Android does not require POST_NOTIFICATIONS to start a foreground
+        // service. Chat push permission is handled independently by Capacitor.
         performStart(call);
     }
     private void performStart(PluginCall call){
