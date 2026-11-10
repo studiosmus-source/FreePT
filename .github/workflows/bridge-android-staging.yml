@@ -154,8 +154,8 @@ jobs:
           root.write_text(s)
           app=Path('android/app/build.gradle')
           a=app.read_text()
-          if 'com.google.gms.google-services' in a: raise SystemExit('Unexpected duplicate Firebase Gradle plugin')
-          a+="\napply plugin: 'com.google.gms.google-services'\n"
+          if 'com.google.gms.google-services' not in a:
+              a+="\napply plugin: 'com.google.gms.google-services'\n"
           app.write_text(a)
           print('Bridge Firebase client and Android Gradle integration validated')
           PY
