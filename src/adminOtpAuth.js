@@ -15,7 +15,11 @@ export async function sendAdminEmailCode(auth,emailInput){
   const {error}=await auth.signInWithOtp({
     email,options:{shouldCreateUser:false}
   });
-  if(error)throw Error('admin_code_delivery_failed');
+  if(error){
+    const code=String(error.code||error.name||'unknown').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,80);
+    const status=Number.isInteger(error.status)?error.status:'unknown';
+    throw Error('admin_code_delivery_failed:'+code+':HTTP_'+status);
+  }
   return email;
 }
 export async function verifyAdminEmailCode(auth,emailInput,codeInput){
