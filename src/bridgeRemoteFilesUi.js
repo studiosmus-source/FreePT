@@ -191,7 +191,6 @@ export function renderBridgeRemoteFiles({
     // Do not persist remote filenames or ephemeral file handles to storage.
     const folderPages=new Map();
     let navigation=0;
-    const PAGE_CAP=100;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
       if(activeDownload){setStatus('Completa o annulla il download prima di navigare.');return;}
@@ -258,13 +257,11 @@ export function renderBridgeRemoteFiles({
           const more=create('button','Carica altri file e cartelle',list);
           more.className='bridge-load-more';
           more.onclick=()=>{more.remove();void display(page.nextOffset)};
-          // Continue automatically for the first few pages so files after a
-          // long run of alphabetically sorted directories are not hidden.
-          // Bound remote requests to avoid unbounded background transfers.
-          if(page.nextOffset<=PAGE_CAP*3){
+          // Continue through the complete bounded catalogue, not only the
+          // first three pages: otherwise files after many folders stay hidden.
+          // The protocol caps offsets at 10,000 and the server validates pages.
+          if(page.nextOffset>offset && page.nextOffset<=10000){
             more.remove();
-            // Keep the current navigation revision: display() increments it,
-            // which previously discarded the first page before it rendered.
             await display(page.nextOffset);
             return;
           }
