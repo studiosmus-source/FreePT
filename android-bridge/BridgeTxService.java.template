@@ -74,15 +74,11 @@ public final class BridgeTxService extends Service {
                 NotificationManager.IMPORTANCE_LOW);
             manager.createNotificationChannel(channel);
         }
-        Intent stop=new Intent(this,BridgeTxService.class).setAction(ACTION_STOP);
-        PendingIntent stopIntent=PendingIntent.getService(this,143,stop,
-            PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         Notification notification=new Notification.Builder(this,
             Build.VERSION.SDK_INT>=26?CHANNEL:null)
             .setContentTitle("FreePT - Connesso")
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setOngoing(true)
-            .addAction(new Notification.Action.Builder(null,"Interrompi",stopIntent).build())
             .build();
         if(Build.VERSION.SDK_INT>=29){
             startForeground(NOTIFICATION_ID,notification,
