@@ -698,7 +698,7 @@ async function showOwnerBridgeFolder(){
       activationStage='local-device';
       const current=await bridgeOwnerClient.status();
       activationStage='enrollment';
-      const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Telefono di famiglia');
+      const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Dispositivo FreePT');
       if(!alive())return;
       // One explicit family-owner consent. The staging database atomically
       // authorizes only the unique approved admin, or refuses the action.
