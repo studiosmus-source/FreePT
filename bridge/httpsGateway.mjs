@@ -29,7 +29,8 @@ const ROUTES=Object.freeze({
   '/bridge/tx/disconnect':'tx'
 });
 const MAX_SMALL=2048;
-const MAX_CATALOGUE=32768;
+// Match the TX 48 KB request cap for paginated metadata.
+const MAX_CATALOGUE=48000;
 const MAX_RESPONSE=65536;
 const fail=(status,error)=>({status,body:{error}});
 const jsonType=header=>typeof header==='string'&&header.split(';')[0].trim().toLowerCase()==='application/json';
