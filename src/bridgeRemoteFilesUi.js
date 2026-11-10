@@ -205,31 +205,53 @@ export function renderBridgeRemoteFiles({
         if(!alive()||marker!==revision||view!==navigation)return;
         if(!cached)folderPages.set(key,page);
         if(offset===0){
-          create('h3',history(),browser);
-          if(stack.length>1){
-            const back=create('button','‹ Indietro',browser);
-            back.onclick=()=>{stack.pop();void display()};
-          }
-          const download=create('button','Scarica questa cartella completa',browser);
+          const nav=create('nav',undefined,browser);
+          nav.className='bridge-breadcrumbs';
+          nav.setAttribute('aria-label','Percorso cartelle');
+          stack.forEach((segment,index)=>{
+            const crumb=create('button',segment.name,nav);
+            crumb.type='button';
+            crumb.disabled=index===stack.length-1;
+            crumb.onclick=()=>{stack.splice(index+1);void display()};
+            if(index<stack.length-1)create('span',' › ',nav);
+          });
+          const actions=create('div',undefined,browser);
+          actions.className='bridge-folder-actions';
+          const download=create('button','Scarica cartella',actions);
           download.onclick=()=>void startDownload(
             {name:current.name,handle:current.handle,directory:true},deviceId,
             current.handle==='root');
+          const reload=create('button','Aggiorna',actions);
+          reload.onclick=()=>{
+            for(const key of folderPages.keys())if(key.startsWith(current.handle+'|'))folderPages.delete(key);
+            void display();
+          };
           create('div',undefined,browser).className='bridge-remote-entries';
         }
         const list=browser.querySelector('.bridge-remote-entries');
         for(const item of page.entries){
           const line=create('div',undefined,list);
-          create('span',(item.directory?'📁 ':'📄 ')+item.name,line);
+          line.className='bridge-entry';
+          const primary=create('button',(item.directory?'📁 ':'📄 ')+item.name,line);
+          primary.className='bridge-entry-primary';
+          primary.type='button';
+          primary.onclick=()=>item.directory?
+            (stack.push({handle:item.handle,name:item.name}),void display()):
+            (previewable(item)?void showPreview(item,deviceId):void startDownload(item,deviceId));
+          const menu=create('details',undefined,line);
+          menu.className='bridge-entry-menu';
+          const trigger=create('summary','⋮',menu);
+          trigger.setAttribute('aria-label','Opzioni per '+item.name);
+          const options=create('div',undefined,menu);
+          const download=create('button',item.directory?'Scarica cartella':'Scarica file',options);
+          download.onclick=()=>{menu.open=false;void startDownload(item,deviceId)};
           if(previewable(item)){
-            const preview=create('button','Anteprima',line);
-            preview.onclick=()=>void showPreview(item,deviceId);
+            const preview=create('button','Anteprima',options);
+            preview.onclick=()=>{menu.open=false;void showPreview(item,deviceId)};
           }
-          if(item.directory){
-            const open=create('button','Apri',line);
-            open.onclick=()=>{stack.push({handle:item.handle,name:item.name});void display()};
+          if(!item.directory){
+            const details=create('small',item.size+' byte · '+item.mime,options);
           }
-          const download=create('button',item.directory?'Scarica cartella':'Scarica file',line);
-          download.onclick=()=>void startDownload(item,deviceId);
         }
         if(page.nextOffset!==-1){
           const more=create('button','Altri elementi',list);
