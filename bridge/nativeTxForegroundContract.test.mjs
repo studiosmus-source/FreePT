@@ -26,8 +26,8 @@ test('native worker requires OS permission and controls, never a headless spy pr
   assert.match(service,/FreePT - Connesso/);
   assert.match(service,/setOngoing\(true\)/);
   assert.match(service,/ACTION_STOP/);
-  assert.match(control,/PermissionCallback/);
-  assert.match(control,/Manifest\.permission\.POST_NOTIFICATIONS/);
+  assert.match(control,/startForegroundService/);
+  assert.match(control,/Chat push permission is handled independently by Capacitor/);
   assert.match(control,/BridgeTxService\.class/);
 });
 test('single Keystore implementation shared between app and native worker',()=>{
