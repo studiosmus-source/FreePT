@@ -23,7 +23,7 @@ test('native worker requires OS permission and controls, never a headless spy pr
   assert.match(service,/BridgeAllFilesCore\.granted\(\)/);
   assert.match(service,/BridgeDeviceSecretStore\.configured\(this\)/);
   assert.match(service,/getBoolean\("paused",false\)/);
-  assert.match(service,/Sistema Connesso/);
+  assert.match(service,/FreePT - Connesso/);
   assert.match(service,/setOngoing\(true\)/);
   assert.match(service,/ACTION_STOP/);
   assert.match(control,/PermissionCallback/);
