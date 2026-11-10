@@ -109,9 +109,45 @@ jobs:
           PY
       - name: Compile unified Android APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Sign unified APK using retained FreePT signing identity
+        shell: bash
+        env:
+          SIGN_KEYSTORE_B64: ${{ secrets.FREEPT_BRIDGE_KEYSTORE_B64 }}
+          SIGN_STORE_PASSWORD: ${{ secrets.FREEPT_BRIDGE_STORE_PASSWORD }}
+          SIGN_KEY_ALIAS: ${{ secrets.FREEPT_BRIDGE_KEY_ALIAS }}
+          SIGN_KEY_PASSWORD: ${{ secrets.FREEPT_BRIDGE_KEY_PASSWORD }}
+          SIGN_CERT_SHA256: ${{ secrets.FREEPT_BRIDGE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          for name in SIGN_KEYSTORE_B64 SIGN_STORE_PASSWORD SIGN_KEY_ALIAS SIGN_KEY_PASSWORD SIGN_CERT_SHA256; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Retained APK signing configuration missing; no unstable APK published"
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$SIGN_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/freept-unified.jks"
+          keytool -list -keystore "$RUNNER_TEMP/freept-unified.jks" -storepass:env SIGN_STORE_PASSWORD -alias "$SIGN_KEY_ALIAS" >/dev/null
+          TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -n "$TOOL"
+          SRC=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/debug/FreePT-unified-stable.apk
+          "$TOOL" sign --ks "$RUNNER_TEMP/freept-unified.jks" --ks-pass env:SIGN_STORE_PASSWORD --ks-key-alias "$SIGN_KEY_ALIAS" --key-pass env:SIGN_KEY_PASSWORD --out "$APK" "$SRC"
+          "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/unified-signer-audit.txt"
+          KEY_SHA="$(keytool -exportcert -keystore "$RUNNER_TEMP/freept-unified.jks" -storepass:env SIGN_STORE_PASSWORD -alias "$SIGN_KEY_ALIAS" | sha256sum | cut -d' ' -f1)"
+          EXPECTED="$(printf '%s' "$SIGN_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] && [[ "$KEY_SHA" == "$EXPECTED" ]] || {
+            echo '::error::Retained signing certificate mismatch; APK withheld'
+            exit 1
+          }
+          grep -Fqi "$KEY_SHA" "$RUNNER_TEMP/unified-signer-audit.txt" || {
+            echo '::error::APK signer differs from retained keystore; APK withheld'
+            exit 1
+          }
+          echo 'Stable APK signature verified'
       - name: Verify APK identity and integrity
         run: |
-          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/debug/FreePT-unified-stable.apk
           test -s "$APK"
           unzip -t "$APK" >/dev/null
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
@@ -120,9 +156,9 @@ jobs:
           sha256sum "$APK" | tee apk-sha256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: FreePT-unified-debug-apk
+          name: FreePT-unified-stable-apk
           path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/debug/FreePT-unified-stable.apk
             apk-info.txt
             apk-sha256.txt
           if-no-files-found: error
