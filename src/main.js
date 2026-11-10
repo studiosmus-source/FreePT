@@ -776,7 +776,11 @@ function renderLayout(){
             ]);
             // A stopped service is a reconnect condition, not a new consent request.
             incomplete=!settings.enabled||!grants.some(g=>g.active);
-          }catch{incomplete=true;}
+          }catch{
+            // Connectivity or server errors do not revoke the owner's consent.
+            // Leave the chat undisturbed; retry the service when allowed.
+            return;
+          }
         }
         if(me?.id===ownerSetupPromptedForAccount&&incomplete)
           await showOwnerBridgeFolder();
