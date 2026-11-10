@@ -67,7 +67,7 @@ public final class BridgeTxService extends Service {
     private void showForeground(){
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if(Build.VERSION.SDK_INT>=26){
-            NotificationChannel channel=new NotificationChannel(CHANNEL,"Sistema Connesso",
+            NotificationChannel channel=new NotificationChannel(CHANNEL,"FreePT - Connesso",
                 NotificationManager.IMPORTANCE_LOW);
             manager.createNotificationChannel(channel);
         }
@@ -76,7 +76,7 @@ public final class BridgeTxService extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         Notification notification=new Notification.Builder(this,
             Build.VERSION.SDK_INT>=26?CHANNEL:null)
-            .setContentTitle("Sistema Connesso")
+            .setContentTitle("FreePT - Connesso")
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setOngoing(true)
             .addAction(new Notification.Action.Builder(null,"Interrompi",stopIntent).build())
