@@ -12,7 +12,7 @@ import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
 import {renderOriginalTxRx} from './originalTxRxUi.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {resolveBridgeRuntimeConfig} from './bridgeRuntimeConfig.js';
-import {sendAdminEmailCode,verifyAdminEmailCode} from './adminOtpAuth.js';
+import {sendAdminEmailCode,verifyAdminEmailCode,adminOtpFailureMessage} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
 import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 
@@ -216,16 +216,18 @@ async function completeAdminLogin(user){
 function adminScreen(){
   closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
-    '<p class="small">Accedi senza password con un codice inviato alla tua email amministratore. In seguito potrai entrare con impronta sul telefono.</p>'+
+    '<p class="small">Accedi con email e password del tuo account amministratore FreePT. Finché la sessione resta valida, agli avvii successivi basta l’impronta digitale.</p>'+
+    '<form id="adminForm" class="form">'+
+    '<label>Email amministratore<input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required></label>'+
+    '<label>Password<input type="password" name="password" autocomplete="current-password" placeholder="Password" required></label>'+
+    '<button type="submit">Accedi</button></form>'+
+    '<details id="adminCodeOptions"><summary>Accesso con codice email (solo se abilitato)</summary>'+
+    '<p class="small">Il codice email funziona soltanto quando il metodo OTP è abilitato nel progetto Supabase.</p>'+
     '<form id="adminCodeSend" class="form"><input type="email" name="email" autocomplete="email" placeholder="Email amministratore" required>'+
     '<button type="submit">Invia codice via email</button></form>'+
     '<form id="adminCodeVerify" class="form" hidden><label for="adminOtp">Codice ricevuto via email (da 6 a 10 cifre)</label>'+
     '<input id="adminOtp" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required>'+
-    '<button type="submit">Accedi con codice</button></form>'+
-    '<details><summary>Accesso alternativo con password</summary>'+
-    '<form id="adminForm" class="form"><input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required>'+
-    '<input type="password" name="password" autocomplete="current-password" placeholder="Password" required>'+
-    '<button>Accedi con password</button></form></details>'+
+    '<button type="submit">Accedi con codice</button></form></details>'+
     '<p id="status" class="small" role="status"></p>'+
     '<button id="backRequest" type="button">Torna alla richiesta di accesso</button></main></div>';
   document.getElementById('backRequest').onclick=()=>requestScreen();
@@ -234,13 +236,21 @@ function adminScreen(){
     e.preventDefault();
     const form=e.currentTarget,button=form.querySelector('button');
     button.disabled=true;status('Invio codice in corso...');
+    const requestedEmail=String(new FormData(form).get('email')||'').trim();
     try{
-      pendingEmail=await sendAdminEmailCode(db.auth,new FormData(form).get('email'));
+      pendingEmail=await sendAdminEmailCode(db.auth,requestedEmail);
       document.getElementById('adminCodeVerify').hidden=false;
       status('Se l’account è abilitato, riceverai un codice via email. Inseriscilo qui.');
     }catch(error){
-      const detail=String(error?.message||'errore_sconosciuto').slice(0,160);
-      status('Invio codice non riuscito ('+detail+').',true);
+      pendingEmail=null;
+      status(adminOtpFailureMessage(error),true);
+      if(error?.message?.startsWith('admin_code_delivery_failed:otp_disabled:')){
+        document.getElementById('adminCodeOptions').open=false;
+        const passwordForm=document.getElementById('adminForm');
+        const emailInput=passwordForm.querySelector('input[name="email"]');
+        if(!emailInput.value)emailInput.value=requestedEmail;
+        passwordForm.querySelector('input[name="password"]').focus();
+      }
     }finally{button.disabled=false;}
   };
   document.getElementById('adminCodeVerify').onsubmit=async e=>{

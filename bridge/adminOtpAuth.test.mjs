@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sendAdminEmailCode,verifyAdminEmailCode} from '../src/adminOtpAuth.js';
+import {sendAdminEmailCode,verifyAdminEmailCode,adminOtpFailureMessage} from '../src/adminOtpAuth.js';
 
 const email='owner@example.test';
 test('passwordless admin code never auto-creates users',async()=>{
@@ -50,4 +50,17 @@ test('passwordless admin does not expose provider errors or call nonexistent API
   },email),/admin_code_delivery_failed/);
   await assert.rejects(()=>sendAdminEmailCode({},email),/admin_auth_unavailable/);
   await assert.rejects(()=>verifyAdminEmailCode({},email,'123456'),/admin_auth_unavailable/);
+});
+
+test('OTP disabled is explained without leaking provider errors',()=>{
+  const friendly=adminOtpFailureMessage({message:'admin_code_delivery_failed:otp_disabled:HTTP_422'});
+  assert.match(friendly,/OTP disattivato/);
+  assert.match(friendly,/email e password/);
+  assert.doesNotMatch(friendly,/HTTP_|admin_code_delivery_failed/);
+});
+test('other OTP failures do not leak raw server messages',()=>{
+  const message=adminOtpFailureMessage({message:'secret server reason'});
+  assert.match(message,/email e password/);
+  assert.doesNotMatch(message,/secret server reason/);
+  assert.match(adminOtpFailureMessage({message:'admin_email_invalid'}),/email valido/);
 });

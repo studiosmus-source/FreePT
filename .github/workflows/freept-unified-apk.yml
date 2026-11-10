@@ -6,6 +6,11 @@ on:
       - '.github/workflows/freept-unified-apk.yml'
       - 'android-bridge/install_firebase.py'
       - 'android-bridge/test_install_firebase.py'
+      - 'src/main.js'
+      - 'src/adminOtpAuth.js'
+      - 'src/style.css'
+      - 'bridge/adminOtpAuth.test.mjs'
+      - 'bridge/adminLoginUi.test.mjs'
   workflow_dispatch:
 permissions:
   contents: read
