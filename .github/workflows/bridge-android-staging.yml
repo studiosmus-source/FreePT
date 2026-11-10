@@ -35,6 +35,8 @@ jobs:
       - name: Bridge unit regression tests (development branch only)
         if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
         run: npm run test:bridge
+      - name: Silent reconnect and consent regression tests
+        run: node --test src/bridgeReconnect.test.mjs
       - name: Native push registration regression tests
         run: |
           node --check src/pushRegistration.js
