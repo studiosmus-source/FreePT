@@ -22,7 +22,7 @@ import java.util.UUID;
  */
 final class BridgeAllFilesCore {
     private BridgeAllFilesCore(){}
-    private static final int PAGE=100,MAX_HANDLES=3000,MAX_CHUNK=32768;
+    private static final int PAGE=100,MAX_HANDLES=12000,MAX_CHUNK=32768;
     private static final long MAX_BYTES=1099511627776L;
     private static final Map<String, Entry> entries=new HashMap<>();
     private static final Map<String,String> reverse=new HashMap<>();
@@ -71,7 +71,7 @@ final class BridgeAllFilesCore {
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
         if(offset<0||offset>10000)throw new IllegalArgumentException("offset");
         Entry parent=entries.get(handle);
-        if(parent==null||!parent.file.isDirectory()||parent.depth>=16)
+        if(parent==null||!parent.file.isDirectory()||parent.depth>=32)
             throw new SecurityException("invalid_directory");
         File[] children=parent.file.listFiles();
         if(children==null)throw new IOException("unreadable_directory");
