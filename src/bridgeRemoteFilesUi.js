@@ -62,7 +62,7 @@ export function renderBridgeRemoteFiles({
   // Never fetch arbitrary remote URLs or read an entire large file for a thumbnail.
   const PREVIEW_LIMIT=2*1024*1024;
   const previewable=item=>!item.directory&&item.size>0&&item.size<=PREVIEW_LIMIT&&
-    (/^image\\/(?:png|jpeg|gif|webp)$/i.test(item.mime)||
+    (item.mime.startsWith('image/')&&['image/png','image/jpeg','image/gif','image/webp'].includes(item.mime)||
      item.mime==='application/pdf');
   const showPreview=async(item,deviceId)=>{
     if(activeDownload||!alive())return;
