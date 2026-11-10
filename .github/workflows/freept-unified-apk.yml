@@ -65,7 +65,7 @@ jobs:
         run: python3 android-bridge/install.py
       - name: Install native Firebase push configuration
         env:
-          FREEPT_FIREBASE_ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.FREEPT_FIREBASE_ANDROID_GOOGLE_SERVICES_JSON_B64 }}
+          FREEPT_FIREBASE_ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.FREEPT_BRIDGE_GOOGLE_SERVICES_B64 }}
         run: python3 android-bridge/install_firebase.py
       - name: Ensure biometric permission
         run: python3 android-bridge/ensure_biometric.py
