@@ -193,6 +193,8 @@ public final class BridgeTxService extends Service {
                     if(!connectedOnce)break;
                     try{Thread.sleep(1000);}catch(InterruptedException stop){break;}
                 }catch(Exception intermittent){
+                    // Do not expose credentials, paths or exception messages.
+                    Log.w("FreePTBridgeTX","worker_error="+intermittent.getClass().getSimpleName());
                     if(!running.get())break;
                     try{Thread.sleep(5000);}catch(InterruptedException stop){break;}
                 }
