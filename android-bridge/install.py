@@ -80,7 +80,7 @@ source = source.replace(
 required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
-    "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin"
+    "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver"
 ]
 for name in required_templates:
     path = Path("android-bridge") / (name + ".java.template")
@@ -136,7 +136,7 @@ if xml.count("<application") != 1:
     raise SystemExit("Unexpected AndroidManifest.xml layout")
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
-             "BridgeTxControlPlugin"):
+             "BridgeTxControlPlugin", "BridgeTxBootReceiver"):
     template_path = Path("android-bridge") / (name + ".java.template")
     template = template_path.read_text()
     if template.count("__PACKAGE__") != 1:
@@ -145,7 +145,7 @@ for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
         template.replace("__PACKAGE__", package)
     )
 manifest_text = manifest.read_text()
-for permission_name in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC",
+for permission_name in ("RECEIVE_BOOT_COMPLETED", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC",
                         "POST_NOTIFICATIONS"):
     token = 'android.permission.' + permission_name
     if token not in manifest_text:
@@ -157,12 +157,16 @@ for permission_name in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC",
 service = ('<service android:name=".BridgeTxService" '
            'android:exported="false" '
            'android:foregroundServiceType="dataSync" />')
+boot_receiver = ('<receiver android:name=".BridgeTxBootReceiver" '
+                 'android:enabled="true" android:exported="false">'
+                 '<intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" />'
+                 '</intent-filter></receiver>')
 if manifest_text.count("</application>") != 1:
     raise SystemExit("Unexpected AndroidManifest app closure")
 if "BridgeTxService" in manifest_text:
     raise SystemExit("TX native service already registered")
 manifest.write_text(manifest_text.replace("</application>",
-    "    " + service + "\n    </application>", 1))
+    "    " + service + "\n    " + boot_receiver + "\n    </application>", 1))
 values = Path("android/app/src/main/res/values")
 values.mkdir(parents=True, exist_ok=True)
 (values / "freept_bridge.xml").write_text(
