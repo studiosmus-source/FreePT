@@ -17,7 +17,7 @@ export async function inspectBridgeProductionData(db) {
       const response = await db.from(table).select(column, {count: 'exact'}).limit(0);
       const code = response?.error?.code;
       result[key] = code === 'PGRST205' || code === '42P01' ? 'missing'
-        : code === '42501' || code === 'PGRST301' ? 'denied'
+        : code === '42501' ? 'denied_privileges' : code === 'PGRST301' ? 'denied_auth'
         : code === '42703' || code === 'PGRST204' ? 'schema_mismatch'
         : response?.error ? (
           typeof code === 'string' && /^(?:PGRST\d{3}|[0-9A-Z]{5})$/.test(code)
