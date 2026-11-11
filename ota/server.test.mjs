@@ -35,6 +35,19 @@ test('returns authenticated-by-native-compatibility release metadata, not secret
     assert.deepEqual(Object.keys(result).sort(),['checksum','url','version']);
   });
 });
+test('Capgo no-update response uses the documented error contract',async()=>{
+  await withServer(async url=>{
+    const response=await fetch(url+'/updates',{
+      method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({app_id:'it.freept.app',platform:'android',
+        device_id:'device-123456',version_code:'8',version_name:'builtin'})
+    });
+    assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),{
+      error:'no_new_version_available',message:'No new version available'
+    });
+  });
+});
 test('bad requests are rejected without modifying state',async()=>{
   await withServer(async url=>{
     const html=await fetch(url+'/updates',{method:'POST',headers:{'content-type':'text/plain'},body:'{}'});

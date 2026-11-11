@@ -34,13 +34,16 @@ export function validateRelease(input){
     nativeVersionCode:String(input.nativeVersionCode)
   });
 }
+export function noUpdateResponse(){
+  return {error:'no_new_version_available',message:'No new version available'};
+}
 export function chooseUpdate(info,{stable=null,test=null,testDeviceIds=new Set()}={}){
   if(!info||info.platform!=='android'||info.app_id!=='it.freept.app'||
      typeof info.version_name!=='string'||typeof info.device_id!=='string'||
-     info.device_id.length<6||info.device_id.length>200)return {message:'no_update'};
+     info.device_id.length<6||info.device_id.length>200)return noUpdateResponse();
   const release=(testDeviceIds.has(info.device_id)&&test)||stable;
   if(!release||String(info.version_code)!==release.nativeVersionCode||
-     !isNewer(release.version,info.version_name))return {message:'no_update'};
+     !isNewer(release.version,info.version_name))return noUpdateResponse();
   return {version:release.version,url:release.url,checksum:release.checksum};
 }
 export function parseTestDeviceIds(raw=''){

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseVersion,isNewer,validateRelease,chooseUpdate,parseTestDeviceIds} from './releaseProtocol.mjs';
+import {parseVersion,isNewer,validateRelease,chooseUpdate,parseTestDeviceIds,noUpdateResponse} from './releaseProtocol.mjs';
 
 const sample=(version='0.1.1')=>({
   enabled:true,version,nativeVersionCode:1,
@@ -35,16 +35,16 @@ test('stable is default, TEST only to server allowlisted device',()=>{
 });
 test('native build mismatches and invalid app identifiers fail closed',()=>{
   const release=validateRelease(sample());
-  assert.deepEqual(chooseUpdate(info({version_code:'2'}),{stable:release}),{message:'no_update'});
-  assert.deepEqual(chooseUpdate(info({app_id:'it.bad.app'}),{stable:release}),{message:'no_update'});
-  assert.deepEqual(chooseUpdate(info({platform:'ios'}),{stable:release}),{message:'no_update'});
-  assert.deepEqual(chooseUpdate(info({version_name:'0.2.0'}),{stable:release}),{message:'no_update'});
+  assert.deepEqual(chooseUpdate(info({version_code:'2'}),{stable:release}),noUpdateResponse());
+  assert.deepEqual(chooseUpdate(info({app_id:'it.bad.app'}),{stable:release}),noUpdateResponse());
+  assert.deepEqual(chooseUpdate(info({platform:'ios'}),{stable:release}),noUpdateResponse());
+  assert.deepEqual(chooseUpdate(info({version_name:'0.2.0'}),{stable:release}),noUpdateResponse());
 });
 test('unknown clients never get offered a ZIP',()=>{
   const stable=validateRelease(sample());
-  assert.deepEqual(chooseUpdate(null,{stable}),{message:'no_update'});
-  assert.deepEqual(chooseUpdate(info({device_id:''}),{stable}),{message:'no_update'});
-  assert.deepEqual(chooseUpdate(info({version_name:'x'}),{stable}),{message:'no_update'});
+  assert.deepEqual(chooseUpdate(null,{stable}),noUpdateResponse());
+  assert.deepEqual(chooseUpdate(info({device_id:''}),{stable}),noUpdateResponse());
+  assert.deepEqual(chooseUpdate(info({version_name:'x'}),{stable}),noUpdateResponse());
 });
 test('TEST allowlist rejects malformed entries and caps size',()=>{
   assert.deepEqual([...parseTestDeviceIds('device-123456,device-abcdef')],['device-123456','device-abcdef']);
