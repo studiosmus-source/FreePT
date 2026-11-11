@@ -90,3 +90,17 @@ test('TX uses requested nested handle, never silently falls back to root',async(
  await tx.connect();assert.equal(await tx.processOne(),true);
  assert.deepEqual(observed,[{handle:FOLDER,offset:0}]);
 });
+
+
+test('remote folder lister rejects repeated offsets rather than trapping browser in endless pagination',async()=>{
+ const entries=Array.from({length:100},(_,i)=>({
+  handle:'11111111-1111-4111-8111-'+String(i).padStart(12,'0'),
+  name:'file-'+i,directory:false,size:1,mime:'application/octet-stream'
+ }));
+ const lister=createBridgeRemoteFolderLister({deviceId:DEVICE,pause:async()=>{},api:{
+  async requestBrowse(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+  async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:'done'}},
+  async getBrowsePage(){return {jobId:JOB,entries,nextOffset:0}}
+ }});
+ await assert.rejects(lister({handle:'root',offset:0}),/pagination_loop/);
+});

@@ -16,3 +16,13 @@ test('preview uses authorized chunk download and local blob URL',()=>{
   assert.match(source,/URL\.revokeObjectURL\(url\)/);
   assert.match(source,/setAttribute\('sandbox',''\)/);
 });
+
+
+test('remote browser uses paged user-triggered listing and releases active previews on navigation/dispose',()=>{
+ assert.match(source,/more\.onclick=async\(\)=>/);
+ assert.doesNotMatch(source,/await display\(page\.nextOffset\);\s*return;/);
+ assert.match(source,/const previewClosers=new Set\(\)/);
+ assert.match(source,/previewClosers\.add\(dismiss\)/);
+ assert.match(source,/previewClosers\.delete\(dismiss\)/);
+ assert.match(source,/controller\?\.abort\(\);\s*closePreviews\(\)/);
+});

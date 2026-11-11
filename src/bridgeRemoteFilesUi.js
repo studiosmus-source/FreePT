@@ -27,6 +27,8 @@ export function renderBridgeRemoteFiles({
   let revision=0;
   let controller=null;
   let activeDownload=false;
+  const previewClosers=new Set();
+  const closePreviews=()=>{for(const close of [...previewClosers])close()};
   const alive=()=>!disposed&&host.isConnected&&isAuthorized();
   const notice=create('p',ownerId?
     'File e cartelle del telefono associato a questa persona.':
@@ -73,7 +75,14 @@ export function renderBridgeRemoteFiles({
     const message=create('p','Caricamento anteprima…',panel);
     const abort=new AbortController();
     let url=null;
-    close.onclick=()=>{abort.abort();if(url)URL.revokeObjectURL(url);panel.remove()};
+    const dismiss=()=>{
+      abort.abort();
+      if(url){URL.revokeObjectURL(url);url=null;}
+      panel.remove();
+      previewClosers.delete(dismiss);
+    };
+    previewClosers.add(dismiss);
+    close.onclick=dismiss;
     const parts=[];
     let position=0;
     const destination={
@@ -89,7 +98,7 @@ export function renderBridgeRemoteFiles({
         api:bridgeClient,deviceId,handle:item.handle,size:item.size,
         destination,signal:abort.signal
       });
-      if(abort.signal.aborted||!alive())return;
+      if(abort.signal.aborted||!alive()){dismiss();return;}
       url=URL.createObjectURL(new Blob(parts,{type:item.mime}));
       message.remove();
       const view=document.createElement(item.mime==='application/pdf'?'iframe':'img');
@@ -107,6 +116,7 @@ export function renderBridgeRemoteFiles({
     if(activeDownload||!alive())return;
     const title=root?'Cartella condivisa':item.name;
     if(!confirm('Scaricare '+title+' nella cartella di destinazione scelta su questo telefono?'))return;
+    closePreviews();
     activeDownload=true;
     cancel.hidden=false;
     controller=new AbortController();
@@ -144,6 +154,7 @@ export function renderBridgeRemoteFiles({
   async function listDevices(){
     if(!alive())return;
     const marker=++revision;
+    closePreviews();
     devices.replaceChildren();browser.replaceChildren();
     setStatus('Caricamento dispositivi autorizzati…');
     if(!bridgeClient||!bridgeDestination){
@@ -184,6 +195,7 @@ export function renderBridgeRemoteFiles({
   }
   async function showDevice(deviceId,label){
     const marker=++revision;
+    closePreviews();
     const stack=[{handle:'root',name:label}];
     const lister=createBridgeRemoteFolderLister({api:bridgeClient,deviceId});
     const history=()=>stack.map(x=>x.name).join(' / ');
@@ -197,7 +209,7 @@ export function renderBridgeRemoteFiles({
       const view=++navigation;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
-      if(offset===0)browser.replaceChildren();
+      if(offset===0){closePreviews();browser.replaceChildren();}
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
@@ -256,20 +268,23 @@ export function renderBridgeRemoteFiles({
         if(page.nextOffset!==-1){
           const more=create('button','Carica altri file e cartelle',list);
           more.className='bridge-load-more';
-          more.onclick=()=>{more.remove();void display(page.nextOffset)};
-          // Continue through the complete bounded catalogue, not only the
-          // first three pages: otherwise files after many folders stay hidden.
-          // The protocol caps offsets at 10,000 and the server validates pages.
-          if(page.nextOffset>offset && page.nextOffset<=10000){
-            more.remove();
-            await display(page.nextOffset);
-            return;
-          }
+          // Load subsequent pages only on demand. Large folders must stay
+          // navigable while earlier entries are available, even on a slow TX.
+          // Keep the retry control if an individual page request fails.
+          more.onclick=async()=>{
+            if(more.disabled||activeDownload)return;
+            more.disabled=true;
+            const loaded=await display(page.nextOffset);
+            if(loaded)more.remove();
+            else if(more.isConnected)more.disabled=false;
+          };
         }
         if(!page.entries.length&&offset===0)create('p','Cartella vuota.',list);
         setStatus(cached?'Elenco già caricato.':'Elenco aggiornato. Puoi aprire o scaricare file e cartelle.');
+        return true;
       }catch(error){
         setStatus('Elenco non disponibile: '+(error?.message||'errore remoto'));
+        return false;
       }
     }
     await display();
@@ -279,5 +294,6 @@ export function renderBridgeRemoteFiles({
   return ()=>{
     disposed=true;revision++;
     controller?.abort();
+    closePreviews();
   };
 }
