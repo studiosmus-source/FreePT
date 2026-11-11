@@ -684,10 +684,11 @@ async function showOwnerBridgeFolder(){
     // Report progress only: do not cancel an enrollment or a grant that may
     // still finish safely on the server. Never trigger a duplicate request.
     lastDiagnostic='Bridge '+name+' / in_progress';
-    update('Attivazione… · '+description);
+    update('Attivazione…');
     stageTimer=setTimeout(()=>{
       if(working&&alive()&&activationStage===name){
-        update('Attesa prolungata: '+description+'. Non premere nuovamente Attiva.');
+        // Keep the status quiet; technical details remain available only
+        // through the deliberate five-tap support diagnostic.
         lastDiagnostic='Bridge '+name+' / waiting';
       }
     },20000);
