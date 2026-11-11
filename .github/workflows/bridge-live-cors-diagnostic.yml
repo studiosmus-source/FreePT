@@ -30,3 +30,5 @@ jobs:
             -X POST "$URL/bridge/owner/enroll" \
             -H 'Origin: http://localhost' -H 'Content-Type: application/json' \
             --data '{"label":"unauthorized-test"}' | head -30
+
+# Run after production origin fix c293f105
