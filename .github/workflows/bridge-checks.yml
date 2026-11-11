@@ -1,0 +1,224 @@
+name: Bridge isolated checks
+
+on:
+  push:
+    branches:
+      - feature/bridge-admin-foundation-20261106
+      - feature/bridge-chunk-receiver-20261108
+    paths:
+      - 'bridge/**'
+      - 'supabase/migrations/20261106_bridge_*.sql'
+      - 'supabase/migrations/20261108_bridge_*.sql'
+      - 'supabase/migrations/20261109_bridge_*.sql'
+      - 'supabase/bridge_preflight.sql'
+      - 'supabase/bridge_staging_install_once.sql'
+      - 'supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql'
+      - 'supabase/bridge_sql_safety.test.mjs'
+      - 'package.json'
+      - 'src/**'
+      - 'index.html'
+      - '.github/workflows/bridge-checks.yml'
+  pull_request:
+    paths:
+      - 'bridge/**'
+      - 'supabase/migrations/20261106_bridge_*.sql'
+      - 'supabase/migrations/20261108_bridge_*.sql'
+      - 'supabase/migrations/20261109_bridge_*.sql'
+      - 'supabase/bridge_preflight.sql'
+      - 'package.json'
+      - 'src/**'
+      - 'index.html'
+      - '.github/workflows/bridge-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies required by Bridge runtime tests
+        run: npm install --no-audit --no-fund
+      - name: Bridge model tests
+        run: npm run test:bridge
+      - name: Syntax check every Bridge module and FreePT entrypoint
+        run: |
+          for file in bridge/*.mjs src/main.js; do
+            node --check "$file"
+          done
+
+  freept-web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install FreePT dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build FreePT web bundle with nonfunctional isolated CI configuration
+        env:
+          VITE_SUPABASE_URL: https://bridge-build-only.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_aaaaaaaaaaaaaaaaaaaaaaaa
+          VITE_BRIDGE_TEST_API_URL: ''
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
+        run: npm run build
+      - name: Verify generated entrypoint and isolated test target
+        run: |
+          test -s dist/index.html
+          grep -R -F -q 'bridge-build-only.supabase.co' dist
+
+  bridge-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bridge_ci
+          POSTGRES_PASSWORD: bridge_ci_only
+          POSTGRES_DB: bridge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bridge_ci -d bridge_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: bridge_ci
+      PGPASSWORD: bridge_ci_only
+      PGDATABASE: bridge_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Bootstrap disposable identities and apply Bridge migrations
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-bootstrap.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_foundation.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_owner_controls.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_device_verifiers.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_audit.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_jobs_staging.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_job_admin_staging.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_job_revocation_fence.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_tx_sessions_staging.sql
+      - name: Assert PostgreSQL permissions and real Bridge job transitions
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-tests.sql
+      - name: Assert PostgreSQL admin job status and cancellation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-admin-jobs.sql
+      - name: Assert revoked and owner-disabled jobs never revive
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-revocation-fence.sql
+      - name: Assert persistent TX session supersession expiry and revocation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-tx-sessions.sql
+      - name: Assert transaction blocks concurrent claim during owner shutdown
+        run: bash bridge/postgres-ci-concurrency.sh
+      - name: Run Node adapter against real disposable PostgreSQL RPCs
+        run: node --test bridge/postgresJobsLive.integration.mjs
+      - name: Enforce shared TX session inside PostgreSQL claim and completion
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261106_bridge_job_session_fence.sql
+      - name: Assert atomic TX session fencing for real database jobs
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-atomic-session-jobs.sql
+      - name: Verify Node shared sessions and persistent jobs together
+        run: node --test bridge/postgresSessionsLive.integration.mjs
+      - name: Install experimental file-catalogue RPCs on disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_folder_catalog_staging.sql
+      - name: Verify authenticated folder listing and revocation in PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-folder-catalog.sql
+      - name: Install isolated authenticated read-chunk RPCs
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_read_chunks_staging.sql
+      - name: Verify read authorization session fencing and revocation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-read-chunks.sql
+      - name: Install isolated authenticated nested folder browsing RPCs
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_browse_staging.sql
+      - name: Verify nested folders, explicit selection and grant revocations
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-browse.sql
+      - name: Install server-only owner enrollment on isolated PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_device_enrollment_staging.sql
+      - name: Verify enrollment privileges, ownership and deletion
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-device-enrollment.sql
+      - name: Install explicit one-tap family activation on disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261109_bridge_family_activation_staging.sql
+      - name: Verify owner-only consent, unique approved admin and failure isolation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
+
+  bridge-bundle-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bridge_ci
+          POSTGRES_PASSWORD: bridge_ci_only
+          POSTGRES_DB: bridge_bundle_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bridge_ci -d bridge_bundle_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: bridge_ci
+      PGPASSWORD: bridge_ci_only
+      PGDATABASE: bridge_bundle_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Bootstrap isolated identities and install the exact bundled SQL
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-bootstrap.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/bridge_staging_install_once.sql
+      - name: Verify repeated installation is refused without modifying installed Bridge schema
+        run: |
+          set -euo pipefail
+          before="$(psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from pg_class where relnamespace='public'::regnamespace and relname like 'bridge_%'")"
+          if psql -v ON_ERROR_STOP=1 -f supabase/bridge_staging_install_once.sql > /tmp/bridge-repeat.txt 2>&1; then
+            echo 'Repeated installation unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -Fq 'BRIDGE STOP: Bridge already installed' /tmp/bridge-repeat.txt
+          after="$(psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from pg_class where relnamespace='public'::regnamespace and relname like 'bridge_%'")"
+          test "$before" = "$after"
+      - name: Verify complete bundle using existing SQL integration tests
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-device-enrollment.sql
+      - name: Require every Bridge security preflight check to pass
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -At -F '|' -f supabase/bridge_preflight.sql > /tmp/bridge-preflight-results.txt
+          cat /tmp/bridge-preflight-results.txt
+          test "$(wc -l < /tmp/bridge-preflight-results.txt)" -eq 36
+          test "$(grep -c 'DA CONFIGURARE' /tmp/bridge-preflight-results.txt || true)" -eq 0
+          test "$(grep -c '|OK' /tmp/bridge-preflight-results.txt)" -eq 36
+      - name: Install production candidate in a separate disposable PostgreSQL database
+        run: |
+          set -euo pipefail
+          createdb bridge_production_candidate_ci
+          export PGDATABASE=bridge_production_candidate_ci
+          # PostgreSQL roles are cluster-wide; the first disposable database already created them.
+          sed '/^create role \(anon\|authenticated\|service_role\) nologin;/d' bridge/postgres-ci-bootstrap.sql | psql -v ON_ERROR_STOP=1
+          psql -v ON_ERROR_STOP=1 -f supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql
+          psql -v ON_ERROR_STOP=1 -At -F '|' -f supabase/bridge_preflight.sql > /tmp/bridge-production-candidate-preflight.txt
+          test "$(wc -l < /tmp/bridge-production-candidate-preflight.txt)" -eq 36
+          test "$(grep -c 'DA CONFIGURARE' /tmp/bridge-production-candidate-preflight.txt || true)" -eq 0
+          test "$(grep -c '|OK' /tmp/bridge-production-candidate-preflight.txt)" -eq 36
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
+      - name: Verify family activation RPC exists
+        run: |
+          psql -v ON_ERROR_STOP=1 -Atqc "select to_regprocedure('public.bridge_owner_activate_family(uuid)') is not null" | grep -qx 't'

@@ -1,0 +1,147 @@
+/**
+ * Isolated server-side TX session gate. NO HTTP routes or client integration.
+ *
+ * Opening a TX session proves knowledge of a device-specific secret, not
+ * ownership of a phone. Caller must also verify owner enrollment, TLS and
+ * database state in a production backend.
+ *
+ * Authorization is rechecked for EACH operation, not only at login.
+ */
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+
+const TOKEN_RE = /^[0-9a-f]{64}$/;
+const MAX_AGE_MS = 5 * 60 * 1000;
+
+function hashToken(token) {
+  return createHash('sha256').update('freept-bridge-session-v1\0')
+    .update(token).digest();
+}
+
+export class BridgeDeviceSessionGate {
+  #sessions = new Map();
+
+  constructor({ credentials, registry, now = () => Date.now(), maxSessions = 1000 }) {
+    if (!credentials || !registry || typeof now !== 'function')
+      throw new Error('invalid_session_dependencies');
+    if (!Number.isSafeInteger(maxSessions) || maxSessions < 1)
+      throw new Error('invalid_session_limits');
+    this.credentials = credentials;
+    this.registry = registry;
+    this.now = now;
+    this.maxSessions = maxSessions;
+  }
+
+  // Expired or superseded tokens must not accumulate indefinitely between
+  // requests. This is a bounded in-process cache, not persistent auth state.
+  #pruneSessions() {
+    const time = this.now();
+    for (const [hash, state] of this.#sessions) {
+      if (time >= state.expiresAt ||
+          state.sessionEpoch !== this.registry.getSessionEpoch(state.deviceId))
+        this.#sessions.delete(hash);
+    }
+  }
+
+  /**
+   * Bootstrap connection when the TX is initially offline.
+   * Device credentials are verified BEFORE marking presence online;
+   * the owner's Bridge switch must already be enabled.
+   * This is an in-process backend primitive, NOT an exposed network route.
+   */
+  connect({ deviceId, secret }) {
+    if (!this.credentials.authenticate(deviceId, secret))
+      throw new Error('device_not_authenticated');
+    if (!this.registry.isDeviceEnabled(deviceId))
+      throw new Error('bridge_unavailable');
+    // A new authenticated connection supersedes the previous connection.
+    // Invalidate its session epoch and cancel in-flight jobs before issuing
+    // a fresh token. Do not revoke owner consent or cancel queued work.
+    if (this.registry.isDeviceReady(deviceId))
+      this.registry.setOnline(deviceId, false);
+    this.registry.setOnline(deviceId, true);
+    return this.open({ deviceId, secret });
+  }
+
+  /** Starts a short-lived TX-only session after secret verification. */
+  open({ deviceId, secret }) {
+    if (!this.credentials.authenticate(deviceId, secret))
+      throw new Error('device_not_authenticated');
+    if (!this.registry.isDeviceReady(deviceId))
+      throw new Error('bridge_unavailable');
+    const verifier = this.credentials.exportVerifier(deviceId);
+    if (!verifier) throw new Error('device_not_authenticated');
+    this.#pruneSessions();
+    if (this.#sessions.size >= this.maxSessions)
+      throw new Error('device_session_capacity');
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = hashToken(token);
+    const expiresAt = this.now() + MAX_AGE_MS;
+    this.#sessions.set(tokenHash.toString('hex'), {
+      deviceId,
+      verifier: verifier.verifier,
+      sessionEpoch: this.registry.getSessionEpoch(deviceId),
+      expiresAt
+    });
+    // This bearer token must travel only over authenticated TLS and
+    // must never be logged or stored in a client-accessible database.
+    return { token, expiresAt };
+  }
+
+  /**
+   * Validate the TX itself BEFORE dequeueing work. The token does not confer
+   * admin rights or file access by itself.
+   */
+  assertDeviceSession({ token, deviceId }) {
+    if (typeof token !== 'string' || !TOKEN_RE.test(token))
+      throw new Error('invalid_device_session');
+    const tokenHash = hashToken(token).toString('hex');
+    const state = this.#sessions.get(tokenHash);
+    if (!state || state.deviceId !== deviceId)
+      throw new Error('invalid_device_session');
+    if (this.now() >= state.expiresAt) {
+      this.#sessions.delete(tokenHash);
+      throw new Error('device_session_expired');
+    }
+    const current = this.credentials.exportVerifier(deviceId);
+    if (!current) {
+      this.#sessions.delete(tokenHash);
+      throw new Error('device_session_revoked');
+    }
+    const savedVerifier = Buffer.from(state.verifier, 'hex');
+    const liveVerifier = Buffer.from(current.verifier, 'hex');
+    if (savedVerifier.length !== liveVerifier.length ||
+        !timingSafeEqual(savedVerifier, liveVerifier) ||
+        state.sessionEpoch !== this.registry.getSessionEpoch(deviceId)) {
+      this.#sessions.delete(tokenHash);
+      throw new Error('device_session_revoked');
+    }
+    if (!this.registry.isDeviceReady(deviceId))
+      throw new Error('bridge_unavailable');
+    return deviceId;
+  }
+
+  /**
+   * Opaque per-session dispatch binding. Rechecks TX authentication;
+   * the original bearer token is never stored in a job record.
+   */
+  getDispatchBinding({ token, deviceId }) {
+    this.assertDeviceSession({ token, deviceId });
+    return hashToken(token).toString('hex');
+  }
+
+  /**
+   * The receiver identity is a TRUSTED backend context, never a plain
+   * unverified HTTP parameter. Recheck grant, TX state and token rotation.
+   */
+  authorize({ token, deviceId, receiverId }) {
+    this.assertDeviceSession({ token, deviceId });
+    const device = this.registry.getDeviceStatus({ deviceId, receiverId });
+    if (device.state !== 'online') throw new Error('bridge_unavailable');
+    return { deviceId, receiverId };
+  }
+
+  close(token) {
+    if (typeof token !== 'string' || !TOKEN_RE.test(token)) return false;
+    return this.#sessions.delete(hashToken(token).toString('hex'));
+  }
+}

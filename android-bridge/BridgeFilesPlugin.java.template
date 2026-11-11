@@ -1,0 +1,250 @@
+package __PACKAGE__;
+
+import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.ParcelFileDescriptor;
+import android.provider.DocumentsContract;
+import android.util.Base64;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.annotation.ActivityCallback;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.PluginMethod;
+import java.io.FileInputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Owner-selected Android SAF folder. No broad storage permission or network.
+ * Opaque handles only refer to documents discovered beneath the chosen tree.
+ * Selection alone does not transmit or share data with another device.
+ */
+@CapacitorPlugin(name = "BridgeFiles")
+public class BridgeFilesPlugin extends Plugin {
+    private static final String PREFS = "freept_bridge_owner";
+    private static final String TREE_KEY = "selected_tree";
+    private static final int PAGE_SIZE = 100;
+    private static final int MAX_HANDLES = 3000;
+    private static final int MAX_CHUNK = 262144;
+    private final Map<String, Entry> handles = new HashMap<>();
+    private final Map<String, String> documentHandles = new HashMap<>();
+    private Uri tree;
+
+    private static class Entry {
+        final Uri uri;
+        final boolean directory;
+        final int depth;
+        Entry(Uri uri, boolean directory, int depth) {
+            this.uri = uri; this.directory = directory; this.depth = depth;
+        }
+    }
+
+    private void setTree(Uri uri) {
+        tree = uri;
+        handles.clear();
+        documentHandles.clear();
+        Uri root = DocumentsContract.buildDocumentUriUsingTree(
+                uri, DocumentsContract.getTreeDocumentId(uri));
+        handles.put("root", new Entry(root, true, 0));
+    }
+
+    private void restoreTree() {
+        if(tree != null) return;
+        String saved = getContext().getSharedPreferences(PREFS,0)
+                .getString(TREE_KEY,null);
+        if(saved == null) return;
+        Uri candidate = Uri.parse(saved);
+        for(android.content.UriPermission permission:
+                getContext().getContentResolver().getPersistedUriPermissions()) {
+            if(permission.isReadPermission() && permission.getUri().equals(candidate)) {
+                setTree(candidate); return;
+            }
+        }
+        getContext().getSharedPreferences(PREFS,0).edit().remove(TREE_KEY).apply();
+    }
+
+    @PluginMethod
+    public void getFolder(PluginCall call) {
+        restoreTree();
+        JSObject result = new JSObject();
+        result.put("selected",tree != null);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void chooseFolder(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(call,intent,"folderSelected");
+    }
+
+    @ActivityCallback
+    private void folderSelected(PluginCall call, ActivityResult result) {
+        if(call == null) return;
+        Intent data = result.getData();
+        if(result.getResultCode() != android.app.Activity.RESULT_OK ||
+                data == null || data.getData() == null) {
+            call.reject("bridge_folder_selection_cancelled");return;
+        }
+        Uri uri = data.getData();
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(
+                    uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if(tree != null && !tree.equals(uri)) {
+                try { getContext().getContentResolver().releasePersistableUriPermission(
+                    tree,Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+                catch(SecurityException ignored){}
+            }
+            setTree(uri);
+            getContext().getSharedPreferences(PREFS,0).edit()
+                    .putString(TREE_KEY,uri.toString()).apply();
+            JSObject response = new JSObject();
+            response.put("selected",true);
+            call.resolve(response);
+        } catch(Exception error) {
+            call.reject("bridge_folder_permission_denied");
+        }
+    }
+
+    @PluginMethod
+    public void clearFolder(PluginCall call) {
+        restoreTree();
+        if(tree != null) {
+            try {getContext().getContentResolver().releasePersistableUriPermission(
+                    tree,Intent.FLAG_GRANT_READ_URI_PERMISSION);}
+            catch(SecurityException ignored){}
+        }
+        tree = null;
+        handles.clear();
+        documentHandles.clear();
+        getContext().getSharedPreferences(PREFS,0).edit().remove(TREE_KEY).apply();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void list(PluginCall call) {
+        restoreTree();
+        if(tree == null) {call.reject("bridge_no_folder_selected");return;}
+        String token = call.getString("handle","root");
+        Integer index = call.getInt("offset",0);
+        if(index == null || index < 0 || index > 10000) {
+            call.reject("bridge_invalid_offset");return;
+        }
+        Entry parent = handles.get(token);
+        if(parent == null || !parent.directory || parent.depth >= 16) {
+            call.reject("bridge_invalid_folder");return;
+        }
+        if(handles.size() >= MAX_HANDLES) {
+            call.reject("bridge_handle_limit");return;
+        }
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(
+                tree,DocumentsContract.getDocumentId(parent.uri));
+        JSArray list = new JSArray();
+        int seen = 0;
+        int emitted = 0;
+        boolean more = false;
+        try(Cursor cursor = getContext().getContentResolver().query(
+                children,new String[]{
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE
+                },null,null,null)) {
+            if(cursor == null) {call.reject("bridge_unreadable_folder");return;}
+            while(cursor.moveToNext()) {
+                if(seen++ < index) continue;
+                if(emitted >= PAGE_SIZE) {more = true;break;}
+                String docId = cursor.getString(0);
+                if(docId == null) {
+                    call.reject("bridge_invalid_document");return;
+                }
+                String mime = cursor.getString(2);
+                boolean directory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mime);
+                // The handle remains stable for every repeated page/list
+                // within this explicitly selected tree and process lifetime.
+                String handle = documentHandles.get(docId);
+                if(handle == null) {
+                    if(handles.size() >= MAX_HANDLES) {
+                        call.reject("bridge_handle_limit");return;
+                    }
+                    handle = UUID.randomUUID().toString();
+                    Uri child = DocumentsContract.buildDocumentUriUsingTree(tree,docId);
+                    handles.put(handle,new Entry(child,directory,parent.depth + 1));
+                    documentHandles.put(docId,handle);
+                }
+                JSObject item = new JSObject();
+                item.put("handle",handle);
+                item.put("name",cursor.getString(1));
+                item.put("directory",directory);
+                item.put("mime",mime == null ? "" : mime);
+                item.put("size",cursor.isNull(3) ? -1 : cursor.getLong(3));
+                list.put(item);
+                emitted++;
+            }
+            JSObject response = new JSObject();
+            response.put("entries",list);
+            response.put("nextOffset",more ? index + emitted : -1);
+            call.resolve(response);
+        } catch(Exception error) {
+            call.reject("bridge_unreadable_folder");
+        }
+    }
+
+    @PluginMethod
+    public void readChunk(PluginCall call) {
+        restoreTree();
+        if(tree == null) {call.reject("bridge_no_folder_selected");return;}
+        Entry entry = handles.get(call.getString("handle"));
+        // JSON small integers can arrive as Integer, not Long.
+        Object rawOffset = call.getData().opt("offset");
+        long offset = rawOffset instanceof Number ? ((Number)rawOffset).longValue() : -1;
+        Integer length = call.getInt("length",MAX_CHUNK);
+        if(entry == null || entry.directory ||
+                !(rawOffset instanceof Number) ||
+                ((Number)rawOffset).doubleValue() != (double)offset ||
+                offset < 0 || offset > 1099511627776L ||
+                length == null || length < 1 || length > MAX_CHUNK) {
+            call.reject("bridge_invalid_file_request");return;
+        }
+        try(ParcelFileDescriptor descriptor = getContext()
+                .getContentResolver().openFileDescriptor(entry.uri,"r")) {
+            if(descriptor == null) {call.reject("bridge_unreadable_file");return;}
+            try(FileInputStream stream = new FileInputStream(descriptor.getFileDescriptor())) {
+                FileChannel channel = stream.getChannel();
+                channel.position(offset);
+                ByteBuffer bytes = ByteBuffer.allocate(length);
+                // SAF providers can return a short read even before EOF.
+                // Accumulate until requested length or a true EOF instead of
+                // producing an apparently truncated network transfer.
+                int total = 0;
+                while(bytes.hasRemaining()) {
+                    int count = channel.read(bytes);
+                    if(count < 0) break;
+                    if(count == 0) {
+                        // A blocking channel should not spin indefinitely.
+                        throw new java.io.IOException("bridge_file_no_read_progress");
+                    }
+                    total += count;
+                }
+                bytes.flip();
+                byte[] output = new byte[total];
+                bytes.get(output);
+                JSObject response = new JSObject();
+                response.put("base64",Base64.encodeToString(output,Base64.NO_WRAP));
+                response.put("bytesRead",output.length);
+                response.put("eof",total < length);
+                call.resolve(response);
+            }
+        } catch(Exception error) {
+            call.reject("bridge_unreadable_file");
+        }
+    }
+}

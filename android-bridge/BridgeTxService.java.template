@@ -1,0 +1,233 @@
+package __PACKAGE__;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
+import android.os.IBinder;
+import android.os.Process;
+import android.util.Log;
+import org.json.JSONObject;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/** Foreground TX: no WebView or Activity is required once the owner enables it. */
+public final class BridgeTxService extends Service {
+    static final String ACTION_STOP="it.freept.bridge.STOP_TX";
+    static final int NOTIFICATION_ID=4751;
+    private static final String CHANNEL="freept_sistema_connesso";
+    private final AtomicBoolean running=new AtomicBoolean(false);
+    private Thread worker;
+    private volatile HttpURLConnection connection;
+
+    static volatile boolean active=false;
+    @Override public IBinder onBind(Intent intent){return null;}
+
+    @Override public int onStartCommand(Intent intent,int flags,int startId){
+        if(intent!=null&&ACTION_STOP.equals(intent.getAction())){
+            getSharedPreferences("freept_tx_control",0).edit()
+                .putBoolean("paused",true).apply();
+            stopSelf();return START_NOT_STICKY;
+        }
+        if(!BridgeAllFilesCore.granted()||
+           !BridgeDeviceSecretStore.configured(this)||
+           getSharedPreferences("freept_tx_control",0).getBoolean("paused",false)){
+            stopSelf();return START_NOT_STICKY;
+        }
+        try{
+            String endpoint=getString(getResources().getIdentifier(
+                "bridge_endpoint","string",getPackageName()));
+            if(!validEndpoint(endpoint)){stopSelf();return START_NOT_STICKY;}
+        }catch(Exception error){stopSelf();return START_NOT_STICKY;}
+        showForeground();
+        if(running.compareAndSet(false,true)){
+            worker=new Thread(this::runWorker,"freept-bridge-tx");
+            worker.start();
+        }
+        // Allow Android to recreate an unexpectedly killed service when permitted.
+        // Every restart still rechecks file consent, provisioning and pause state.
+        // Explicit stop, invalid setup and foreground-service timeout stop normally.
+        return START_STICKY;
+    }
+    private static boolean validEndpoint(String endpoint){
+        try{
+            URL url=new URL(endpoint);
+            return "https".equals(url.getProtocol())&&
+                url.getHost()!=null&&!url.getHost().isEmpty()&&
+                url.getPort()==-1&&"/".equals(url.getPath().isEmpty()?"/":url.getPath())&&
+                url.getQuery()==null&&url.getRef()==null&&
+                !"cpopqsvzzxfjgnlawlvc.supabase.co".equals(url.getHost());
+        }catch(Exception error){return false;}
+    }
+    private void showForeground(){
+        NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        if(Build.VERSION.SDK_INT>=26){
+            NotificationChannel channel=new NotificationChannel(CHANNEL,"FreePT - Connesso",
+                NotificationManager.IMPORTANCE_LOW);
+            manager.createNotificationChannel(channel);
+        }
+        Notification notification=new Notification.Builder(this,
+            Build.VERSION.SDK_INT>=26?CHANNEL:null)
+            .setContentTitle("FreePT - Connesso")
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setOngoing(true)
+            .build();
+        if(Build.VERSION.SDK_INT>=29){
+            startForeground(NOTIFICATION_ID,notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        }else startForeground(NOTIFICATION_ID,notification);
+    }
+    private String endpoint(){
+        return getString(getResources().getIdentifier(
+            "bridge_endpoint","string",getPackageName()));
+    }
+    private JSONObject post(String route,JSONObject body)throws Exception{
+        HttpURLConnection conn=(HttpURLConnection)new URL(endpoint()+route).openConnection();
+        connection=conn;
+        try{
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(12000);conn.setReadTimeout(32000);
+            conn.setInstanceFollowRedirects(false);
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type","application/json");
+            conn.setRequestProperty("Accept","application/json");
+            byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);
+            if(bytes.length>48000)throw new IllegalArgumentException("payload_too_large");
+            try(OutputStream out=conn.getOutputStream()){out.write(bytes);}
+            int code=conn.getResponseCode();
+            if(code==401||code==403)throw new SecurityException("tx_denied");
+            if(code<200||code>=300){
+                // Preserve the HTTP category for diagnostics without exposing response bodies.
+                Log.w("FreePTBridgeTX","request_failed route="+route+" status="+code);
+                throw new java.io.IOException("backend_http_"+code);
+            }
+            try(BufferedReader reader=new BufferedReader(new InputStreamReader(
+                    conn.getInputStream(),StandardCharsets.UTF_8))){
+                char[] block=new char[2048];
+                StringBuilder result=new StringBuilder();
+                int count;
+                while((count=reader.read(block))!=-1){
+                    if(result.length()+count>65536)throw new java.io.IOException("response_too_large");
+                    result.append(block,0,count);
+                }
+                return new JSONObject(result.toString());
+            }
+        }finally{
+            connection=null;
+            conn.disconnect();
+        }
+    }
+    private JSONObject payload(String deviceId,String sessionToken)throws Exception{
+        return new JSONObject().put("deviceId",deviceId)
+            .put("sessionToken",sessionToken);
+    }
+    private void executeJob(JSONObject item,String id,String session)throws Exception{
+        String op=item.optString("operation","");
+        String jobId=item.optString("jobId","");
+        if(!jobId.matches("(?i)^[0-9a-f-]{36}$")||
+           !id.equals(item.optString("deviceId")))throw new SecurityException("wrong_device");
+        JSONObject result=payload(id,session).put("jobId",jobId);
+        String route;
+        switch(op){
+            case "list":{
+                JSONObject page=BridgeAllFilesCore.list("root",0);
+                if(page.getInt("nextOffset")!=-1)
+                    throw new IllegalStateException("catalogue_page_required");
+                route="/bridge/tx/folder";
+                result.put("entries",page.getJSONArray("entries"));
+                break;
+            }
+            case "browse":{
+                String handle=item.getString("handle");
+                int offset=item.getInt("offset");
+                JSONObject page=BridgeAllFilesCore.list(handle,offset);
+                result.put("entries",page.getJSONArray("entries"));
+                result.put("nextOffset",page.getInt("nextOffset"));
+                route="/bridge/tx/browse";
+                break;
+            }
+            case "read":{
+                String handle=item.getString("handle");
+                long offset=item.getLong("offset");
+                int length=item.getInt("length");
+                result.put("chunk",BridgeAllFilesCore.read(handle,offset,length));
+                route="/bridge/tx/chunk";
+                break;
+            }
+            default: throw new SecurityException("invalid_job");
+        }
+        JSONObject response=post(route,result);
+        if(!jobId.equals(response.optString("jobId"))||
+           !id.equals(response.optString("deviceId"))||
+           !"done".equals(response.optString("state")))
+            throw new java.io.IOException("invalid_job_ack");
+    }
+    private void runWorker(){
+        Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+        active=true;
+        try{
+            BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(this);
+            while(running.get()&&!Thread.currentThread().isInterrupted()){
+                boolean connectedOnce=false;
+                try{
+                    JSONObject connected=post("/bridge/tx/connect",new JSONObject()
+                        .put("deviceId",cred.deviceId).put("deviceSecret",cred.deviceSecret));
+                    String token=connected.getString("token");
+                    if(!token.matches("^[0-9a-f]{64}$"))
+                        throw new SecurityException("invalid_session");
+                    connectedOnce=true;
+                    while(running.get()&&!Thread.currentThread().isInterrupted()){
+                        JSONObject command=post("/bridge/tx/poll",payload(cred.deviceId,token));
+                        JSONObject job=command.optJSONObject("job");
+                        if(job!=null)executeJob(job,cred.deviceId,token);
+                        else Thread.sleep(2000);
+                    }
+                }catch(SecurityException denied){
+                    // TX sessions expire after 5 minutes. Only a previously
+                    // successful connection may renew; a refused fresh login
+                    // is a durable revocation and stops the service.
+                    if(!connectedOnce)break;
+                    try{Thread.sleep(1000);}catch(InterruptedException stop){break;}
+                }catch(Exception intermittent){
+                    // Do not expose credentials, paths or exception messages.
+                    Log.w("FreePTBridgeTX","worker_error="+intermittent.getClass().getSimpleName());
+                    if(!running.get())break;
+                    try{Thread.sleep(5000);}catch(InterruptedException stop){break;}
+                }
+            }
+        }catch(Exception ignored){
+            // Never expose device credentials, private paths or file contents in logs.
+        }finally{
+            active=false;running.set(false);
+            stopSelf();
+        }
+    }
+    // Android 15+ limits dataSync foreground-service runtime. Stop promptly
+    // when the OS reports timeout instead of allowing a fatal exception.
+    @Override public void onTimeout(int startId, int fgsType){
+        running.set(false);
+        HttpURLConnection conn=connection;
+        if(conn!=null)conn.disconnect();
+        Thread thread=worker;
+        if(thread!=null)thread.interrupt();
+        active=false;
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf(startId);
+    }
+    @Override public void onDestroy(){
+        running.set(false);
+        HttpURLConnection conn=connection;
+        if(conn!=null)conn.disconnect();
+        if(worker!=null)worker.interrupt();
+        active=false;
+        super.onDestroy();
+    }
+}

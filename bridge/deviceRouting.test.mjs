@@ -1,0 +1,305 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { BridgeRegistry } from './deviceRouting.mjs';
+
+function paired() {
+  const r = new BridgeRegistry();
+  r.registerDevice({ id: 'tx-a', ownerId: 'owner-a', label: 'Telefono A' });
+  r.registerDevice({ id: 'tx-b', ownerId: 'owner-b', label: 'Telefono B' });
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  r.setBridgeEnabled({ deviceId: 'tx-b', ownerId: 'owner-b', enabled: true });
+  r.setOnline('tx-a', true);
+  r.setOnline('tx-b', true);
+  r.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  r.grant({ deviceId: 'tx-b', receiverId: 'rx-1', approvedByOwnerId: 'owner-b' });
+  return r;
+}
+
+test('two simultaneous TX never consume the other TX job', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'a1', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  r.enqueue({ jobId: 'b1', deviceId: 'tx-b', receiverId: 'rx-1', operation: 'list' });
+  assert.equal(r.takeNext('tx-b').jobId, 'b1');
+  assert.equal(r.takeNext('tx-a').jobId, 'a1');
+  assert.equal(r.takeNext('tx-b'), null);
+});
+
+test('unauthorized RX cannot queue or retrieve another RX jobs', () => {
+  const r = paired();
+  assert.throws(() => r.enqueue({ jobId: 'j1', deviceId: 'tx-a', receiverId: 'rx-2', operation: 'list' }), /not_authorized/);
+  r.enqueue({ jobId: 'j2', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  r.takeNext('tx-a');
+  assert.throws(() => r.complete({ jobId: 'j2', deviceId: 'tx-a', receiverId: 'rx-2' }), /not_authorized/);
+  assert.throws(() => r.complete({ jobId: 'j2', deviceId: 'tx-b', receiverId: 'rx-1' }), /not_authorized/);
+  assert.equal(r.complete({ jobId: 'j2', deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'done');
+});
+
+test('revocation cancels outstanding work and hides device', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'j', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  assert.throws(() => r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-b' }), /owner_required/);
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.deepEqual(r.listApproved('rx-1').map(x => x.id), ['tx-b']);
+  assert.equal(r.takeNext('tx-a'), null);
+  assert.throws(() => r.enqueue({ jobId: 'j2', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' }), /not_authorized/);
+});
+
+test('offline and missing approvals fail closed', () => {
+  const r = new BridgeRegistry();
+  r.registerDevice({ id: 'tx', ownerId: 'owner', label: 'Tel' });
+  assert.throws(() => r.grant({ deviceId: 'tx', receiverId: 'rx', approvedByOwnerId: 'stranger' }), /approval_required/);
+  assert.throws(() => r.enqueue({ jobId: 'j', deviceId: 'tx', receiverId: 'rx', operation: 'list' }), /device_offline/);
+  r.setBridgeEnabled({ deviceId: 'tx', ownerId: 'owner', enabled: true });
+  r.setOnline('tx', true);
+  assert.throws(() => r.enqueue({ jobId: 'j', deviceId: 'tx', receiverId: 'rx', operation: 'list' }), /not_authorized/);
+});
+
+test('offline TX does not accept queued jobs and cannot complete an in-flight request', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'queued', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  r.setOnline('tx-a', false);
+  assert.equal(r.takeNext('tx-a'), null);
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a').jobId, 'queued');
+  r.setOnline('tx-a', false);
+  assert.throws(() => r.complete({ jobId: 'queued', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
+});
+
+test('revocation prevents completion of a command already dispatched', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  assert.equal(r.takeNext('tx-a').jobId, 'sent');
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.throws(() => r.complete({ jobId: 'sent', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
+  assert.equal(r.listApproved('rx-1').some(x => x.id === 'tx-a'), false);
+});
+
+test('punctuation in IDs cannot reuse authorization for another device', () => {
+  const r = new BridgeRegistry();
+  r.registerDevice({ id: 'a:b', ownerId: 'owner-1', label: 'Telefono 1' });
+  r.registerDevice({ id: 'a', ownerId: 'owner-2', label: 'Telefono 2' });
+  r.setBridgeEnabled({ deviceId: 'a:b', ownerId: 'owner-1', enabled: true });
+  r.setBridgeEnabled({ deviceId: 'a', ownerId: 'owner-2', enabled: true });
+  r.setOnline('a:b', true);
+  r.setOnline('a', true);
+  r.grant({ deviceId: 'a:b', receiverId: 'c', approvedByOwnerId: 'owner-1' });
+  assert.deepEqual(r.listApproved('c').map(x => x.id), ['a:b']);
+  assert.deepEqual(r.listApproved('b:c').map(x => x.id), []);
+  assert.throws(() => r.enqueue({
+    jobId: 'bad', deviceId: 'a', receiverId: 'b:c', operation: 'list'
+  }), /not_authorized/);
+});
+
+test('durable grants survive restart but online presence and queued jobs do not', () => {
+  const original = paired();
+  original.enqueue({ jobId: 'pending', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  const persisted = JSON.parse(JSON.stringify(original.snapshot()));
+  const rebooted = BridgeRegistry.fromTrustedSnapshot(persisted);
+  assert.deepEqual(rebooted.listApproved('rx-1').map(x => x.id), ['tx-a', 'tx-b']);
+  assert.deepEqual(rebooted.listApproved('rx-1').map(x => x.online), [false, false]);
+  assert.equal(rebooted.takeNext('tx-a'), null);
+  rebooted.setOnline('tx-a', true);
+  assert.equal(rebooted.takeNext('tx-a'), null);
+  assert.throws(() => rebooted.enqueue({
+    jobId: 'fresh', deviceId: 'tx-a', receiverId: 'rx-2', operation: 'list'
+  }), /not_authorized/);
+});
+
+test('revoked grants are absent from saved state', () => {
+  const r = paired();
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  const restored = BridgeRegistry.fromTrustedSnapshot(r.snapshot());
+  assert.deepEqual(restored.listApproved('rx-1').map(x => x.id), ['tx-b']);
+});
+
+test('invalid persisted schema and orphan grants fail closed', () => {
+  assert.throws(() => BridgeRegistry.fromTrustedSnapshot({ version: 2, devices: [], grants: [] }), /invalid_snapshot/);
+  assert.throws(() => BridgeRegistry.fromTrustedSnapshot({
+    version: 1, devices: [], grants: [{ deviceId: 'missing', receiverId: 'rx' }]
+  }), /invalid_snapshot/);
+});
+
+test('owner can disable Bridge without confusing network loss with closure', () => {
+  const r = paired();
+  r.enqueue({ jobId: 'pending', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  r.setOnline('tx-a', false);
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a').jobId, 'pending');
+  r.enqueue({ jobId: 'cancel', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  assert.throws(() => r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-b', enabled: false }), /owner_required/);
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a'), null);
+  assert.throws(() => r.enqueue({ jobId: 'blocked', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' }), /device_offline/);
+  assert.throws(() => r.complete({ jobId: 'pending', deviceId: 'tx-a', receiverId: 'rx-1' }), /not_authorized/);
+  assert.equal(r.listApproved('rx-1').find(x => x.id === 'tx-a').bridgeEnabled, false);
+});
+
+test('disabled Bridge survives restart and requires owner reactivation', () => {
+  const r = paired();
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  const restarted = BridgeRegistry.fromTrustedSnapshot(r.snapshot());
+  assert.equal(restarted.listApproved('rx-1').find(x => x.id === 'tx-a').bridgeEnabled, false);
+  restarted.setOnline('tx-a', true);
+  assert.throws(() => restarted.enqueue({ jobId: 'job', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' }), /device_offline/);
+  restarted.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  // A fresh authenticated connection is required after reactivation.
+  restarted.setOnline('tx-a', true);
+  restarted.enqueue({ jobId: 'job', deviceId: 'tx-a', receiverId: 'rx-1', operation: 'list' });
+  assert.equal(restarted.takeNext('tx-a').jobId, 'job');
+});
+
+test('status distinguishes intentional closure from temporary network outage', () => {
+  const r = paired();
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'online');
+  r.setOnline('tx-a', false);
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'offline');
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: false });
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'closed_by_owner');
+  r.setOnline('tx-a', true);
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'closed_by_owner');
+  assert.equal(r.listApproved('rx-1').find(x => x.id === 'tx-a').online, false);
+  assert.throws(() => r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-2' }), /not_authorized/);
+  r.setBridgeEnabled({ deviceId: 'tx-a', ownerId: 'owner-a', enabled: true });
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'offline');
+  r.setOnline('tx-a', true);
+  assert.equal(r.getDeviceStatus({ deviceId: 'tx-a', receiverId: 'rx-1' }).state, 'online');
+});
+
+test('new devices start with Bridge disabled even when network announces online', () => {
+  const r = new BridgeRegistry();
+  r.registerDevice({ id: 'fresh', ownerId: 'owner', label: 'Fresh' });
+  r.grant({ deviceId: 'fresh', receiverId: 'rx', approvedByOwnerId: 'owner' });
+  r.setOnline('fresh', true);
+  assert.equal(r.getDeviceStatus({ deviceId: 'fresh', receiverId: 'rx' }).state, 'closed_by_owner');
+  assert.equal(r.listApproved('rx')[0].online, false);
+  assert.throws(() => r.enqueue({ jobId: 'j', deviceId: 'fresh', receiverId: 'rx', operation: 'list' }), /device_offline/);
+  const rebooted = BridgeRegistry.fromTrustedSnapshot(r.snapshot());
+  assert.equal(rebooted.getDeviceStatus({ deviceId: 'fresh', receiverId: 'rx' }).state, 'closed_by_owner');
+});
+
+test('active revocation advances the TX session generation exactly once', () => {
+  const r = paired();
+  const first = r.getSessionEpoch('tx-a');
+  const other = r.getSessionEpoch('tx-b');
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.equal(r.getSessionEpoch('tx-a'), first + 1);
+  assert.equal(r.getSessionEpoch('tx-b'), other);
+  r.revoke({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.equal(r.getSessionEpoch('tx-a'), first + 1);
+  r.grant({ deviceId: 'tx-a', receiverId: 'rx-1', approvedByOwnerId: 'owner-a' });
+  assert.equal(r.getSessionEpoch('tx-a'), first + 1);
+});
+
+test('queued work expires and is never dispatched after deadline', () => {
+  let now = 10;
+  const r = new BridgeRegistry({ now: () => now, jobLifetimeMs: 50 });
+  r.registerDevice({ id: 'tx', ownerId: 'owner', label: 'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'expired', deviceId:'tx', receiverId:'rx', operation:'list' });
+  now += 50;
+  assert.equal(r.takeNext('tx'), null);
+  assert.throws(() => r.getJobStatus({ jobId:'expired', receiverId:'rx' }), /job_not_authorized/);
+});
+
+test('in-flight job expires and can no longer be completed', () => {
+  let now = 100;
+  const r = new BridgeRegistry({ now: () => now, jobLifetimeMs: 25 });
+  r.registerDevice({ id:'tx', ownerId:'owner', label:'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'sent', deviceId:'tx', receiverId:'rx', operation:'list' });
+  assert.equal(r.takeNext('tx').jobId, 'sent');
+  now += 26;
+  assert.throws(() => r.completeByDevice({ jobId:'sent', deviceId:'tx' }), /job_not_authorized/);
+});
+
+test('job queue is bounded and expired entries release capacity', () => {
+  let now = 1;
+  const r = new BridgeRegistry({ now: () => now, maxJobs: 1, jobLifetimeMs: 10 });
+  r.registerDevice({ id:'tx', ownerId:'owner', label:'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'first', deviceId:'tx', receiverId:'rx', operation:'list' });
+  assert.throws(() => r.enqueue({
+    jobId:'second', deviceId:'tx', receiverId:'rx', operation:'list'
+  }), /job_queue_full/);
+  now = 11;
+  r.enqueue({ jobId:'second', deviceId:'tx', receiverId:'rx', operation:'list' });
+  assert.equal(r.takeNext('tx').jobId, 'second');
+});
+
+test('only the correct receiver can cancel or see a queued job', () => {
+  const r = paired();
+  r.enqueue({ jobId:'private', deviceId:'tx-a', receiverId:'rx-1', operation:'list' });
+  assert.throws(() => r.cancelJob({ jobId:'private', receiverId:'stranger' }), /job_not_authorized/);
+  assert.throws(() => r.getJobStatus({ jobId:'private', receiverId:'stranger' }), /job_not_authorized/);
+  assert.equal(r.getJobStatus({ jobId:'private', receiverId:'rx-1' }).state, 'queued');
+  assert.equal(r.cancelJob({ jobId:'private', receiverId:'rx-1' }).state, 'cancelled');
+  assert.equal(r.takeNext('tx-a'), null);
+});
+
+test('invalid limits and unsupported operations fail closed', () => {
+  assert.throws(() => new BridgeRegistry({ maxJobs:0 }), /invalid_job_limits/);
+  const r = paired();
+  assert.throws(() => r.enqueue({
+    jobId:'bad', deviceId:'tx-a', receiverId:'rx-1', operation:'delete'
+  }), /invalid_job/);
+});
+
+test('final states cannot dispatch, complete again, or reuse an active job ID', () => {
+  let now = 100;
+  const r = new BridgeRegistry({ now: () => now, jobLifetimeMs: 200, maxJobs: 1 });
+  r.registerDevice({ id:'tx', ownerId:'owner', label:'Phone' });
+  r.setBridgeEnabled({ deviceId:'tx', ownerId:'owner', enabled:true });
+  r.setOnline('tx', true);
+  r.grant({ deviceId:'tx', receiverId:'rx', approvedByOwnerId:'owner' });
+  r.enqueue({ jobId:'done', deviceId:'tx', receiverId:'rx', operation:'list' });
+  r.takeNext('tx');
+  assert.equal(r.completeByDevice({jobId:'done',deviceId:'tx'}).state,'done');
+  assert.equal(r.getJobStatus({jobId:'done',receiverId:'rx'}).state,'done');
+  assert.equal(r.takeNext('tx'), null);
+  assert.throws(() => r.completeByDevice({jobId:'done',deviceId:'tx'}), /job_not_authorized/);
+  assert.throws(() => r.enqueue({jobId:'done',deviceId:'tx',receiverId:'rx',operation:'list'}), /duplicate_job/);
+  // A terminal record doesn't block active queue capacity.
+  r.enqueue({jobId:'next',deviceId:'tx',receiverId:'rx',operation:'list'});
+  assert.equal(r.takeNext('tx').jobId,'next');
+  now=300;
+  assert.throws(() => r.getJobStatus({jobId:'done',receiverId:'rx'}), /job_not_authorized/);
+});
+
+test('cancelled status is visible and cannot be revived', () => {
+  const r = paired();
+  r.enqueue({jobId:'cancelled',deviceId:'tx-a',receiverId:'rx-1',operation:'list'});
+  r.cancelJob({jobId:'cancelled',receiverId:'rx-1'});
+  assert.equal(r.getJobStatus({jobId:'cancelled',receiverId:'rx-1'}).state,'cancelled');
+  assert.throws(() => r.cancelJob({jobId:'cancelled',receiverId:'rx-1'}), /job_already_final/);
+  assert.equal(r.takeNext('tx-a'),null);
+});
+
+test('disconnect cancels sent work but leaves queued work available after reauthentication', () => {
+  const r = paired();
+  r.enqueue({ jobId:'sent-disconnect', deviceId:'tx-a', receiverId:'rx-1', operation:'list' });
+  r.enqueue({ jobId:'queued-disconnect', deviceId:'tx-a', receiverId:'rx-1', operation:'list' });
+  assert.equal(r.takeNext('tx-a').jobId, 'sent-disconnect');
+  const epoch = r.getSessionEpoch('tx-a');
+  r.setOnline('tx-a', false);
+  assert.equal(r.getSessionEpoch('tx-a'), epoch + 1);
+  assert.equal(r.getJobStatus({ jobId:'sent-disconnect', receiverId:'rx-1' }).state, 'cancelled');
+  assert.equal(r.getJobStatus({ jobId:'queued-disconnect', receiverId:'rx-1' }).state, 'queued');
+  r.setOnline('tx-a', true);
+  assert.equal(r.takeNext('tx-a').jobId, 'queued-disconnect');
+  assert.throws(() => r.completeByDevice({ jobId:'sent-disconnect', deviceId:'tx-a' }), /job_not_authorized/);
+});
+
+test('repeated offline notifications do not invalidate multiple session generations', () => {
+  const r = paired();
+  r.setOnline('tx-a', false);
+  const epoch = r.getSessionEpoch('tx-a');
+  r.setOnline('tx-a', false);
+  assert.equal(r.getSessionEpoch('tx-a'), epoch);
+});

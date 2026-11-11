@@ -1,13 +1,86 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
+import { PushNotifications } from '@capacitor/push-notifications';
+import {createPushRegistration} from './pushRegistration.js';
 import * as tus from 'tus-js-client';
+import {createBridgeAdminClient} from './bridgeAdminClient.js';
+import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
+import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
+import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
+import {renderOriginalTxRx} from './originalTxRxUi.js';
+import {getFreePtSupabaseConfig} from './supabaseConfig.js';
+import {resolveBridgeRuntimeConfig} from './bridgeRuntimeConfig.js';
+import {sendAdminEmailCode,verifyAdminEmailCode,adminOtpFailureMessage} from './adminOtpAuth.js';
+import {filterAdminPeople} from './adminPeopleFilter.js';
+import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 
-const URL = import.meta.env.VITE_SUPABASE_URL || 'https://cpopqsvzzxfjgnlawlvc.supabase.co';
-const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Q74UCgQUXO6f_7vZhXcbyg_2KRl2OSN';
-const db = createClient(URL, KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+const config=getFreePtSupabaseConfig({
+  url:import.meta.env.VITE_SUPABASE_URL,
+  key:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
+});
+const db = createClient(config.url, config.key, { auth: { persistSession: true, autoRefreshToken: true } });
+const bridgeRuntime=resolveBridgeRuntimeConfig({
+  isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true',
+  production:import.meta.env.VITE_BRIDGE_PRODUCTION_BUILD==='true',
+  testApiUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
+  productionApiUrl:import.meta.env.VITE_BRIDGE_API_URL
+});
+const bridgeFiles = Capacitor.isNativePlatform() && bridgeRuntime.enabled
+  ? registerPlugin('BridgeFiles') : null;
+const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
+const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
+const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
+const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
+const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
+const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
+const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
+  baseUrl:bridgeRuntime.baseUrl,
+  auth:db.auth,credentials:bridgeCredentials
+}) : null;
+// No production fallback. Only an explicitly configured HTTPS test backend.
+const bridgeClient=createBridgeAdminClient({
+  baseUrl:bridgeRuntime.baseUrl,auth:db.auth
+});
+// Session-only metadata for jobs already submitted; never persist credentials.
+const bridgePendingJobs=new Map();
+let bridgePendingOwnerId=null;
+let bridgeTxStartupInProgress=false;
+async function startProvisionedTxWhenAllowed(){
+  if(bridgeTxStartupInProgress||!bridgeTxControl||!bridgeOwnerControls||
+     profile?.status!=='approved'||profile?.role!=='user'||!me?.id)return;
+  bridgeTxStartupInProgress=true;
+  const owner=me.id;
+  try{
+    const [state,device,permission]=await Promise.all([
+      bridgeTxControl.status(),bridgeCredentials.status(),bridgeAllFiles.status()
+    ]);
+    if(me?.id!==owner||profile?.status!=='approved'||state?.paused||
+       state?.running||!state?.configured||!permission?.granted||
+       !device?.provisioned)return;
+    const [setting,grants]=await Promise.all([
+      bridgeOwnerControls.device(device.deviceId),
+      bridgeOwnerControls.recipients(device.deviceId)
+    ]);
+    if(me?.id===owner&&setting?.enabled&&grants.some(x=>x.active))
+      await bridgeTxControl.start();
+  }catch{
+    // Failed closed on expired login, missing staging backend or permissions.
+  }finally{bridgeTxStartupInProgress=false;}
+}
 const el = document.getElementById('app');
+// Both native APK identities register push only after Firebase configuration is installed.
+const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
+  plugin:PushNotifications,db,
+  getApprovedUser:()=>profile?.status==='approved'&&me?me:null,
+  onMessage:()=>{
+    if(profile?.role==='admin'&&!adminUnlocked)return;
+    if(profile?.role==='admin')void listPeople().then(renderPeople).catch(()=>{});
+    else if(selected)void showMessages(false).catch(()=>{});
+  }
+}):null;
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
 let messageRequest = 0;
 let fetchingMessages = false;
@@ -15,6 +88,10 @@ let adminUnlocked = false;
 let adminUnlocking = false;
 let awaySince = 0;
 let deleteMigrationReady = true;
+let adminPeopleQuery = '';
+let adminPeopleStatus = 'all';
+let chatFilesCleanup=null;
+let ownerSetupPromptedForAccount = null;
 let filePickerActive = false;
 let filePickerReturned = false;
 let filePickerClearTimer = null;
@@ -44,7 +121,12 @@ function configureFileInput(input){
 async function unlockAdmin(){
   if(adminUnlocked)return true;
   if(adminUnlocking)return false;
-  if(!Capacitor.isNativePlatform())return true; // Lo sblocco nativo funziona soltanto nell'APK.
+  if(!Capacitor.isNativePlatform()){
+    // Browser admin login was verified by Supabase; no native biometrics here.
+    // Keep the UI lock state consistent with the successful authentication.
+    adminUnlocked=true;
+    return true;
+  }
   adminUnlocking=true;
   try{
     const available=await NativeBiometric.isAvailable();
@@ -65,18 +147,33 @@ function status(msg, bad=false){ const n=document.getElementById('status'); if(n
 function phoneNorm(s){ return s.replace(/[\s().-]/g,''); }
 
 function heading(t,extra=''){return '<header class="top"><h1>'+esc(t)+'</h1>'+extra+'</header>'}
+/** Concealed entry is UI discretion only: Supabase roles remain mandatory. */
+function bindConcealedAdminEntry(){
+  const title=el.querySelector('.top h1');
+  if(!title)return;
+  let timer=null;
+  const stop=()=>{if(timer!==null){clearTimeout(timer);timer=null;}};
+  title.addEventListener('pointerdown',event=>{
+    if(event.pointerType==='mouse'&&event.button!==0)return;
+    stop();timer=setTimeout(()=>{timer=null;adminScreen();},1300);
+  });
+  for(const type of ['pointerup','pointercancel','pointerleave'])title.addEventListener(type,stop);
+  title.addEventListener('contextmenu',event=>event.preventDefault());
+}
+
 
 function requestScreen(denied=false){
+  closeAdminOverlays();
   selected=null; messageRequest++;
-  el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
-  '<button type="button" id="adminAccess" class="admin-entry">Accesso amministratore</button>'+
+  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
+
   '<form class="form" id="request"><input name="name" placeholder="Nome e cognome" maxlength="80" minlength="2" required autocomplete="name" '+(denied?'disabled':'')+'/>'+
   '<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>'+
   '<section class="disclaimer" aria-label="Informativa sull’intelligenza artificiale"><h3>FreePT · L’intelligenza artificiale per tutti</h3><p><strong>La potenza di ChatGPT e Claude senza dover sottoscrivere un abbonamento personale.</strong></p><p>Con FreePT puoi fare liberamente domande, inviare richieste, foto e documenti e ricevere risposte elaborate attraverso ChatGPT e Claude. Nessun account personale presso questi servizi è necessario.</p><p class="disclaimer-promise"><strong>SENZA LIMITI*<br>SENZA CENSURA*</strong></p><p class="disclaimer-note">* Salvo particolari condizioni legate alla disponibilità del servizio e alla possibilità di elaborare determinate richieste.</p><p>FreePT è un servizio indipendente, non affiliato a OpenAI o Anthropic.</p><label class="consent"><input name="disclaimer" type="checkbox" required><span>Dichiaro di aver letto e accettato quanto sopra.</span></label></section>'+
   '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
   '</main></div>';
-  document.getElementById('adminAccess').onclick=adminScreen;
+  bindConcealedAdminEntry();
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
     const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
@@ -101,32 +198,93 @@ function requestScreen(denied=false){
     }finally{button.disabled=false}
   };
 }
+async function completeAdminLogin(user){
+  if(!user?.id||user.is_anonymous)throw Error('Account amministratore non valido.');
+  me=user;
+  try{
+    await loadProfile();
+    if(profile?.role!=='admin'||profile?.status!=='approved')
+      throw Error('Questo account non è un amministratore autorizzato.');
+  }catch(error){
+    await db.auth.signOut();
+    me=null;profile=null;adminUnlocked=false;
+    throw error;
+  }
+  if(await unlockAdmin())await renderWorkspace();
+}
+
 function adminScreen(){
+  closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
-  '<form id="adminForm" class="form"><input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required>'+
-  '<input type="password" name="password" autocomplete="current-password" placeholder="Password" required>'+
-  '<button>Accedi</button></form><p id="status" class="small"></p>'+
-  '<button id="backRequest" type="button">Torna alla richiesta di accesso</button></main></div>';
+    '<p class="small">Accedi con email e password del tuo account amministratore FreePT. Finché la sessione resta valida, agli avvii successivi basta l’impronta digitale.</p>'+
+    '<form id="adminForm" class="form">'+
+    '<label>Email amministratore<input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required></label>'+
+    '<label>Password<input type="password" name="password" autocomplete="current-password" placeholder="Password" required></label>'+
+    '<button type="submit">Accedi</button></form>'+
+    '<details id="adminCodeOptions"><summary>Accesso con codice email (solo se abilitato)</summary>'+
+    '<p class="small">Il codice email funziona soltanto quando il metodo OTP è abilitato nel progetto Supabase.</p>'+
+    '<form id="adminCodeSend" class="form"><input type="email" name="email" autocomplete="email" placeholder="Email amministratore" required>'+
+    '<button type="submit">Invia codice via email</button></form>'+
+    '<form id="adminCodeVerify" class="form" hidden><label for="adminOtp">Codice ricevuto via email (da 6 a 10 cifre)</label>'+
+    '<input id="adminOtp" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required>'+
+    '<button type="submit">Accedi con codice</button></form></details>'+
+    '<p id="status" class="small" role="status"></p>'+
+    '<button id="backRequest" type="button">Torna alla richiesta di accesso</button></main></div>';
   document.getElementById('backRequest').onclick=()=>requestScreen();
+  let pendingEmail=null;
+  document.getElementById('adminCodeSend').onsubmit=async e=>{
+    e.preventDefault();
+    const form=e.currentTarget,button=form.querySelector('button');
+    button.disabled=true;status('Invio codice in corso...');
+    const requestedEmail=String(new FormData(form).get('email')||'').trim();
+    try{
+      pendingEmail=await sendAdminEmailCode(db.auth,requestedEmail);
+      document.getElementById('adminCodeVerify').hidden=false;
+      status('Se l’account è abilitato, riceverai un codice via email. Inseriscilo qui.');
+    }catch(error){
+      pendingEmail=null;
+      status(adminOtpFailureMessage(error),true);
+      if(error?.message?.startsWith('admin_code_delivery_failed:otp_disabled:')){
+        document.getElementById('adminCodeOptions').open=false;
+        const passwordForm=document.getElementById('adminForm');
+        const emailInput=passwordForm.querySelector('input[name="email"]');
+        if(!emailInput.value)emailInput.value=requestedEmail;
+        passwordForm.querySelector('input[name="password"]').focus();
+      }
+    }finally{button.disabled=false;}
+  };
+  document.getElementById('adminCodeVerify').onsubmit=async e=>{
+    e.preventDefault();
+    if(!pendingEmail){status('Richiedi prima il codice via email.',true);return;}
+    const form=e.currentTarget,button=form.querySelector('button');
+    button.disabled=true;status('Verifica codice in corso...');
+    try{
+      const user=await verifyAdminEmailCode(db.auth,pendingEmail,new FormData(form).get('code'));
+      await completeAdminLogin(user);
+    }catch(error){
+      status(error?.message==='admin_code_invalid'
+        ?'Inserisci il codice numerico completo (da 6 a 10 cifre).'
+        :'Codice non valido, scaduto o account non autorizzato.',true);
+    }finally{button.disabled=false;}
+  };
   document.getElementById('adminForm').onsubmit=async e=>{
-    e.preventDefault();const f=new FormData(e.target);status('Accesso in corso...');
-    try {
+    e.preventDefault();const form=e.currentTarget,button=form.querySelector('button');
+    const f=new FormData(form);button.disabled=true;status('Accesso in corso...');
+    try{
       const {data:{session}}=await db.auth.getSession();
       if(session?.user?.is_anonymous) await db.auth.signOut();
-      const result=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});
+      const result=await db.auth.signInWithPassword({
+        email:String(f.get('email')),password:String(f.get('password'))
+      });
       if(result.error)throw result.error;
-      me=result.data.user;
-      await loadProfile();
-      if(profile?.role!=='admin'||profile.status!=='approved'){
-        await db.auth.signOut();
-        me=null;profile=null;
-        throw Error('Questo account non è un amministratore autorizzato.');
-      }
-      if(await unlockAdmin())await renderWorkspace();
-    }catch(err){status(friendly(err),true)}
+      await completeAdminLogin(result.data.user);
+    }catch(err){status(friendly(err),true);}
+    finally{button.disabled=false;}
   };
 }
+
 function waitingScreen(){
+  closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiesta inviata</h2>'+
   '<p class="notice waiting-copy">I nostri sistemi stanno elaborando la tua richiesta di accesso… Attendere.</p>'+
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
@@ -169,7 +327,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;messageRequest++;requestScreen()}
+async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -195,7 +353,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user')void startProvisionedTxWhenAllowed();void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -213,26 +371,497 @@ async function refreshOnVisible(){
         renderPeople();
       }
       if(selected) await showMessages(false);
+      if(profile?.role==='user')void startProvisionedTxWhenAllowed();
     } catch(e){ status(friendly(e),true) }
   }
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
 }
+function closeAdminOverlays(){
+  if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+  chatFilesCleanup=null;
+  document.getElementById('chatRemoteFilesPanel')?.remove();
+  document.getElementById('adminBridgePanel')?.remove();
+  document.getElementById('chatActions')?.remove();
+  document.getElementById('ownerBridgePanel')?.remove();
+}
+
+async function loadAdminBridgeDevices(panel){
+  const content=panel.querySelector('#bridgeAdminContent');
+  if(!content || !panel.isConnected || profile?.role!=='admin' || !adminUnlocked)return;
+  // Each tab refresh invalidates older responses so stale data cannot
+  // overwrite a newer view after slow network calls.
+  const ownerId=me?.id;
+  if(!ownerId)return;
+  const revision=panel.bridgeLoadRevision=(panel.bridgeLoadRevision||0)+1;
+  content.textContent='Caricamento dispositivi autorizzati…';
+  // RLS only exposes devices this approved account may read.
+  // No service-role credential, device presence claim or direct mutation.
+  let data,error;
+  try {
+    ({data,error}=await db.from('bridge_grants')
+      .select('device_id,bridge_devices!inner(id,label,bridge_enabled)')
+      .eq('receiver_id',ownerId).is('revoked_at',null).limit(100));
+  } catch {
+    error={code:'bridge_network_unavailable'};
+  }
+  if(!panel.isConnected || panel.bridgeLoadRevision!==revision ||
+      me?.id!==ownerId || profile?.role!=='admin' || !adminUnlocked ||
+      panel.querySelector('[data-bridge-view="approvals"]')?.getAttribute('aria-pressed')!=='true')return;
+  if(error){
+    const missing=/42P01|PGRST205|PGRST204|does not exist|schema cache/i.test(
+      String(error.code||'')+' '+String(error.message||''));
+    content.textContent=missing
+      ?'Bridge non configurato: la migrazione dei dispositivi non è disponibile.'
+      :'Impossibile leggere i dispositivi Bridge autorizzati.';
+    return;
+  }
+  if(!data?.length){
+    content.textContent='Nessun dispositivo Bridge autorizzato disponibile.';
+    return;
+  }
+  content.innerHTML='<h3>Dispositivi autorizzati</h3>'+
+    '<p>Elenco in sola lettura. La disponibilità online non è ancora verificata.</p>'+
+    '<ul class="bridge-device-list">'+data.map(grant=>{
+      const d=grant.bridge_devices;
+      return d && typeof d==='object'
+        ? '<li><strong>'+esc(d.label||'Dispositivo')+'</strong> · '+
+          (d.bridge_enabled?'Bridge attivato dal proprietario':'Bridge disattivato')+
+          (bridgeClient&&d.bridge_enabled
+            ? ' <button type="button" data-bridge-request="'+esc(d.id)+'">Richiedi elenco</button>'
+            : '')+'</li>'
+        : '';
+    }).join('')+'</ul>'+
+    (data.length===100?'<p>Visualizzati i primi 100 dispositivi autorizzati.</p>':'');
+  if(bridgeClient)content.querySelectorAll('[data-bridge-request]').forEach(button=>{
+    button.onclick=()=>void requestAdminBridgeList(panel,button);
+    const saved=bridgePendingJobs.get(ownerId+':'+button.dataset.bridgeRequest);
+    if(saved)void requestAdminBridgeList(panel,button,saved);
+  });
+}
+
+async function requestAdminBridgeList(panel,button,existingJob=null){
+  if(!bridgeClient||!panel.isConnected||profile?.role!=='admin'||
+     !adminUnlocked||!me||button.disabled)return;
+  const deviceId=button.dataset.bridgeRequest;
+  const ownerId=me.id;
+  const jobKey=ownerId+':'+deviceId;
+  const row=button.parentElement;
+  // One pending request per visible device; no duplicate submit on rapid taps.
+  row.querySelectorAll('.bridge-job-controls, .bridge-job-status').forEach(el=>el.remove());
+  button.disabled=true;
+  const result=document.createElement('p');
+  result.setAttribute('role','status');
+  result.className='bridge-job-status';
+  row.appendChild(result);
+  result.textContent='Invio richiesta Bridge…';
+  const stillAuthorized=()=>panel.isConnected&&row.isConnected&&
+    profile?.role==='admin'&&adminUnlocked&&me?.id===ownerId&&
+    bridgePendingOwnerId===ownerId;
+  try{
+    const job=existingJob||await bridgeClient.requestList(deviceId);
+    if(bridgePendingOwnerId===ownerId && me?.id===ownerId)
+      bridgePendingJobs.set(jobKey,job);
+    if(!stillAuthorized())return;
+    const controls=document.createElement('span');
+    controls.className='bridge-job-controls';
+    row.appendChild(controls);
+    const statusButton=document.createElement('button');
+    statusButton.type='button';
+    statusButton.textContent='Controlla stato';
+    const cancelButton=document.createElement('button');
+    cancelButton.type='button';
+    cancelButton.textContent='Annulla richiesta';
+    controls.append(statusButton,cancelButton);
+    const catalogue=document.createElement('div');
+    catalogue.className='bridge-job-catalogue';
+    row.appendChild(catalogue);
+    const view=document.createElement('button');
+    view.type='button';
+    view.textContent='Mostra elenco ricevuto';
+    view.hidden=true;
+    catalogue.appendChild(view);
+    view.onclick=async()=>{
+      if(!stillAuthorized()||view.disabled)return;
+      view.disabled=true;
+      try{
+        const page=await bridgeClient.getFolderPage(job.jobId);
+        if(!stillAuthorized())return;
+        catalogue.replaceChildren();
+        const summary=document.createElement('p');
+        summary.textContent=page.entries.length+' elementi ricevuti:';
+        catalogue.appendChild(summary);
+        for(const item of page.entries){
+          const entry=document.createElement('p');
+          entry.textContent=(item.directory?'📁 ':'📄 ')+item.name;
+          catalogue.appendChild(entry);
+        }
+      }catch{if(stillAuthorized())result.textContent='Elenco remoto non ancora disponibile.';}
+      finally{view.disabled=false;}
+    };
+    let state=job.state;
+    let inFlight=false;
+    let message='';
+    const render=()=>{
+      if(!stillAuthorized())return;
+      result.textContent=message||('Richiesta '+state+' (ID '+job.jobId+').');
+      const terminal=state==='done'||state==='cancelled';
+      statusButton.disabled=inFlight||terminal;
+      cancelButton.disabled=inFlight||terminal;
+      button.disabled=!terminal;
+      view.hidden=state!=='done';
+      if(terminal)bridgePendingJobs.delete(jobKey);
+    };
+    statusButton.onclick=async()=>{
+      if(!stillAuthorized()||inFlight)return;
+      inFlight=true;
+      render();
+      try{
+        const updated=await bridgeClient.getStatus(job.jobId);
+        if(!stillAuthorized())return;
+        state=updated.state;
+        bridgePendingJobs.set(jobKey,{...job,state});
+        message='';
+        render();
+      }catch{
+        message='Stato Bridge non disponibile.';
+      }finally{
+        inFlight=false;
+        render();
+      }
+    };
+    cancelButton.onclick=async()=>{
+      if(!stillAuthorized()||inFlight||state==='done'||state==='cancelled')return;
+      inFlight=true;
+      render();
+      try{
+        const updated=await bridgeClient.cancel(job.jobId);
+        if(!stillAuthorized())return;
+        state=updated.state;
+        bridgePendingJobs.set(jobKey,{...job,state});
+        message='';
+        render();
+      }catch{
+        message='Impossibile annullare: controlla lo stato.';
+      }finally{
+        inFlight=false;
+        render();
+      }
+    };
+    render();
+  }catch{
+    if(stillAuthorized())result.textContent='Richiesta Bridge non disponibile.';
+  }finally{
+    // Remain disabled while the job is nonterminal, until cancelled/done.
+    if(!row.querySelector('.bridge-job-controls'))button.disabled=false;
+  }
+}
+
+function showAdminBridge(){
+  if(profile?.role!=='admin'||!adminUnlocked)return;
+  document.getElementById('adminBridgePanel')?.remove();
+  const panel=document.createElement('div');
+  panel.id='adminBridgePanel';
+  panel.className='bridge-admin-shade';
+  panel.innerHTML='<section class="bridge-admin-panel" role="dialog" aria-modal="true" aria-label="Configurazione Bridge">'+
+    '<header><h2>Bridge</h2><button type="button" id="closeAdminBridge">Chiudi</button></header>'+
+    '<form id="bridgeKeyForm" class="form" autocomplete="off">'+
+    '<label>Chiave RX<input type="password" id="bridgeRxKey" required minlength="32" maxlength="256" autocomplete="new-password"></label>'+
+    '<label>Chiave TX<input type="password" id="bridgeTxKey" required minlength="32" maxlength="256" autocomplete="new-password"></label>'+
+    '<button type="submit">Salva le chiavi</button></form>'+
+    '<p id="bridgeKeyStatus" class="hint" role="status"></p>'+
+    '<button type="button" id="bridgeKeyRemove">Cancella chiavi salvate</button>'+
+    '</section>';
+  document.body.appendChild(panel);
+  const message=panel.querySelector('#bridgeKeyStatus');
+  const provider=bridgeRxKeys;
+  const alive=()=>panel.isConnected&&me?.id&&profile?.role==='admin'&&adminUnlocked;
+  const refresh=async()=>{
+    if(!alive())return;
+    if(!provider){message.textContent='Salvataggio sicuro disponibile solo su Android.';return;}
+    try{
+      const result=await provider.status();
+      if(alive())message.textContent=result?.configured?'Chiavi salvate su questo telefono.':'Nessuna chiave salvata.';
+    }catch{if(alive())message.textContent='Impossibile leggere lo stato delle chiavi.';}
+  };
+  panel.querySelector('#bridgeKeyForm').onsubmit=async event=>{
+    event.preventDefault();
+    if(!alive()||!provider)return;
+    const button=event.currentTarget.querySelector('button');
+    const rx=panel.querySelector('#bridgeRxKey');
+    const tx=panel.querySelector('#bridgeTxKey');
+    const a=rx.value.trim(),b=tx.value.trim();
+    if(a.length<32||b.length<32||a===b){message.textContent='Le due chiavi devono essere diverse e di almeno 32 caratteri.';return;}
+    button.disabled=true;
+    try{
+      // These keys are local RX settings, not the device's Supabase Bridge
+      // authorization. Never reject a secure save because the legacy TX relay
+      // is offline, incompatible, or a different backend.
+      const saved=await provider.save({rxKey:a,txKey:b});
+      if(saved?.saved!==true)throw Error('bridge_keys_not_saved');
+      const verified=await provider.status();
+      if(verified?.configured!==true)throw Error('bridge_keys_not_persisted');
+      if(!alive())return;
+      rx.value='';tx.value='';
+      message.textContent='Chiavi salvate in modo sicuro sul telefono.';
+    }catch(error){if(alive())message.textContent='Salvataggio non riuscito: '+friendly(error);}
+    finally{button.disabled=false;}
+  };
+  panel.querySelector('#bridgeKeyRemove').onclick=async()=>{
+    if(!alive()||!provider)return;
+    try{await provider.clear();await refresh();}
+    catch{if(alive())message.textContent='Impossibile cancellare le chiavi.';}
+  };
+  panel.querySelector('#closeAdminBridge').onclick=()=>{
+    panel.querySelector('#bridgeRxKey').value='';
+    panel.querySelector('#bridgeTxKey').value='';
+    panel.remove();
+  };
+  void refresh();
+}
+
+/**
+ * This is an OWNER-side Android SAF browser, not a remote file transfer.
+ * The user selects exactly one tree through Android's system picker.
+ */
+async function showOwnerBridgeFolder(){
+  if(!bridgeAllFiles||!bridgeOwnerClient||!bridgeCredentials||
+     !me||profile?.status!=='approved'||profile.role!=='user')return;
+  document.getElementById('ownerBridgePanel')?.remove();
+  const panel=document.createElement('div');
+  panel.id='ownerBridgePanel';
+  panel.className='bridge-admin-shade bridge-family-shade';
+  panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
+    '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
+    '<button type="button" id="bridgeFamilyStart" aria-label="Autorizza amministratore a vedere e scaricare file">Autorizza file</button>'+
+    '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
+    '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
+    '</section>';
+  document.body.appendChild(panel);
+  const button=panel.querySelector('#bridgeFamilyStart');
+  const status=panel.querySelector('#bridgeFamilyStatus');
+  const currentOwner=me.id;
+  let working=false;
+  let activationStage='idle';
+  let lastDiagnostic='';
+  let diagnosticTapCount=0;
+  // Support gesture: five taps on the title reveal only a safe stage/code.
+  // The normal family screen has no diagnostic controls or technical labels.
+  panel.querySelector('h2').onclick=()=>{
+    diagnosticTapCount+=1;
+    if(diagnosticTapCount<5)return;
+    diagnosticTapCount=0;
+    if(!lastDiagnostic)return;
+    const out=panel.querySelector('#bridgeFamilyDiagnostic');
+    out.hidden=false;
+    out.textContent=lastDiagnostic;
+  };
+  const diagnostic=(outcome,code='')=>{
+    // Fixed stage names and allowlisted error codes only: never log exceptions,
+    // tokens, UUIDs, paths, phone numbers or raw server response bodies.
+    const allowedStages=new Set(['permission','local-device','enrollment','family-grant','service-start','verification']);
+    const allowedCodes=new Set(['permission_denied','bridge_owner_login_required','bridge_owner_backend_unavailable','bridge_owner_denied','bridge_owner_request_failed','bridge_owner_invalid_response','bridge_owner_keystore_failed','bridge_owner_invalid_local_registration','bridge_owner_device_unavailable','bridge_owner_activation_denied','bridge_owner_not_approved','bridge_invalid_device','bridge_owner_required','bridge_unique_admin_required','bridge_admin_not_unique','bridge_owner_control_denied','bridge_tx_notifications_required','bridge_tx_permission_or_device_missing','bridge_tx_cannot_start','bridge_tx_start_not_confirmed','unknown']);
+    const stage=allowedStages.has(activationStage)?activationStage:'verification';
+    const safeCode=allowedCodes.has(code)?code:'unknown';
+    lastDiagnostic='Bridge '+stage+' / '+safeCode;
+    console.info('[FreePT Bridge activation]',{stage,outcome:outcome==='success'?'success':'failure',code:safeCode});
+  };
+  const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
+  const update=message=>{if(alive())status.textContent=message;};
+  const stageDescriptions=Object.freeze({
+    permission:'autorizzazione ai file',
+    'local-device':'controllo del telefono',
+    enrollment:'registrazione del telefono',
+    'family-grant':'autorizzazione del collegamento',
+    'service-start':'avvio del servizio',
+    verification:'verifica del collegamento'
+  });
+  let stageTimer=null;
+  const setStage=name=>{
+    activationStage=name;
+    const description=stageDescriptions[name]||'verifica';
+    if(stageTimer!==null)clearTimeout(stageTimer);
+    // Report progress only: do not cancel an enrollment or a grant that may
+    // still finish safely on the server. Never trigger a duplicate request.
+    lastDiagnostic='Bridge '+name+' / in_progress';
+    update('Attivazione…');
+    stageTimer=setTimeout(()=>{
+      if(working&&alive()&&activationStage===name){
+        // Keep the status quiet; technical details remain available only
+        // through the deliberate five-tap support diagnostic.
+        lastDiagnostic='Bridge '+name+' / waiting';
+      }
+    },20000);
+  };
+  panel.querySelector('#closeOwnerBridge').onclick=()=>panel.remove();
+  const refresh=async()=>{
+    if(!alive())return;
+    try{
+      const [permission,device]=await Promise.all([bridgeAllFiles.status(),bridgeOwnerClient.status()]);
+      if(!alive())return;
+      if(!permission?.granted||!device?.provisioned){
+        button.hidden=false;
+        update('');
+        return;
+      }
+      const [settings,grants,service]=await Promise.all([
+        bridgeOwnerControls.device(device.deviceId),
+        bridgeOwnerControls.recipients(device.deviceId),
+        bridgeTxControl.status()
+      ]);
+      if(!alive())return;
+      const ready=settings.enabled&&grants.some(g=>g.active);
+      button.hidden=ready&&service?.running===true;
+      update(ready&&service?.running?'Pronto':'');
+    }catch{update('');}
+  };
+  button.onclick=async()=>{
+    if(working||!alive())return;
+    working=true;button.disabled=true;
+    lastDiagnostic='';
+    const out=panel.querySelector('#bridgeFamilyDiagnostic');
+    out.hidden=true;out.textContent='';
+    try{
+      update('Attivazione…');
+      setStage('permission');
+      const permission=await bridgeAllFiles.requestPermission();
+      if(!alive())return;
+      if(permission?.granted!==true){
+        diagnostic('failure','permission_denied');
+        update('Non è stato possibile attivare: permesso Android non concesso.');return;
+      }
+      setStage('local-device');
+      const current=await bridgeOwnerClient.status();
+      setStage('enrollment');
+      const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Dispositivo FreePT');
+      if(!alive())return;
+      // One explicit family-owner consent. The staging database atomically
+      // authorizes only the unique approved admin, or refuses the action.
+      // No grant is made to guessed or arbitrary recipients.
+      setStage('family-grant');
+      await bridgeOwnerControls.activateFamily(device.deviceId);
+      if(!alive())return;
+      setStage('service-start');
+      await bridgeTxControl.start();
+      if(!alive())return;
+      setStage('verification');
+      // start() acknowledges a request, not a running foreground service.
+      // Never mark activation successful until both the server grant and
+      // Android foreground-service state have actually been observed.
+      let verified=false;
+      for(let attempt=0;attempt<5;attempt++){
+        if(!alive())return;
+        const [settings,grants,service]=await Promise.all([
+          bridgeOwnerControls.device(device.deviceId),
+          bridgeOwnerControls.recipients(device.deviceId),
+          bridgeTxControl.status()
+        ]);
+        if(settings?.enabled===true&&Array.isArray(grants)&&
+           grants.some(grant=>grant.active===true)&&service?.running===true){
+          verified=true;break;
+        }
+        if(attempt<4)await new Promise(resolve=>setTimeout(resolve,350));
+      }
+      if(!verified)throw Error('bridge_tx_start_not_confirmed');
+      await refresh();
+      diagnostic('success');
+    }catch(error){
+      diagnostic('failure',error instanceof Error?error.message:'unknown');
+      // Diagnostics are intentionally kept off the family-facing screen.
+      // No raw exception, access token or device secret is displayed.
+      update('Non è stato possibile attivare: '+(stageDescriptions[activationStage]||'verifica')+'.');
+    }finally{
+      if(stageTimer!==null)clearTimeout(stageTimer);
+      stageTimer=null;
+      working=false;
+      if(alive())button.disabled=false;
+    }
+  };
+  await refresh();
+}
+
 function renderLayout(){
+  closeAdminOverlays();
   const admin=profile.role==='admin';
-  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button id="logout">Esci</button>':'')+
+  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button type="button" id="adminBridge">Bridge</button><button id="logout">Esci</button>':'')+
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
-    '<strong class="grow" id="chatTitle">Servizio</strong></div>'+
+    '<strong class="grow" id="chatTitle">Servizio</strong>'+
+    (admin?'<button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
+    '</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
     '<button id="sendBtn">Invia</button><span class="chosen-file" data-file-name></span></form>'+
     '<p id="status" class="hint"></p></section></div></div>';
+  if(!admin&&bridgeOwnerClient&&me?.id&&ownerSetupPromptedForAccount!==me.id){
+    ownerSetupPromptedForAccount=me.id;
+    // Opening a consent sheet does not request any Android permission:
+    // only the user's explicit button press begins Android system prompts.
+    void (async()=>{
+      try{
+        const [permission,device]=await Promise.all([bridgeAllFiles.status(),bridgeOwnerClient.status()]);
+        let incomplete=!permission?.granted||!device?.provisioned;
+        if(!incomplete){
+          try{
+            const [settings,grants]=await Promise.all([
+              bridgeOwnerControls.device(device.deviceId),
+              bridgeOwnerControls.recipients(device.deviceId)
+            ]);
+            // A stopped service is a reconnect condition, not a new consent request.
+            incomplete=!settings.enabled||!grants.some(g=>g.active);
+          }catch{
+            // Connectivity or server errors do not revoke the owner's consent.
+            // Leave the chat undisturbed; retry the service when allowed.
+            return;
+          }
+        }
+        if(me?.id===ownerSetupPromptedForAccount&&incomplete)
+          await showOwnerBridgeFolder();
+      }catch{
+        // A temporary backend failure must not trigger an unexpected setup dialog.
+      }
+    })();
+  }
   if(admin){
     document.getElementById('logout').onclick=logout;
+    document.getElementById('adminBridge').onclick=showAdminBridge;
+    document.getElementById('chatMessagesView').onclick=()=>{
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      chatFilesCleanup=null;
+      document.getElementById('feed').hidden=false;
+      document.getElementById('send').hidden=false;
+      document.getElementById('chatRemoteFilesPanel')?.remove();
+    };
+    document.getElementById('chatRemoteFilesView').onclick=async()=>{
+      const user=people.find(person=>person.id===selected);
+      if(!user||user.status!=='approved'||!adminUnlocked||profile?.role!=='admin')return;
+      document.getElementById('feed').hidden=true;
+      document.getElementById('send').hidden=true;
+      let panel=document.getElementById('chatRemoteFilesPanel');
+      if(!panel){
+        panel=document.createElement('section');
+        panel.id='chatRemoteFilesPanel';
+        panel.setAttribute('role','status');
+        document.getElementById('feed').after(panel);
+      }
+      if(!bridgeClient||!bridgeDestination){
+        panel.textContent='Collegamento file non disponibile: il server Bridge HTTPS non è configurato.';
+        return;
+      }
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      const ownerId=user.id;
+      chatFilesCleanup=renderBridgeRemoteFiles({
+        host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,
+        isAuthorized:()=>panel.isConnected&&selected===ownerId&&
+          me?.id&&profile?.role==='admin'&&adminUnlocked
+      });
+    };
     renderPeople();
     document.getElementById('back').onclick=()=>{
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      chatFilesCleanup=null;
+      document.getElementById('chatRemoteFilesPanel')?.remove();
       document.getElementById('chat').classList.add('off');
       document.getElementById('people').classList.remove('off');
     };
@@ -243,14 +872,44 @@ function renderLayout(){
 function renderPeople(){
   const p=document.getElementById('people');
   if(!p)return;
-  p.innerHTML='<div class="toolbar"><strong>Utenti</strong></div>'+
+  const visiblePeople=filterAdminPeople(people,adminPeopleQuery,adminPeopleStatus);
+  p.innerHTML='<div class="admin-people-tools"><strong>Utenti ('+visiblePeople.length+'/'+people.length+')</strong>'+
+    '<input type="search" id="adminPeopleSearch" aria-label="Cerca utenti" placeholder="Cerca nome o telefono" value="'+esc(adminPeopleQuery)+'">'+
+    '<select id="adminPeopleStatus" aria-label="Filtra utenti per stato">'+
+    [['all','Tutti'],['pending','Da approvare'],['approved','Approvati'],['blocked','Bloccati']].map(([key,label])=>
+      '<option value="'+key+'"'+(adminPeopleStatus===key?' selected':'')+'>'+label+'</option>').join('')+
+    '</select></div><div id="adminPeopleResults">'+
+    '<p class="hint" id="adminPeopleEmpty"'+(visiblePeople.length?' hidden':'')+'>Nessun utente corrisponde ai filtri.</p>'+
     people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+
       esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
       (x.lastMessage?'<span class="chat-preview">'+
         esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+
         '</span>':'')+
       (x.status==='pending'?'<br><span data-approve="'+esc(x.id)+'">✓ Approva</span> <span data-deny="'+esc(x.id)+'">✕ Rifiuta</span>':'')+
-      '</button>').join('');
+      '</button>').join('')+'</div>';
+  const search=p.querySelector('#adminPeopleSearch');
+  const filter=p.querySelector('#adminPeopleStatus');
+  search.oninput=()=>{
+    adminPeopleQuery=search.value;
+    // Keep the keyboard open on Android: replace results, not the active input.
+    updateAdminPeopleResults();
+  };
+  filter.onchange=()=>{adminPeopleStatus=filter.value;updateAdminPeopleResults();};
+  bindAdminPeopleActions(p);
+  updateAdminPeopleResults();
+}
+function updateAdminPeopleResults(){
+  const p=document.getElementById('people');
+  if(!p)return;
+  const filtered=filterAdminPeople(people,adminPeopleQuery,adminPeopleStatus);
+  p.querySelector('.admin-people-tools strong').textContent='Utenti ('+filtered.length+'/'+people.length+')';
+  // Keep existing user buttons, their listeners and any selected conversation intact.
+  for(const button of p.querySelectorAll('[data-id]'))
+    button.hidden=!filtered.some(user=>user.id===button.dataset.id);
+  const empty=p.querySelector('#adminPeopleEmpty');
+  if(empty)empty.hidden=filtered.length>0;
+}
+function bindAdminPeopleActions(p){
   p.querySelectorAll('[data-id]').forEach(button=>{
     let holdTimer=null;
     let suppressClick=false;
@@ -288,6 +947,11 @@ function renderPeople(){
       const user=people.find(x=>x.id===id);
       if(user?.status!=='approved')return;
       selected=id;messageRequest++;
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      chatFilesCleanup=null;
+      document.getElementById('chatRemoteFilesPanel')?.remove();
+      document.getElementById('feed').hidden=false;
+      document.getElementById('send').hidden=false;
       document.getElementById('chat').classList.remove('off');
       p.classList.add('off');
       document.getElementById('chatTitle').textContent=user.full_name||'Chat';
@@ -452,12 +1116,10 @@ document.addEventListener('visibilitychange',()=>{
     // permanent bypass of the background biometric lock.
     filePickerClearTimer=setTimeout(finishFilePicker,1800);
   }
-  if(document.visibilityState==='hidden'&&profile?.role==='admin'&&Capacitor.isNativePlatform()&&!filePickerActive){
-    adminUnlocked=false;
-    if(sub){db.removeChannel(sub);sub=null}
-    selected=null;messageRequest++;
-    el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Area amministratore bloccata</h2><p>Riapri FreePT per sbloccare con l’impronta.</p></main></div>';
-  }
+  // Backgrounding is not logout: retain the authenticated workspace and
+  // biometric unlock until the Android WebView process is restarted or the
+  // user explicitly signs out. Cold starts still run boot()/unlockAdmin().
+
 });
 boot();
 // Polling leggero quando l'app è in primo piano: recupera anche eventi realtime persi.

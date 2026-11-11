@@ -1,0 +1,22 @@
+package __PACKAGE__;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+
+/** Restore explicitly enabled Bridge after reboot on Android versions that allow it. */
+public final class BridgeTxBootReceiver extends BroadcastReceiver {
+    @Override public void onReceive(Context context, Intent intent) {
+        if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
+        if (Build.VERSION.SDK_INT >= 35) return; // Android 15 forbids dataSync FGS from BOOT_COMPLETED.
+        if (context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false)) return;
+        if (!BridgeAllFilesCore.granted() || !BridgeDeviceSecretStore.configured(context)) return;
+        try {
+            androidx.core.content.ContextCompat.startForegroundService(
+                context, new Intent(context,BridgeTxService.class));
+        } catch (RuntimeException ignored) {
+            // Respect platform background-start restrictions.
+        }
+    }
+}
