@@ -4,6 +4,9 @@ on:
     branches: [feature/bridge-chunk-receiver-20261108]
     paths:
       - '.github/workflows/freept-unified-apk.yml'
+      - 'src/bridge*.js'
+      - 'android-bridge/Bridge*.java.template'
+      - 'bridge/*test.mjs'
       - 'android-bridge/install_firebase.py'
       - 'android-bridge/test_install_firebase.py'
       - 'src/main.js'
