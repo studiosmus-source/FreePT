@@ -21,7 +21,13 @@ export function validateBridgeProductionConfig(env={}){
   if(typeof publishable!=='string'||!PUBLISHABLE.test(publishable)||
      typeof secret!=='string'||!SECRET.test(secret)||publishable===secret)
     throw Error('bridge_production_credentials_invalid');
-  const http=validateBridgeGatewayConfig(env,'production');
+  const validated=validateBridgeGatewayConfig(env,'production');
+  // Android Capacitor uses the fixed WebView origin http://localhost by
+  // default. Permit exactly that first-party local origin in production,
+  // even if a deployment retained the old https://localhost origin.
+  // Bearer authentication and per-device grants remain mandatory.
+  const origins=Object.freeze([...new Set([...validated.origins,'http://localhost'])]);
+  const http=Object.freeze({...validated,origins});
   return Object.freeze({url:url.origin,publishable,secret,http});
 }
 export function createBridgeProductionService({env,createClientFn=createClient}={}){

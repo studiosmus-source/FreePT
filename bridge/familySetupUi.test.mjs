@@ -51,7 +51,8 @@ test('activation reports progress without cancelling uncertain server writes',()
     assert.ok(setup.includes("setStage('"+stage+"')"),stage);
   assert.match(setup,/setTimeout\(\(\)=>\{/);
   assert.match(setup,/20000/);
-  assert.match(setup,/Attesa prolungata:/);
+  assert.doesNotMatch(setup,/update\('Attesa prolungata:/);
+  assert.match(setup,/update\('Attivazione…'\)/);
   assert.match(setup,/lastDiagnostic='Bridge '\+name\+' \/ waiting'/);
   assert.match(setup,/if\(stageTimer!==null\)clearTimeout\(stageTimer\)/);
   assert.doesNotMatch(setup,/Promise\.race/);
