@@ -1,0 +1,46 @@
+name: FreePT OTA foundation checks
+on:
+  push:
+    branches: [feature/ota-foundation-20261111]
+  pull_request:
+    branches: [feature/bridge-chunk-receiver-20261108]
+permissions:
+  contents: read
+jobs:
+  ota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install npm dependencies
+        run: npm install --no-audit --no-fund
+      - name: OTA protocol and rollback readiness checks
+        run: |
+          node --test ota/*.test.mjs src/otaReady.test.mjs
+          node --check src/otaBootstrap.js
+          node --check ota/server.mjs
+          node ota/configureNative.mjs
+          node -e "const c=require('./capacitor.config.json');if(c.plugins.CapacitorUpdater.autoUpdate!=='off')process.exit(1)"
+      - name: Existing Bridge regressions
+        run: npm run test:bridge
+      - name: Build web bundle
+        run: |
+          npm run build
+          test -s dist/index.html
+      - name: Verify Capacitor 7 native plugin registration
+        run: |
+          npx cap add android
+          npx cap sync android
+          grep -R -q 'CapacitorUpdater' android/capacitor.settings.gradle android/app/capacitor.build.gradle android/app/src/main/assets/capacitor.plugins.json
+      - name: Compile Android without publishing unsigned updates
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon

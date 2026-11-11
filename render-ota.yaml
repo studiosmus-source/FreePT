@@ -1,0 +1,19 @@
+# Nuovo servizio separato; NON modifica render.yaml (Bridge).
+# Attivazione e pubblicazione SOLO dopo revisione / backup / test due telefoni.
+services:
+  - type: web
+    name: freept-ota
+    runtime: node
+    plan: free
+    branch: feature/ota-foundation-20261111
+    autoDeployTrigger: off
+    buildCommand: npm install --omit=dev --no-audit --no-fund
+    startCommand: node ota/server.mjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FREEPT_OTA_ENABLED
+        value: I_ACCEPT_FREEPT_OTA_SERVER
+      - key: FREEPT_OTA_TEST_DEVICE_IDS
+        sync: false

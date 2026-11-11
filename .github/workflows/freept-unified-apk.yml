@@ -52,6 +52,8 @@ jobs:
           node --check src/pushRegistration.js
           python3 -m py_compile android-bridge/install.py android-bridge/install_firebase.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
+      - name: OTA foundation safety checks
+        run: node --test ota/*.test.mjs src/otaReady.test.mjs
       - name: Build production web bundle with native Bridge enabled
         env:
           VITE_BRIDGE_PRODUCTION_BUILD: 'true'
@@ -59,6 +61,11 @@ jobs:
         run: |
           npm run build
           test -s dist/index.html
+      - name: Configure native OTA only after explicit deployment opt-in
+        env:
+          FREEPT_OTA_ENABLED: ${{ vars.FREEPT_OTA_ENABLED }}
+          FREEPT_OTA_UPDATE_URL: ${{ vars.FREEPT_OTA_UPDATE_URL }}
+        run: node ota/configureNative.mjs
       - name: Generate production Android project
         run: |
           node -e "const c=require('./capacitor.config.json');if(c.appId!=='it.freept.app')process.exit(1)"
