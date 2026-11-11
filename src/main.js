@@ -632,8 +632,7 @@ async function showOwnerBridgeFolder(){
   panel.className='bridge-admin-shade bridge-family-shade';
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
     '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
-    '<p class="hint">L’amministratore potrà vedere e scaricare i file senza nuove conferme. Revoca dalle impostazioni Android.</p>'+
-    '<button type="button" id="bridgeFamilyStart">Attiva</button>'+
+    '<button type="button" id="bridgeFamilyStart" aria-label="Autorizza amministratore a vedere e scaricare file">Autorizza file</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
     '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
     '</section>';
