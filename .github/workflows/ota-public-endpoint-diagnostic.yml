@@ -1,0 +1,24 @@
+name: FreePT OTA public endpoint diagnostic
+on:
+  push:
+    branches: [feature/ota-foundation-20261111]
+    paths:
+      - '.github/workflows/ota-public-endpoint-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe Render HTTPS URL without modifying anything
+        shell: bash
+        run: |
+          set -uo pipefail
+          for route in / /health /health/ /updates; do
+            echo "===== ROUTE $route ====="
+            status="$(curl --silent --show-error --location --max-time 20 --connect-timeout 10 -H 'Accept: application/json' -o /tmp/freept-ota-body -w '%{http_code}|%{url_effective}|%{content_type}' "https://freept-ota.onrender.com$route" 2>&1)" || true
+            echo "HTTP / final URL / content-type: $status"
+            if test -e /tmp/freept-ota-body; then head -c 500 /tmp/freept-ota-body; echo; rm /tmp/freept-ota-body; fi
+          done
