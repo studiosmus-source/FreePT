@@ -6,13 +6,18 @@ function client(counts) {
   return {from(table) {
     const query = {
       select(column, options) {
-        assert.deepEqual(options, {head: true, count: 'exact'});
+        assert.deepEqual(options, table === 'profiles' ? {head: true, count: 'exact'} : {count: 'exact'});
         assert.equal(typeof column, 'string');
         return this;
       },
       eq(field, value) {
         assert.ok((field === 'role' && value === 'admin') ||
           (field === 'status' && value === 'approved'));
+        return this;
+      },
+      limit(number) {
+        assert.equal(table !== 'profiles', true);
+        assert.equal(number, 0);
         return this;
       },
       then(resolve, reject) {
