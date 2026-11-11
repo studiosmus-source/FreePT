@@ -16,9 +16,12 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          for route in / /health /health/ /updates; do
+          for route in / /health /health/ '/health?utm_source=chatgpt.com' '/?utm_source=chatgpt.com'; do
             echo "===== ROUTE $route ====="
             status="$(curl --silent --show-error --location --max-time 20 --connect-timeout 10 -H 'Accept: application/json' -o /tmp/freept-ota-body -w '%{http_code}|%{url_effective}|%{content_type}' "https://freept-ota.onrender.com$route" 2>&1)" || true
             echo "HTTP / final URL / content-type: $status"
-            if test -e /tmp/freept-ota-body; then head -c 500 /tmp/freept-ota-body; echo; rm /tmp/freept-ota-body; fi
+            if test -e /tmp/freept-ota-body; then head -c 500 /tmp/freept-ota-body; echo; fi
+            [[ "$status" == 200* ]] || { echo "Expected HTTP 200 on $route"; exit 1; }
+            grep -Fq '"status":"ok"' /tmp/freept-ota-body || { echo "Missing healthy response"; exit 1; }
+            rm -f /tmp/freept-ota-body
           done
