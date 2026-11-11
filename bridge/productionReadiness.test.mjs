@@ -43,7 +43,7 @@ test('missing tables and unexpected counts do not throw or leak errors', async (
     bridge_device_verifiers: 0, profiles: 2
   }));
   assert.deepEqual(report, {
-    devices: 'unavailable', grants: 'unavailable',
+    devices: 'missing', grants: 'unavailable',
     verifiers: 'empty', approvedAdmin: 'multiple'
   });
 });
