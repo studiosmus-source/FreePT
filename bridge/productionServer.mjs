@@ -3,6 +3,7 @@ import {createClient} from '@supabase/supabase-js';
 import {createBridgeOwnerEnrollmentHandler} from './ownerEnrollment.mjs';
 import {createTrustedBridgeBackend} from './trustedBackend.mjs';
 import {createBridgeHttpsGateway,validateBridgeGatewayConfig} from './httpsGateway.mjs';
+import {inspectBridgeProductionData} from './productionReadiness.mjs';
 
 const PRODUCTION_HOST='cpopqsvzzxfjgnlawlvc.supabase.co';
 const PUBLISHABLE=/^sb_publishable_[A-Za-z0-9_-]{16,}$/;
@@ -46,6 +47,7 @@ export function createBridgeProductionService({env,createClientFn=createClient}=
   const gateway=createBridgeHttpsGateway({admin,tx,owner,config:config.http});
   return Object.freeze({
     start:()=>gateway.start({host:'0.0.0.0',port:config.http.port}),
-    stop:()=>gateway.stop()
+    stop:()=>gateway.stop(),
+    inspectReadiness:()=>inspectBridgeProductionData(serviceClient)
   });
 }
