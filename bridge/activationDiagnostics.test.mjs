@@ -10,12 +10,12 @@ test('diagnostics use only allowlisted stages and error codes',()=>{
   assert.doesNotMatch(setup,/JSON.stringify\(error\)/);
 });
 test('each activation phase records a diagnostic stage',()=>{
- for(const stage of ['permission','local-device','enrollment','family-grant','service-start','verification'])assert.ok(setup.includes("activationStage='"+stage+"'"));
+ for(const stage of ['permission','local-device','enrollment','family-grant','service-start','verification'])assert.ok(setup.includes("setStage('"+stage+"')"));
  assert.match(setup,/diagnostic\('failure','permission_denied'\)/);
  assert.match(setup,/diagnostic\('failure',error instanceof Error\?error.message:'unknown'\)/);
 });
 test('family facing UI remains minimal',()=>{
- assert.match(setup,/>Attiva<\/button>/);assert.match(setup,/update\('Non è stato possibile attivare'\)/);
+ assert.match(setup,/>Attiva<\/button>/);assert.match(setup,/update\('Non è stato possibile attivare: '/);
  assert.doesNotMatch(setup,/status\.textContent=error/);
 });
 
