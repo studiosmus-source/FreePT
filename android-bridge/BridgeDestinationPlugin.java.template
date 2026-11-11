@@ -84,7 +84,7 @@ public class BridgeDestinationPlugin extends Plugin {
 
     private String[] path(PluginCall call){
         JSArray array=call.getArray("path");
-        if(array==null||array.length()<1||array.length()>16)
+        if(array==null||array.length()<1||array.length()>32)
             throw new IllegalArgumentException("bridge_destination_invalid_path");
         String[] names=new String[array.length()];
         for(int i=0;i<array.length();i++){

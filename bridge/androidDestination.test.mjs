@@ -143,3 +143,18 @@ test('Android keeps renamed document URI for rollback on final name verification
  assert.match(java,/deleteDocument\(\s*getContext\(\)\.getContentResolver\(\),singleStaging\)/);
  assert.match(java,/deleteDocument\(getContext\(\)\.getContentResolver\(\),staging\)/);
 });
+
+
+test('deep nested folder destination accepts protocol depth 32, rejects 33 before native writes',async()=>{
+ const f=fakePlugin();
+ const destination=createBridgeAndroidFolderDestination({plugin:f.plugin,name:'Folder'});
+ await destination.begin();
+ const depth32=Array.from({length:32},(_,i)=>'level'+i);
+ await destination.makeDirectory(depth32);
+ await assert.rejects(destination.makeDirectory([...depth32,'too-deep']),/invalid_path/);
+ assert.equal(f.calls.filter(([name])=>name==='mkdir').length,1);
+ assert.deepEqual(f.calls.find(([name])=>name==='mkdir')[1].path,depth32);
+ const native=readFileSync(new URL('../android-bridge/BridgeDestinationPlugin.java.template',import.meta.url),'utf8');
+ assert.match(native,/array\.length\(\)>32/);
+ await destination.discard();
+});

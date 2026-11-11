@@ -1,3 +1,5 @@
+import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
+
 /**
  * Authenticated remote directory browsing: one paginated job per SAF page.
  * No document URI or local filesystem path crosses the API. Each server job
@@ -40,7 +42,10 @@ export function createBridgeRemoteFolderLister({
       if(page?.jobId!==job.jobId||!Array.isArray(page.entries)||
          !Number.isSafeInteger(page.nextOffset))
         throw Error('bridge_remote_browse_invalid_page');
-      return {entries:page.entries,nextOffset:page.nextOffset};
+      const validated=validateBridgeFolderPage({entries:page.entries,nextOffset:page.nextOffset});
+      if(validated.nextOffset!==-1&&validated.nextOffset<=offset)
+        throw Error('bridge_remote_browse_pagination_loop');
+      return validated;
     }finally{
       if(signal?.aborted&&typeof api.cancel==='function'){
         try{await api.cancel(job.jobId)}catch{/* revoke or already completed */}

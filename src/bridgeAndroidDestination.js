@@ -6,7 +6,7 @@
 const safeName=name=>typeof name==='string'&&name.length>0&&name.length<=255&&
   name!=='.'&&name!=='..'&&!/[\\/\u0000-\u001f\u007f]/u.test(name);
 const checkPath=path=>{
-  if(!Array.isArray(path)||path.length<1||path.length>16||
+  if(!Array.isArray(path)||path.length<1||path.length>32||
      !path.every(safeName))throw Error('bridge_destination_invalid_path');
   return [...path];
 };
