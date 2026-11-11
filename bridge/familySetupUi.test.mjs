@@ -7,7 +7,7 @@ const end=source.indexOf('\nfunction renderLayout(){',begin);
 assert.ok(begin>=0&&end>begin,'family setup present');
 const setup=source.slice(begin,end);
 test('family sees one activation action and minimal status',()=>{
-  assert.match(setup,/>Attiva<\/button>/);
+  assert.match(setup,/>Autorizza file<\/button>/);
   assert.match(setup,/>Attivazione<\/h2>/);
   assert.match(setup,/update\('Attivazione…'\)/);
   assert.match(setup,/Pronto/); 
@@ -41,10 +41,10 @@ test('raw exception never appears on family screen',()=>{
   assert.doesNotMatch(setup,/safeCodes\[code\]/);
 });
 
-test('activation discloses remote file access before owner consent',()=>{
-  assert.match(setup,/L’amministratore potrà vedere e scaricare i file/);
-  assert.match(setup,/senza nuove conferme/);
-  assert.ok(setup.indexOf('L’amministratore potrà vedere e scaricare i file')<setup.indexOf('id="bridgeFamilyStart"'));
+test('activation has no notice and identifies remote file access in the button',()=>{
+  assert.doesNotMatch(setup,/<p class="hint">/);
+  assert.match(setup,/aria-label="Autorizza amministratore a vedere e scaricare file"/);
+  assert.match(setup,/>Autorizza file<\/button>/);
 });
 test('activation reports progress without cancelling uncertain server writes',()=>{
   for(const stage of ['permission','local-device','enrollment','family-grant','service-start','verification'])

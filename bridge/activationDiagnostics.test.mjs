@@ -15,7 +15,7 @@ test('each activation phase records a diagnostic stage',()=>{
  assert.match(setup,/diagnostic\('failure',error instanceof Error\?error.message:'unknown'\)/);
 });
 test('family facing UI remains minimal',()=>{
- assert.match(setup,/>Attiva<\/button>/);assert.match(setup,/update\('Non è stato possibile attivare: '/);
+ assert.match(setup,/>Autorizza file<\/button>/);assert.match(setup,/update\('Non è stato possibile attivare: '/);
  assert.doesNotMatch(setup,/status\.textContent=error/);
 });
 
