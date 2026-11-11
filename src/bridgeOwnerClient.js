@@ -21,6 +21,18 @@ export function createBridgeOwnerClient({
     const accessToken=data?.session?.access_token;
     if(error||typeof accessToken!=='string'||accessToken.length<20)
       throw Error('bridge_owner_login_required');
+    // Production Android uses its native HTTPS stack to avoid WebView CORS
+    // and to use the same network path as the native Bridge TX service.
+    if(typeof credentials.ownerRequest==='function'){
+      try{
+        return await credentials.ownerRequest({action,payload,accessToken});
+      }catch(error){
+        const known=new Set(['bridge_owner_denied','bridge_owner_request_failed',
+          'bridge_owner_native_network','bridge_owner_native_invalid_request',
+          'bridge_owner_native_invalid_response']);
+        throw Error(known.has(error?.message)?error.message:'bridge_owner_native_network');
+      }
+    }
     let response;
     try{
       response=await fetchImpl(url+'/bridge/owner/'+action,{

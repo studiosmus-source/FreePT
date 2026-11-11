@@ -82,3 +82,39 @@ test('existing local TX enrollment is reused without re-enrolling or clearing cr
   assert.equal(f.getSaved(),before);
   assert.equal(f.requests.length,1);
 });
+
+test('native Android enrollment uses HTTPS plugin instead of WebView fetch',async()=>{
+  const calls=[];
+  const client=createBridgeOwnerClient({
+    baseUrl:'https://bridge-test.example.test',
+    auth:{getSession:async()=>({data:{session:{access_token:TOKEN}}})},
+    credentials:{
+      status:async()=>({provisioned:false}),
+      provision:async()=>({saved:true}),
+      clear:async()=>({cleared:true}),
+      ownerRequest:async args=>{
+        calls.push(args);
+        return {deviceId:DEVICE,deviceSecret:SECRET};
+      }
+    },
+    fetchImpl:async()=>{throw Error('WebView fetch must not run')}
+  });
+  assert.deepEqual(await client.enroll('Android'),{deviceId:DEVICE,provisioned:true});
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].action,'enroll');
+  assert.deepEqual(calls[0].payload,{label:'Android'});
+});
+test('native HTTPS failure remains a specific safe error',async()=>{
+  const client=createBridgeOwnerClient({
+    baseUrl:'https://bridge-test.example.test',
+    auth:{getSession:async()=>({data:{session:{access_token:TOKEN}}})},
+    credentials:{
+      status:async()=>({provisioned:false}),
+      provision:async()=>({saved:true}),
+      clear:async()=>({cleared:true}),
+      ownerRequest:async()=>{throw Error('bridge_owner_native_network')}
+    },
+    fetchImpl:async()=>{throw Error('WebView fetch must not run')}
+  });
+  await assert.rejects(()=>client.enroll('Android'),/bridge_owner_native_network/);
+});
