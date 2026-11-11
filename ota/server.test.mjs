@@ -23,7 +23,15 @@ test('health is read-only and outside update route',async()=>{
     const healthSlash=await fetch(url+'/health/');
     assert.equal(healthSlash.status,200);
     assert.deepEqual(await healthSlash.json(),{status:'ok'});
+    const tracked=await fetch(url+'/health?utm_source=chatgpt.com');
+    assert.equal(tracked.status,200);
+    assert.deepEqual(await tracked.json(),{status:'ok'});
+    const trackedHome=await fetch(url+'/?utm_source=chatgpt.com');
+    assert.equal(trackedHome.status,200);
+    assert.deepEqual(await trackedHome.json(),{status:'ok'});
     assert.equal((await fetch(url+'/missing')).status,404);
+    assert.equal((await fetch(url+'/missing?utm_source=chatgpt.com')).status,404);
+    assert.equal((await fetch(url+'/updates?utm_source=chatgpt.com')).status,404);
   });
 });
 test('returns authenticated-by-native-compatibility release metadata, not secrets',async()=>{
