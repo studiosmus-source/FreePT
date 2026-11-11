@@ -26,7 +26,7 @@ export function validateBridgeProductionConfig(env={}){
   // default. Permit exactly that first-party local origin in production,
   // even if a deployment retained the old https://localhost origin.
   // Bearer authentication and per-device grants remain mandatory.
-  const origins=Object.freeze([...new Set([...validated.origins,'http://localhost'])]);
+  const origins=Object.freeze([...new Set([...validated.origins,'http://localhost','https://localhost'])]);
   const http=Object.freeze({...validated,origins});
   return Object.freeze({url:url.origin,publishable,secret,http});
 }
