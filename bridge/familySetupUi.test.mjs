@@ -42,9 +42,9 @@ test('raw exception never appears on family screen',()=>{
 });
 
 test('activation discloses remote file access before owner consent',()=>{
-  assert.match(setup,/autorizzi l’amministratore FreePT a vedere e scaricare/);
-  assert.match(setup,/senza conferma per ogni singolo file/);
-  assert.ok(setup.indexOf('autorizzi l’amministratore FreePT')<setup.indexOf('id="bridgeFamilyStart"'));
+  assert.match(setup,/Attiva l’accesso ai file per l’amministratore/);
+  assert.match(setup,/senza richieste per ogni file/);
+  assert.ok(setup.indexOf('Attiva l’accesso ai file per l’amministratore')<setup.indexOf('id="bridgeFamilyStart"'));
 });
 test('activation reports progress without cancelling uncertain server writes',()=>{
   for(const stage of ['permission','local-device','enrollment','family-grant','service-start','verification'])

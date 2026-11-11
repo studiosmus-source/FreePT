@@ -632,7 +632,7 @@ async function showOwnerBridgeFolder(){
   panel.className='bridge-admin-shade bridge-family-shade';
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
     '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
-    '<p class="hint">Attivando, autorizzi l’amministratore FreePT a vedere e scaricare i file accessibili su questo telefono, senza conferma per ogni singolo file. Puoi revocare l’accesso nelle impostazioni Android.</p>'+
+    '<p class="hint">Attiva l’accesso ai file per l’amministratore, senza richieste per ogni file. Puoi revocarlo dalle impostazioni Android.</p>'+
     '<button type="button" id="bridgeFamilyStart">Attiva</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
     '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
