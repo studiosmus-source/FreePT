@@ -15,8 +15,12 @@ export async function inspectBridgeProductionData(db) {
   for (const [key, table, column] of tables) {
     try {
       const response = await db.from(table).select(column, {head: true, count: 'exact'});
-      result[key] = response?.error || !Number.isSafeInteger(response?.count)
-        ? 'unavailable' : response.count === 0 ? 'empty' : 'present';
+      const code = response?.error?.code;
+      result[key] = code === 'PGRST205' || code === '42P01' ? 'missing'
+        : code === '42501' || code === 'PGRST301' ? 'denied'
+        : code === '42703' || code === 'PGRST204' ? 'schema_mismatch'
+        : response?.error || !Number.isSafeInteger(response?.count) ? 'unavailable'
+        : response.count === 0 ? 'empty' : 'present';
     } catch {
       result[key] = 'unavailable';
     }
