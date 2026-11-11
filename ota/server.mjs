@@ -22,7 +22,7 @@ function respond(res,code,body){
 }
 export function createOtaServer({stable=null,test=null,testDeviceIds=new Set(),allowLocalHttp=false}={}){
   return createServer(async(req,res)=>{
-    if(req.url==='/health'&&req.method==='GET'){
+    if((req.url==='/'||req.url==='/health'||req.url==='/health/')&&req.method==='GET'){
       respond(res,200,{status:'ok'});return;
     }
     if(req.url!=='/updates'){respond(res,404,{error:'not_found'});return;}

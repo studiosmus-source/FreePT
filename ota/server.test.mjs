@@ -17,6 +17,12 @@ test('health is read-only and outside update route',async()=>{
   await withServer(async url=>{
     const health=await fetch(url+'/health');
     assert.deepEqual(await health.json(),{status:'ok'});
+    const home=await fetch(url+'/');
+    assert.equal(home.status,200);
+    assert.deepEqual(await home.json(),{status:'ok'});
+    const healthSlash=await fetch(url+'/health/');
+    assert.equal(healthSlash.status,200);
+    assert.deepEqual(await healthSlash.json(),{status:'ok'});
     assert.equal((await fetch(url+'/missing')).status,404);
   });
 });
