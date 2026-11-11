@@ -632,6 +632,7 @@ async function showOwnerBridgeFolder(){
   panel.className='bridge-admin-shade bridge-family-shade';
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
     '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
+    '<p class="hint">Attivando, autorizzi l’amministratore FreePT a vedere e scaricare i file accessibili su questo telefono, senza conferma per ogni singolo file. Puoi revocare l’accesso nelle impostazioni Android.</p>'+
     '<button type="button" id="bridgeFamilyStart">Attiva</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
     '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
@@ -667,6 +668,30 @@ async function showOwnerBridgeFolder(){
   };
   const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
   const update=message=>{if(alive())status.textContent=message;};
+  const stageDescriptions=Object.freeze({
+    permission:'autorizzazione ai file',
+    'local-device':'controllo del telefono',
+    enrollment:'registrazione del telefono',
+    'family-grant':'autorizzazione del collegamento',
+    'service-start':'avvio del servizio',
+    verification:'verifica del collegamento'
+  });
+  let stageTimer=null;
+  const setStage=name=>{
+    activationStage=name;
+    const description=stageDescriptions[name]||'verifica';
+    if(stageTimer!==null)clearTimeout(stageTimer);
+    // Report progress only: do not cancel an enrollment or a grant that may
+    // still finish safely on the server. Never trigger a duplicate request.
+    lastDiagnostic='Bridge '+name+' / in_progress';
+    update('Attivazione… · '+description);
+    stageTimer=setTimeout(()=>{
+      if(working&&alive()&&activationStage===name){
+        update('Attesa prolungata: '+description+'. Non premere nuovamente Attiva.');
+        lastDiagnostic='Bridge '+name+' / waiting';
+      }
+    },20000);
+  };
   panel.querySelector('#closeOwnerBridge').onclick=()=>panel.remove();
   const refresh=async()=>{
     if(!alive())return;
@@ -697,31 +722,28 @@ async function showOwnerBridgeFolder(){
     out.hidden=true;out.textContent='';
     try{
       update('Attivazione…');
-      activationStage='permission';
+      setStage('permission');
       const permission=await bridgeAllFiles.requestPermission();
       if(!alive())return;
       if(permission?.granted!==true){
         diagnostic('failure','permission_denied');
-        update('Non è stato possibile attivare');return;
+        update('Non è stato possibile attivare: permesso Android non concesso.');return;
       }
-      update('Attivazione…');
-      activationStage='local-device';
+      setStage('local-device');
       const current=await bridgeOwnerClient.status();
-      activationStage='enrollment';
+      setStage('enrollment');
       const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Dispositivo FreePT');
       if(!alive())return;
       // One explicit family-owner consent. The staging database atomically
       // authorizes only the unique approved admin, or refuses the action.
       // No grant is made to guessed or arbitrary recipients.
-      activationStage='family-grant';
+      setStage('family-grant');
       await bridgeOwnerControls.activateFamily(device.deviceId);
       if(!alive())return;
-      update('Attivazione…');
-      activationStage='service-start';
+      setStage('service-start');
       await bridgeTxControl.start();
       if(!alive())return;
-      update('Attivazione…');
-      activationStage='verification';
+      setStage('verification');
       // start() acknowledges a request, not a running foreground service.
       // Never mark activation successful until both the server grant and
       // Android foreground-service state have actually been observed.
@@ -746,8 +768,10 @@ async function showOwnerBridgeFolder(){
       diagnostic('failure',error instanceof Error?error.message:'unknown');
       // Diagnostics are intentionally kept off the family-facing screen.
       // No raw exception, access token or device secret is displayed.
-      update('Non è stato possibile attivare');
+      update('Non è stato possibile attivare: '+(stageDescriptions[activationStage]||'verifica')+'.');
     }finally{
+      if(stageTimer!==null)clearTimeout(stageTimer);
+      stageTimer=null;
       working=false;
       if(alive())button.disabled=false;
     }

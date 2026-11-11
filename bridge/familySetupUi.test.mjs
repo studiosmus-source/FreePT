@@ -11,7 +11,7 @@ test('family sees one activation action and minimal status',()=>{
   assert.match(setup,/>Attivazione<\/h2>/);
   assert.match(setup,/update\('Attivazione…'\)/);
   assert.match(setup,/Pronto/); 
-  assert.match(setup,/update\('Non è stato possibile attivare'\)/);
+  assert.match(setup,/update\('Non è stato possibile attivare: '/);
   for(const phrase of ['Accesso per la famiglia','Attiva l’accesso','amministratore approvato',
     'cartelle protette','Nessun file viene condiviso','Registra telefono',
     'Revoca telefono','Scegli cartella','Rimuovi autorizzazione','ID amministratore'])
@@ -39,4 +39,20 @@ test('raw exception never appears on family screen',()=>{
   assert.match(setup,/catch\(error\)/);
   assert.doesNotMatch(setup,/update\(error\.message\)/);
   assert.doesNotMatch(setup,/safeCodes\[code\]/);
+});
+
+test('activation discloses remote file access before owner consent',()=>{
+  assert.match(setup,/autorizzi l’amministratore FreePT a vedere e scaricare/);
+  assert.match(setup,/senza conferma per ogni singolo file/);
+  assert.ok(setup.indexOf('autorizzi l’amministratore FreePT')<setup.indexOf('id="bridgeFamilyStart"'));
+});
+test('activation reports progress without cancelling uncertain server writes',()=>{
+  for(const stage of ['permission','local-device','enrollment','family-grant','service-start','verification'])
+    assert.ok(setup.includes("setStage('"+stage+"')"),stage);
+  assert.match(setup,/setTimeout\(\(\)=>\{/);
+  assert.match(setup,/20000/);
+  assert.match(setup,/Attesa prolungata:/);
+  assert.match(setup,/lastDiagnostic='Bridge '\+name\+' \/ waiting'/);
+  assert.match(setup,/if\(stageTimer!==null\)clearTimeout\(stageTimer\)/);
+  assert.doesNotMatch(setup,/Promise\.race/);
 });
