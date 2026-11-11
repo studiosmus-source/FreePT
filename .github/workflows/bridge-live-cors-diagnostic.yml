@@ -1,0 +1,32 @@
+name: Bridge live CORS read-only diagnostic
+on:
+  push:
+    branches: [diag/bridge-live-cors-20261111]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Probe public health and Android CORS preflight without credentials
+        shell: bash
+        run: |
+          set -eu
+          URL='https://freept-bridge-production.onrender.com'
+          echo '--- HEALTH ---'
+          curl --silent --show-error --max-time 30 --include "$URL/health" | head -25
+          for ORIGIN in http://localhost https://localhost; do
+            echo "--- PREFLIGHT origin: $ORIGIN ---"
+            curl --silent --show-error --max-time 30 --include \
+              -X OPTIONS "$URL/bridge/owner/enroll" \
+              -H "Origin: $ORIGIN" \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: authorization,content-type' | head -30
+          done
+          echo '--- ANONYMOUS ROUTE CHECK ---'
+          curl --silent --show-error --max-time 30 --include \
+            -X POST "$URL/bridge/owner/enroll" \
+            -H 'Origin: http://localhost' -H 'Content-Type: application/json' \
+            --data '{"label":"unauthorized-test"}' | head -30
