@@ -3,6 +3,9 @@ import {createBridgeProductionService} from './productionServer.mjs';
 const service=createBridgeProductionService({env:process.env});
 await service.start();
 process.stdout.write('Dedicated FreePT production Bridge started behind HTTPS proxy\n');
+void service.inspectReadiness()
+  .then(report=>process.stdout.write('Bridge data readiness '+JSON.stringify(report)+'\n'))
+  .catch(()=>process.stdout.write('Bridge data readiness unavailable\n'));
 let stopping=false;
 async function stop(){
   if(stopping)return;
