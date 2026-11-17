@@ -3,6 +3,7 @@ import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import * as tus from 'tus-js-client';
+import { showActivation, showAdminExplorer, startBridgeService } from './bridge.js';
 
 const URL = import.meta.env.VITE_SUPABASE_URL || 'https://cpopqsvzzxfjgnlawlvc.supabase.co';
 const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Q74UCgQUXO6f_7vZhXcbyg_2KRl2OSN';
@@ -195,7 +196,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(profile.role!=='admin' && Capacitor.isNativePlatform())startBridgeService(db,me.id);if(selected)await showMessages();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -219,11 +220,11 @@ async function refreshOnVisible(){
 }
 function renderLayout(){
   const admin=profile.role==='admin';
-  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button id="logout">Esci</button>':'')+
+  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button id="logout">Esci</button>':'<button id="bridgeActivate">Attiva file</button>')+
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
-    '<strong class="grow" id="chatTitle">Servizio</strong></div>'+
+    '<strong class="grow" id="chatTitle">Servizio</strong>'+(admin?'<button id="bridgeFiles" type="button">File e cartelle</button>':'')+'</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
@@ -231,12 +232,18 @@ function renderLayout(){
     '<p id="status" class="hint"></p></section></div></div>';
   if(admin){
     document.getElementById('logout').onclick=logout;
+    document.getElementById('bridgeFiles').onclick=()=>{
+      const target=people.find(x=>x.id===selected);
+      if(!target){alert('Apri prima la chat di una persona.');return;}
+      showAdminExplorer(db,target.id,target.full_name,()=>renderWorkspace());
+    };
     renderPeople();
     document.getElementById('back').onclick=()=>{
       document.getElementById('chat').classList.add('off');
       document.getElementById('people').classList.remove('off');
     };
   }
+  if(!admin)document.getElementById('bridgeActivate').onclick=()=>showActivation(db,me.id,()=>renderWorkspace());
   document.getElementById('send').onsubmit=send;
   configureFileInput(document.getElementById('file'));
 }
