@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/bridge-rebuild-saf']
   workflow_dispatch:
 permissions:
   contents: read
@@ -52,6 +52,15 @@ jobs:
           npx cap add android
           npx cap sync android
           test -s android/capacitor.settings.gradle
+      - name: Register native Bridge plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=android/app/src/main/java/it/freept/app
+          test -d "$APP"
+          cp bridge/android/MainActivity.java "$APP/MainActivity.java"
+          cp bridge/android/FreePTBridgePlugin.java "$APP/FreePTBridgePlugin.java"
+          grep -q 'registerPlugin(FreePTBridgePlugin.class)' "$APP/MainActivity.java"
       - name: Ensure Android biometric permission
         run: |
           python3 - <<'PY'
