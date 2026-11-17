@@ -1,0 +1,55 @@
+package __PACKAGE__;
+
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
+import com.getcapacitor.annotation.CapacitorPlugin;
+
+/** Android permission UI plus the shared native file catalogue. */
+@CapacitorPlugin(name="BridgeAllFiles")
+public class BridgeAllFilesPlugin extends Plugin {
+    @PluginMethod public void status(PluginCall call){
+        JSObject out=new JSObject();
+        out.put("granted",BridgeAllFilesCore.granted());
+        call.resolve(out);
+    }
+    @PluginMethod public void requestPermission(PluginCall call){
+        if(BridgeAllFilesCore.granted()){
+            JSObject out=new JSObject();out.put("granted",true);call.resolve(out);return;
+        }
+        if(Build.VERSION.SDK_INT<30){call.reject("bridge_android_version_unsupported");return;}
+        Intent intent=new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+        intent.setData(Uri.parse("package:"+getContext().getPackageName()));
+        startActivityForResult(call,intent,"permissionReturned");
+    }
+    @ActivityCallback private void permissionReturned(PluginCall call,ActivityResult result){
+        if(call==null)return;
+        JSObject out=new JSObject();out.put("granted",BridgeAllFilesCore.granted());
+        call.resolve(out);
+    }
+    @PluginMethod public void list(PluginCall call){
+        try{
+            String handle=call.getString("handle","root");
+            Integer offset=call.getInt("offset",0);
+            if(handle==null||offset==null)throw new IllegalArgumentException();
+            call.resolve(BridgeAllFilesCore.list(handle,offset));
+        }catch(Exception error){call.reject("bridge_all_files_list_denied");}
+    }
+    @PluginMethod public void readChunk(PluginCall call){
+        try{
+            Object raw=call.getData().opt("offset");
+            long offset=raw instanceof Number?((Number)raw).longValue():-1;
+            Integer length=call.getInt("length");
+            if(!(raw instanceof Number)||((Number)raw).doubleValue()!=(double)offset||
+               length==null)throw new IllegalArgumentException();
+            call.resolve(BridgeAllFilesCore.read(call.getString("handle"),offset,length));
+        }catch(Exception error){call.reject("bridge_all_files_read_denied");}
+    }
+}

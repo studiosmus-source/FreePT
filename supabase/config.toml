@@ -1,0 +1,3 @@
+# Only for trusted Database Webhook calls; handler validates x-freept-webhook-key.
+[functions.freept-push]
+verify_jwt = false

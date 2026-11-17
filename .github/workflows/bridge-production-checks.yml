@@ -1,0 +1,45 @@
+name: Production Bridge configuration checks
+on:
+  push:
+    branches:
+      - feature/bridge-chunk-receiver-20261108
+    paths:
+      - 'supabase/bridge_staging_install_once.sql'
+      - 'supabase/bridge_production_readiness_readonly.sql'
+      - 'supabase/bridge_sql_safety.test.mjs'
+      - 'bridge/productionServer.mjs'
+      - 'bridge/productionServer.test.mjs'
+      - 'bridge/productionPreflight.mjs'
+      - 'bridge/productionPreflight.test.mjs'
+      - 'bridge/httpsGateway.mjs'
+      - 'bridge/trustedBackend.mjs'
+      - '.github/workflows/bridge-production-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Check production JavaScript syntax
+        run: |
+          node --check bridge/productionServer.mjs
+          node --check bridge/runProduction.mjs
+          node --check bridge/productionPreflight.mjs
+          node --check bridge/httpsGateway.mjs
+      - name: Test production guards without credentials
+        run: node --test bridge/productionServer.test.mjs bridge/productionPreflight.test.mjs bridge/httpsGateway.test.mjs
+      - name: Check SQL migration safety invariants
+        run: node --test supabase/bridge_sql_safety.test.mjs
+      - name: Ensure production startup fails closed without secrets
+        run: |
+          if node bridge/runProduction.mjs; then
+            echo 'ERROR: production started without explicit credentials'
+            exit 1
+          fi

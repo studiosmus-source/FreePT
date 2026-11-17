@@ -1,0 +1,194 @@
+name: FreePT Bridge APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Inspect preinstalled Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME"
+          test -d "$ANDROID_HOME/platform-tools"
+          test -d "$ANDROID_HOME/build-tools"
+          ls "$ANDROID_HOME/build-tools"
+      - name: Install web dependencies
+        run: npm install --no-audit --no-fund
+      - name: Bridge unit regression tests (development branch only)
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
+        run: npm run test:bridge
+      - name: JavaScript syntax check
+        run: node --check src/main.js
+      - name: Require isolated Supabase test project for Bridge APK
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
+        env:
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          url = os.environ.get('VITE_SUPABASE_URL', '')
+          key = os.environ.get('VITE_SUPABASE_PUBLISHABLE_KEY', '')
+          parsed = urlparse(url)
+          if (parsed.scheme != 'https' or not parsed.hostname or
+              parsed.hostname != parsed.hostname.lower() or
+              parsed.username or parsed.password or parsed.query or parsed.fragment or
+              parsed.path not in ('', '/')):
+              raise SystemExit('Bridge test Supabase URL missing or invalid')
+          if parsed.hostname == 'cpopqsvzzxfjgnlawlvc.supabase.co':
+              raise SystemExit('Refusing production Supabase for experimental Bridge APK')
+          if not key.startswith('sb_publishable_') or len(key) < 30:
+              raise SystemExit('Bridge test Supabase publishable key missing or invalid')
+          print('Bridge test Supabase configuration present; production project rejected')
+          PY
+      - name: Validate optional experimental HTTPS Bridge backend endpoint
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
+        env:
+          VITE_BRIDGE_TEST_API_URL: ${{ vars.FREEPT_BRIDGE_TEST_API_URL }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          value=os.environ.get('VITE_BRIDGE_TEST_API_URL','')
+          if not value:
+              print('No external Bridge endpoint configured: admin stays read-only')
+          else:
+              url=urlparse(value)
+              if (url.scheme!='https' or not url.hostname or url.hostname=='cpopqsvzzxfjgnlawlvc.supabase.co' or
+                  url.username or url.password or url.port or url.path not in ('','/') or
+                  url.query or url.fragment):
+                  raise SystemExit('Unsafe Bridge test endpoint refused')
+              print('Optional HTTPS Bridge test endpoint validated')
+          PY
+      - name: Build web bundle (3-minute diagnostic timeout)
+        shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
+          VITE_BRIDGE_TEST_API_URL: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && vars.FREEPT_BRIDGE_TEST_API_URL || '' }}
+          VITE_BRIDGE_ISOLATED_BUILD: ${{ (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108') && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          echo "Node: $(node --version) / npm: $(npm --version)"
+          echo "Vite path: $(readlink -f node_modules/.bin/vite)"
+          timeout --signal=TERM --kill-after=10s 180s npm run build 2>&1 | tee vite-build.log
+          test -s dist/index.html
+      - name: Upload Vite build diagnostic log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-vite-build-diagnostic
+          path: vite-build.log
+          if-no-files-found: warn
+      - name: Isolate experimental Bridge APK identity
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config = Path('capacitor.config.json')
+          data = json.loads(config.read_text())
+          if data.get('appId') != 'it.freept.app':
+              raise SystemExit('Unexpected base appId; refusing experimental build')
+          data['appId'] = 'it.freept.bridge.next'
+          data['appName'] = 'FreePT Bridge 2'
+          config.write_text(json.dumps(data, indent=2) + '\n')
+          assert json.loads(config.read_text())['appId'] == 'it.freept.bridge.next'
+          PY
+      - name: Generate and synchronize Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/index.html
+          npx cap add android
+          npx cap sync android
+          test -s android/capacitor.settings.gradle
+      - name: Install explicit owner-selected SAF folder provider (Bridge test only)
+        if: (github.ref == 'refs/heads/feature/bridge-admin-foundation-20261106' || github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108')
+        run: python3 android-bridge/install.py
+      - name: Ensure Android biometric permission
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          if 'android.permission.USE_BIOMETRIC' not in s:
+              s=s.replace('<application', '<uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <application', 1)
+              p.write_text(s)
+          assert 'android.permission.USE_BIOMETRIC' in p.read_text()
+          PY
+      - name: Check Android project and permissions
+        run: |
+          test -f android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || {
+            echo 'Missing INTERNET permission'; exit 1;
+          }
+      - name: Prepare Gradle wrapper download with retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android
+          chmod +x gradlew
+          WRAPPER=gradle/wrapper/gradle-wrapper.properties
+          test -f "$WRAPPER"
+          # Generated by Capacitor. Bound download timeout on a clean CI runner.
+          if grep -q '^networkTimeout=' "$WRAPPER"; then
+            sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$WRAPPER"
+          else
+            printf '\nnetworkTimeout=120000\n' >> "$WRAPPER"
+          fi
+          for attempt in 1 2 3; do
+            echo "Gradle wrapper download attempt $attempt/3"
+            if ./gradlew --version --no-daemon; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo 'Gradle distribution download failed after 3 attempts'
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+      - name: Build debug APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Verify APK integrity and identity
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" > /dev/null
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
+          test -n "$AAPT"
+          "$AAPT" dump badging "$APK" | tee android-apk-info.txt
+          if [[ "$GITHUB_REF" == "refs/heads/feature/bridge-admin-foundation-20261106" || "$GITHUB_REF" == "refs/heads/feature/bridge-chunk-receiver-20261108" ]]; then
+            EXPECTED_ID=it.freept.bridge.next
+          else
+            EXPECTED_ID=it.freept.app
+          fi
+          grep -Fq "package: name='$EXPECTED_ID'" android-apk-info.txt
+          echo "Verified application ID: $EXPECTED_ID"
+          sha256sum "$APK" | tee android-apk-sha256.txt
+      - name: Upload APK verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.ref_name == 'main' && 'FreePT-apk-report' || 'FreePT-bridge-experimental-apk-report' }}
+          path: |
+            android-apk-info.txt
+            android-apk-sha256.txt
+          if-no-files-found: error
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.ref_name == 'main' && 'FreePT-debug-apk' || 'FreePT-bridge-experimental-debug-apk' }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

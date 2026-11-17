@@ -1,0 +1,261 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createBridgeTxRequestHandler } from './txRequestHandler.mjs';
+import { createBridgeLoopbackTestServer } from './loopbackHttp.mjs';
+import { createBridgeAdminRequestHandler } from './adminRequestHandler.mjs';
+import { BridgeRegistry } from './deviceRouting.mjs';
+import { BridgeDeviceCredentials } from './deviceCredentials.mjs';
+import { BridgeDeviceSessionGate } from './deviceSessions.mjs';
+import { BridgeService } from './bridgeService.mjs';
+
+const A = '11111111-1111-4111-8111-111111111111';
+const B = '22222222-2222-4222-8222-222222222222';
+const ADMIN = '33333333-3333-4333-8333-333333333333';
+const JOB = '44444444-4444-4444-8444-444444444444';
+const AUTH = 'Bearer ' + 'a'.repeat(40);
+
+function fixture() {
+  const registry = new BridgeRegistry();
+  const credentials = new BridgeDeviceCredentials();
+  const secrets = {};
+  for (const [id, owner] of [[A,'owner-a'],[B,'owner-b']]) {
+    registry.registerDevice({id,ownerId:owner,label:id});
+    registry.setBridgeEnabled({deviceId:id,ownerId:owner,enabled:true});
+    registry.grant({deviceId:id,receiverId:ADMIN,approvedByOwnerId:owner});
+    secrets[id] = credentials.issue(id).secret;
+  }
+  const sessions=new BridgeDeviceSessionGate({registry,credentials});
+  const service=new BridgeService({
+    registry,sessions,
+    authenticateAdmin:async ctx=>ctx?.accessToken==='a'.repeat(40) ?
+      {id:ADMIN,role:'admin',approved:true}:null
+  });
+  const admin=createBridgeAdminRequestHandler({service,newJobId:()=>JOB});
+  const tx=createBridgeTxRequestHandler({service});
+  return {registry,secrets,sessions,service,admin,tx};
+}
+
+async function post(url,path,body,headers={}) {
+  const response = await fetch(url+path,{
+    method:'POST',headers:{'content-type':'application/json',...headers},
+    body:JSON.stringify(body)
+  });
+  return {status:response.status,body:await response.json()};
+}
+
+test('real loopback HTTP: admin and TX exchange a job across distinct routes',async t=>{
+  const f=fixture();
+  const srv=createBridgeLoopbackTestServer({handler:f.admin,txHandler:f.tx});
+  const url=await srv.start();t.after(()=>srv.stop());
+  const connect=await post(url,'/bridge/tx/connect',{deviceId:A,deviceSecret:f.secrets[A]});
+  assert.equal(connect.status,200);
+  assert.match(connect.body.token,/^[0-9a-f]{64}$/);
+  assert.equal(f.registry.getDeviceStatus({deviceId:A,receiverId:ADMIN}).state,'online');
+  const queued=await post(url,'/bridge/admin/list',{deviceId:A},{authorization:AUTH});
+  assert.equal(queued.status,202);
+  assert.equal(queued.body.jobId,JOB);
+  const poll=await post(url,'/bridge/tx/poll',{deviceId:A,sessionToken:connect.body.token});
+  assert.equal(poll.status,200);
+  assert.equal(poll.body.job.jobId,JOB);
+  const done=await post(url,'/bridge/tx/complete',{
+    deviceId:A,sessionToken:connect.body.token,jobId:JOB
+  });
+  assert.equal(done.status,200);
+  assert.equal(done.body.state,'done');
+  const final=await post(url,'/bridge/admin/status',{jobId:JOB},{authorization:AUTH});
+  assert.equal(final.body.state,'done');
+});
+
+test('wrong device token and incorrect session never take or complete work',async t=>{
+  const f=fixture();
+  const srv=createBridgeLoopbackTestServer({handler:f.admin,txHandler:f.tx});
+  const url=await srv.start();t.after(()=>srv.stop());
+  const a=(await post(url,'/bridge/tx/connect',{deviceId:A,deviceSecret:f.secrets[A]})).body.token;
+  const b=(await post(url,'/bridge/tx/connect',{deviceId:B,deviceSecret:f.secrets[B]})).body.token;
+  await post(url,'/bridge/admin/list',{deviceId:A},{authorization:AUTH});
+  assert.equal((await post(url,'/bridge/tx/poll',{deviceId:A,sessionToken:b})).status,403);
+  assert.equal((await post(url,'/bridge/tx/poll',{deviceId:B,sessionToken:b})).body.job,null);
+  assert.equal((await post(url,'/bridge/tx/poll',{deviceId:A,sessionToken:a})).body.job.jobId,JOB);
+  assert.equal((await post(url,'/bridge/tx/complete',{
+    deviceId:A,sessionToken:b,jobId:JOB
+  })).status,403);
+  assert.equal((await post(url,'/bridge/tx/complete',{
+    deviceId:A,sessionToken:a,jobId:JOB
+  })).body.state,'done');
+});
+
+test('invalid secret and owner shutdown deny TX connection without online presence',async t=>{
+  const f=fixture();
+  const srv=createBridgeLoopbackTestServer({handler:f.admin,txHandler:f.tx});
+  const url=await srv.start();t.after(()=>srv.stop());
+  assert.equal((await post(url,'/bridge/tx/connect',{
+    deviceId:A,deviceSecret:f.secrets[B]
+  })).status,403);
+  assert.equal(f.registry.getDeviceStatus({deviceId:A,receiverId:ADMIN}).state,'offline');
+  f.registry.setBridgeEnabled({deviceId:A,ownerId:'owner-a',enabled:false});
+  assert.equal((await post(url,'/bridge/tx/connect',{
+    deviceId:A,deviceSecret:f.secrets[A]
+  })).status,403);
+  assert.equal(f.registry.getDeviceStatus({deviceId:A,receiverId:ADMIN}).state,'closed_by_owner');
+});
+
+test('TX contract rejects unapproved fields, malformed tokens and unknown operations',async t=>{
+  const f=fixture();
+  const srv=createBridgeLoopbackTestServer({handler:f.admin,txHandler:f.tx});
+  const url=await srv.start();t.after(()=>srv.stop());
+  assert.equal((await post(url,'/bridge/tx/connect',{
+    deviceId:A,deviceSecret:f.secrets[A],receiverId:ADMIN
+  })).status,400);
+  assert.equal((await post(url,'/bridge/tx/poll',{
+    deviceId:A,sessionToken:'not-a-token'
+  })).status,400);
+  assert.equal((await post(url,'/bridge/tx/read',{deviceId:A})).status,404);
+  assert.equal(f.registry.getDeviceStatus({deviceId:A,receiverId:ADMIN}).state,'offline');
+});
+
+test('TX routes remain unavailable when test server is instantiated admin-only',async t=>{
+  const f=fixture();
+  const srv=createBridgeLoopbackTestServer({handler:f.admin});
+  const url=await srv.start();t.after(()=>srv.stop());
+  assert.equal((await post(url,'/bridge/tx/connect',{
+    deviceId:A,deviceSecret:f.secrets[A]
+  })).status,404);
+});
+
+test('TX request handler fails closed without trusted service',()=>{
+  assert.throws(()=>createBridgeTxRequestHandler({}),/invalid_tx_request_dependencies/);
+});
+
+test('repeated invalid TX logins are limited, valid login works after cooldown', async () => {
+  const f = fixture();
+  let clock = 1000;
+  const handler = createBridgeTxRequestHandler({
+    service:f.service, now:()=>clock, maxFailures:2,
+    windowMs:1000, cooldownMs:2000
+  });
+  const request = (secret) => handler({
+    method:'POST', path:'/bridge/tx/connect',
+    body:{deviceId:A,deviceSecret:secret}
+  });
+  assert.equal((await request(f.secrets[B])).status,403);
+  assert.equal((await request(f.secrets[B])).status,403);
+  assert.deepEqual(await request(f.secrets[A]), {
+    status:429, body:{error:'tx_rate_limited'}
+  });
+  assert.equal(f.registry.getDeviceStatus({deviceId:A,receiverId:ADMIN}).state,'offline');
+  clock+=2001;
+  assert.equal((await request(f.secrets[A])).status,200);
+});
+
+test('TX login failures for one phone do not block a separate phone',async ()=>{
+  const f=fixture();
+  let clock=100;
+  const tx=createBridgeTxRequestHandler({
+    service:f.service,now:()=>clock,maxFailures:1,windowMs:1000,cooldownMs:1000
+  });
+  const call=(id,secret)=>tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:id,deviceSecret:secret}});
+  assert.equal((await call(A,f.secrets[B])).status,403);
+  assert.equal((await call(A,f.secrets[A])).status,429);
+  const b=await call(B,f.secrets[B]);
+  assert.equal(b.status,200);
+  assert.match(b.body.token,/^[0-9a-f]{64}$/);
+});
+
+test('bounded rate-limit table denies excess identities and recovers when expired',async ()=>{
+  const f=fixture();
+  let clock=1;
+  const tx=createBridgeTxRequestHandler({
+    service:f.service,now:()=>clock,maxFailures:1,
+    windowMs:100,cooldownMs:100,maxTrackedDevices:1
+  });
+  const call=(id,secret)=>tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:id,deviceSecret:secret}});
+  assert.equal((await call(A,f.secrets[B])).status,403);
+  assert.equal((await call(B,f.secrets[B])).status,429);
+  clock=102;
+  assert.equal((await call(B,f.secrets[B])).status,200);
+});
+
+test('invalid rate-limit options fail before request handling',()=>{
+  const f=fixture();
+  assert.throws(()=>createBridgeTxRequestHandler({
+    service:f.service,maxFailures:0
+  }),/invalid_tx_rate_limits/);
+  assert.throws(()=>createBridgeTxRequestHandler({
+    service:f.service,maxTrackedDevices:0
+  }),/invalid_tx_rate_limits/);
+});
+
+test('simultaneous TX logins for one device are serialized and counted',async()=>{
+  let resolveAttempt;
+  let authenticateCalls=0;
+  const service={
+    connectDevice:()=>{authenticateCalls++;return new Promise((resolve,reject)=>{
+      resolveAttempt=()=>reject(Error('invalid_credentials'));
+    });},
+    pollDevice:async()=>null,
+    completeDevice:async()=>null
+  };
+  const tx=createBridgeTxRequestHandler({
+    service,maxFailures:1,windowMs:60000,cooldownMs:60000
+  });
+  const req=()=>tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:A,deviceSecret:'a'.repeat(64)}});
+  const first=req();
+  const parallel=await req();
+  assert.equal(parallel.status,429);
+  assert.equal(authenticateCalls,1);
+  resolveAttempt();
+  assert.equal((await first).status,403);
+  assert.equal((await req()).status,429);
+  assert.equal(authenticateCalls,1);
+});
+
+test('TX login serialization releases lock on success and allows another device',async()=>{
+  let release;
+  const calls=[];
+  const service={
+    connectDevice:({deviceId})=>{
+      calls.push(deviceId);
+      if(deviceId===A)return new Promise(resolve=>{release=()=>resolve({token:'x'.repeat(64)})});
+      return Promise.resolve({token:'y'.repeat(64)});
+    },
+    pollDevice:async()=>null,completeDevice:async()=>null
+  };
+  const tx=createBridgeTxRequestHandler({service});
+  const request=deviceId=>tx({
+    method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId,deviceSecret:'a'.repeat(64)}
+  });
+  const first=request(A);
+  assert.equal((await request(A)).status,429);
+  assert.equal((await request(B)).status,200);
+  release();
+  assert.equal((await first).status,200);
+  const again=request(A);
+  assert.equal((await request(A)).status,429);
+  release();
+  assert.equal((await again).status,200);
+  assert.deepEqual(calls,[A,B,A]);
+});
+
+test('many distinct in-flight TX logins cannot bypass global tracked-device bound',async()=>{
+  const awaiting=[];
+  let calls=0;
+  const service={
+    connectDevice:()=>{calls++;return new Promise((resolve,reject)=>{
+      awaiting.push(()=>reject(Error('not_authorized')));
+    });},
+    pollDevice:async()=>null,completeDevice:async()=>null
+  };
+  const tx=createBridgeTxRequestHandler({service,maxTrackedDevices:1});
+  const first=tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:A,deviceSecret:'a'.repeat(64)}});
+  const second=await tx({method:'POST',path:'/bridge/tx/connect',
+    body:{deviceId:B,deviceSecret:'b'.repeat(64)}});
+  assert.equal(second.status,429);
+  assert.equal(calls,1);
+  awaiting[0]();
+  assert.equal((await first).status,403);
+});

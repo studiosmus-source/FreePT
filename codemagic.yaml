@@ -1,0 +1,75 @@
+workflows:
+  freept-bridge-debug:
+    name: FreePT Bridge - APK Android di prova
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 22
+    scripts:
+      - name: Verifica ambiente isolato
+        script: |
+          set -eu
+          test -n "${FREEPT_BRIDGE_TEST_SUPABASE_URL:-}" || { echo "Missing FREEPT_BRIDGE_TEST_SUPABASE_URL"; exit 1; }
+          test -n "${FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY:-}" || { echo "Missing FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY"; exit 1; }
+          export VITE_SUPABASE_URL="$FREEPT_BRIDGE_TEST_SUPABASE_URL"
+          export VITE_SUPABASE_PUBLISHABLE_KEY="$FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY"
+          export VITE_BRIDGE_TEST_API_URL="${FREEPT_BRIDGE_TEST_API_URL:-}"
+          export VITE_BRIDGE_ISOLATED_BUILD=true
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          u=urlparse(os.environ['VITE_SUPABASE_URL'])
+          if u.scheme!='https' or not u.hostname or u.hostname=='cpopqsvzzxfjgnlawlvc.supabase.co' or u.path not in ('','/') or u.query or u.fragment:
+              raise SystemExit('Refusing unsafe/production Supabase')
+          key=os.environ['VITE_SUPABASE_PUBLISHABLE_KEY']
+          if not key.startswith('sb_publishable_') or len(key)<30:
+              raise SystemExit('Invalid isolated publishable key')
+          endpoint=os.environ.get('VITE_BRIDGE_TEST_API_URL','')
+          if endpoint:
+              p=urlparse(endpoint)
+              if p.scheme!='https' or not p.hostname or p.hostname=='cpopqsvzzxfjgnlawlvc.supabase.co' or p.path not in ('','/') or p.query or p.fragment:
+                  raise SystemExit('Unsafe Bridge endpoint')
+          PY
+      - name: Installa dipendenze e verifica JavaScript
+        script: |
+          npm install --no-audit --no-fund
+          node --check src/main.js
+          npm run test:bridge
+      - name: Genera web e progetto Android
+        script: |
+          export VITE_SUPABASE_URL="$FREEPT_BRIDGE_TEST_SUPABASE_URL"
+          export VITE_SUPABASE_PUBLISHABLE_KEY="$FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY"
+          export VITE_BRIDGE_TEST_API_URL="${FREEPT_BRIDGE_TEST_API_URL:-}"
+          export VITE_BRIDGE_ISOLATED_BUILD=true
+          npm run build
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('capacitor.config.json')
+          d=json.loads(p.read_text())
+          if d.get('appId')!='it.freept.app':
+              raise SystemExit('Unexpected FreePT appId')
+          d['appId']='it.freept.bridge'
+          d['appName']='FreePT Bridge Test'
+          p.write_text(json.dumps(d,indent=2)+'\n')
+          PY
+          npx cap add android
+          npx cap sync android
+          python3 android-bridge/install.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          if 'android.permission.USE_BIOMETRIC' not in s:
+              s=s.replace('<application','<uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <application',1)
+              p.write_text(s)
+          PY
+      - name: Compila APK debug
+        script: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          shasum -a 256 app/build/outputs/apk/debug/app-debug.apk
+    artifacts:
+      - android/app/build/outputs/apk/debug/app-debug.apk

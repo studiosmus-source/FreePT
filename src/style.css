@@ -43,3 +43,96 @@ html,body,#app{min-height:100%;height:100%}
 .chat-actions-box .danger{background:#b42318}
 .chat-actions-box .secondary{background:#e8edf1;color:#18202d}
 .chat-actions-box .error{overflow-wrap:anywhere;color:#b42318}
+
+/* Bridge: administrator-only panel. No changes to user chat layout. */
+.bridge-admin-shade{position:fixed;inset:0;z-index:700;background:rgba(16,24,39,.58);display:flex;align-items:center;justify-content:center;padding:16px}
+.bridge-admin-panel{width:min(100%,480px);max-height:90dvh;overflow:auto;background:#fff;color:#18202d;border-radius:16px;padding:18px;box-shadow:0 20px 55px rgba(0,0,0,.3)}
+.bridge-admin-panel header{display:flex;align-items:center;gap:12px;justify-content:space-between}
+.bridge-admin-panel h2{margin:0;font-size:20px}
+.bridge-admin-panel nav{display:flex;gap:8px;margin:18px 0}
+.bridge-admin-panel nav button{flex:1;background:#e8edf1;color:#18202d}
+.bridge-admin-panel nav button[aria-pressed=true]{background:#164b70;color:#fff}
+.bridge-admin-panel h3{font-size:16px}
+.bridge-admin-panel p{font-size:14px;line-height:1.5;color:#475569}
+
+/* Passwordless admin: hide OTP entry until email request succeeds. */
+#adminCodeVerify[hidden]{display:none!important}
+#adminCodeVerify input{letter-spacing:.15em;font-variant-numeric:tabular-nums}
+
+/* Mobile-first admin list filters; native hidden state must override .person. */
+.admin-people-tools{display:grid;gap:8px;padding:12px;border-bottom:1px solid #d9e0e8;background:#f7f9fb}
+.admin-people-tools strong{font-size:14px}
+.admin-people-tools input,.admin-people-tools select{width:100%;min-width:0;padding:10px;border:1px solid #cbd2d9;border-radius:9px;background:white;color:#18202d}
+.person[hidden],#adminPeopleEmpty[hidden]{display:none!important}
+
+/* Prevent pointless scrolling of the app home/workspace. Only tall forms scroll. */
+.shell{overflow-y:hidden;overscroll-behavior:none}
+.request-shell,.shell:has(#adminCodeSend){overflow-y:auto;overscroll-behavior-y:contain}
+.request-shell .panel{margin:8px auto;padding:14px 18px 20px}
+.request-shell .disclaimer{padding:10px 12px;font-size:12px;line-height:1.35}
+.request-shell .disclaimer p{margin:6px 0}
+.request-shell .disclaimer-promise{font-size:15px;line-height:1.4}
+.request-shell .form{gap:9px}
+/* Discreet entry: long-press the title, never an exposed admin button. */
+.request-shell .top h1{user-select:none;-webkit-user-select:none;touch-action:manipulation}
+
+/* Owner-granted local Android folder browser; no remote transfer UI. */
+.bridge-owner-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.bridge-owner-actions button{flex:1;min-width:125px}
+.bridge-owner-entry{display:block;background:#f3f6f9;color:#18202d;border:1px solid #dae1e8;text-align:left;width:100%;margin:6px 0;overflow-wrap:anywhere}
+.bridge-owner-path{font-size:12px;color:#475569;margin:10px 0;overflow-wrap:anywhere}
+.bridge-owner-preview{white-space:pre-wrap;overflow:auto;max-height:45dvh;background:#f2f4f7;padding:12px;border-radius:8px;font-size:12px}
+
+/* Owner-initiated Bridge pairing appears only with an explicit test backend. */
+.bridge-owner-pairing{margin:12px 0;padding:12px;border:1px solid #d7dee6;border-radius:10px;background:#f7f9fc}
+.bridge-owner-pairing h3{margin:0 0 8px}
+.bridge-owner-pairing label{display:block;font-size:13px;margin:8px 0 4px}
+.bridge-owner-pairing input{width:100%;min-width:0;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #bcc8d5}
+.bridge-owner-pairing button:disabled{opacity:.55}
+
+/* Family-facing setup: a single clear action; system consent remains Android-owned. */
+.bridge-family-shade{padding:12px;align-items:center}
+.bridge-family-panel{width:min(100%,420px);max-height:min(78dvh,650px);overflow-y:auto;padding:22px 18px;box-sizing:border-box}
+.bridge-family-panel header{gap:12px}
+.bridge-family-panel header button{flex:none;min-width:auto}
+.bridge-family-panel>p{font-size:16px;line-height:1.5;margin:16px 0;overflow-wrap:break-word}
+.bridge-family-panel #bridgeFamilyStart{display:block;width:100%;font-size:18px;min-height:54px;white-space:normal}
+.bridge-family-panel #bridgeFamilyStart[hidden]{display:none!important}
+.bridge-family-panel #bridgeFamilyStatus{font-size:16px;font-weight:600;color:#194969}
+@media(max-height:480px){.bridge-family-panel{max-height:calc(100dvh - 24px)}}
+
+/* Elenco file e cartelle del telefono remoto (Bridge) */
+.bridge-remote-entries{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.bridge-remote-entries>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid #dae1e8;border-radius:10px;background:#f7f9fb}
+.bridge-remote-entries>div>span{flex:1 1 100%;min-width:0;overflow-wrap:anywhere;font-weight:600}
+.bridge-remote-entries>div>button{flex:0 0 auto}
+@media(min-width:480px){.bridge-remote-entries>div>span{flex:1 1 auto}}
+
+/* Remote Bridge folder browser: scroll inside the chat viewport on Android. */
+.chat{min-height:0}
+#chatRemoteFilesPanel{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding:10px 14px 20px}
+#feed[hidden],#send[hidden]{display:none!important}
+
+
+/* Compact Android-style remote explorer. Scoped to Bridge only. */
+.bridge-breadcrumbs{display:flex!important;flex-wrap:nowrap;align-items:center;gap:3px;overflow-x:auto;white-space:nowrap;padding:8px 0;scrollbar-width:thin}
+.bridge-breadcrumbs button{flex:0 0 auto!important;min-width:0;padding:7px 9px;font-size:13px;background:#edf3f8;color:#17435f;border-radius:8px}
+.bridge-breadcrumbs button:disabled{background:transparent;color:#263b4b;font-weight:700;opacity:1}
+.bridge-folder-actions{display:flex;gap:8px;margin:8px 0}
+.bridge-folder-actions button{flex:1;min-width:0;font-size:13px}
+.bridge-remote-entries{gap:0}
+.bridge-remote-entries>.bridge-entry{display:flex;align-items:center;flex-wrap:nowrap;gap:4px;padding:0 4px;border:0;border-bottom:1px solid #e4e9ee;border-radius:0;background:#fff;min-height:54px}
+.bridge-entry>.bridge-entry-primary{flex:1 1 auto;min-width:0;min-height:52px;padding:10px 8px;text-align:left;background:transparent;color:#18202d;font-size:14px;font-weight:500;white-space:normal;overflow-wrap:anywhere;border:0}
+.bridge-entry>.bridge-entry-menu{position:relative;flex:0 0 auto}
+.bridge-entry-menu>summary{display:grid;place-items:center;width:42px;min-height:46px;cursor:pointer;list-style:none;font-size:23px;color:#34465a}
+.bridge-entry-menu>summary::-webkit-details-marker{display:none}
+.bridge-entry-menu[open]>div{position:absolute;right:0;top:100%;z-index:30;min-width:170px;max-width:75vw;background:#fff;border:1px solid #cbd5df;border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.18);padding:6px;display:grid;gap:3px}
+.bridge-entry-menu button{width:100%;text-align:left;background:#f1f5f9;color:#18202d;font-size:13px;padding:10px}
+.bridge-entry-menu small{display:block;overflow-wrap:anywhere;padding:8px;color:#475569}
+
+/* Administrator login: primary password form and optional OTP remain readable on narrow phones. */
+#adminForm label{display:grid;gap:6px;font-size:14px;color:#344054}
+#adminCodeOptions{margin-top:16px}
+#adminCodeOptions .form{margin-top:12px}
+#adminCodeOptions summary{cursor:pointer;font-size:14px;color:#164b70}
+#status{overflow-wrap:anywhere}
