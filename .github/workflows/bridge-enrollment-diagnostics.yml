@@ -1,7 +1,7 @@
 name: Bridge enrollment diagnostics checks
 on:
   push:
-    branches: [fix/bridge-enrollment-safe-diagnostics-20261109]
+    branches: [fix/bridge-enrollment-safe-diagnostics-20261109, fix/bridge-enrollment-endpoint-20261117]
   workflow_dispatch:
 permissions:
   contents: read
