@@ -12,7 +12,7 @@ create index if not exists bridge_devices_enabled on public.bridge_devices(enabl
 alter table public.bridge_devices enable row level security;
 revoke all on public.bridge_devices from anon, authenticated;
 grant select on public.bridge_devices to authenticated;
-grant insert(user_id,device_id,display_name,enabled,granted_at) on public.bridge_devices to authenticated;
+grant insert(user_id,device_id,display_name,enabled,granted_at,updated_at) on public.bridge_devices to authenticated;
 grant update(device_id,display_name,enabled,granted_at,updated_at) on public.bridge_devices to authenticated;
 drop policy if exists "bridge devices read" on public.bridge_devices;
 create policy "bridge devices read" on public.bridge_devices for select to authenticated
