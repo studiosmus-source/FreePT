@@ -80,7 +80,7 @@ test('native template remains scoped to SAF and temporary destination',()=>{
  assert.match(java,/DocumentsContract\.createDocument/);
  assert.match(java,/DocumentsContract\.renameDocument/);
  assert.match(java,/DocumentsContract\.deleteDocument/);
- assert.match(java,/MAX_CHUNK=32768/);
+ assert.match(java,/MAX_CHUNK=262144/);
  assert.doesNotMatch(java,/MANAGE_EXTERNAL_STORAGE/);
  assert.match(installer,/BridgeDestinationPlugin\.class/);
 });
@@ -128,13 +128,16 @@ test('single-file transfer rollback deletes temporary document on error',async()
 test('Android destination rejects preexisting names before staging and before final rename',()=>{
  const java=readFileSync(new URL('../android-bridge/BridgeDestinationPlugin.java.template',import.meta.url),'utf8');
  assert.match(java,/private boolean targetExists\(String requestedName\)/);
+ assert.match(java,/private String availableName\(String requestedName\)/);
+ assert.match(java,/String suffix=" \("\+index\+"\)"/);
+ assert.match(java,/encoded.length\(\)>349528/);
  assert.match(java,/DocumentsContract\.buildChildDocumentsUriUsingTree/);
  assert.match(java,/java\.text\.Normalizer\.normalize/);
  assert.match(java,/equalsIgnoreCase\(wanted\)/);
- assert.match(java,/if\(targetExists\(name\)\)throw/);
+ assert.match(java,/name=availableName\(name\)/);
  assert.match(java,/if\(targetExists\(singleName\)\)throw/);
  assert.match(java,/if\(targetExists\(finalName\)\)throw/);
- assert.equal((java.match(/if\(targetExists\(/g)||[]).length,4);
+ assert.equal((java.match(/if\(targetExists\(/g)||[]).length,2);
 });
 test('Android keeps renamed document URI for rollback on final name verification error',()=>{
  const java=readFileSync(new URL('../android-bridge/BridgeDestinationPlugin.java.template',import.meta.url),'utf8');

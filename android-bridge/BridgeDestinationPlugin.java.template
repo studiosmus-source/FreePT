@@ -33,7 +33,7 @@ public class BridgeDestinationPlugin extends Plugin {
     private static final String PREFS="freept_bridge_destination";
     private static final String SELECTED="selected_tree";
     private static final long MAX_FILE_BYTES=1099511627776L;
-    private static final int MAX_CHUNK=32768;
+    private static final int MAX_CHUNK=262144;
     private Uri destination;
     private Uri staging;
     private String finalName;
@@ -80,6 +80,24 @@ public class BridgeDestinationPlugin extends Plugin {
             }
             return false;
         }
+    }
+
+    /** Pick a free name without overwriting an existing user document. */
+    private String availableName(String requestedName) throws Exception {
+        if(!validName(requestedName))
+            throw new IllegalArgumentException("bridge_destination_invalid_target");
+        if(!targetExists(requestedName))return requestedName;
+        int dot=requestedName.lastIndexOf('.');
+        String stem=dot>0?requestedName.substring(0,dot):requestedName;
+        String ext=dot>0?requestedName.substring(dot):"";
+        for(int index=1;index<=999;index++){
+            String suffix=" ("+index+")";
+            int allowed=255-ext.length()-suffix.length();
+            if(allowed<1)break;
+            String candidate=stem.substring(0,Math.min(stem.length(),allowed))+suffix+ext;
+            if(validName(candidate)&&!targetExists(candidate))return candidate;
+        }
+        throw new IllegalStateException("bridge_destination_no_free_name");
     }
 
     private String[] path(PluginCall call){
@@ -170,7 +188,7 @@ public class BridgeDestinationPlugin extends Plugin {
             call.reject("bridge_destination_not_ready");return;
         }
         try{
-            if(targetExists(name))throw new IllegalStateException("bridge_destination_exists");
+            name=availableName(name);
             Uri temp=DocumentsContract.createDocument(
                 getContext().getContentResolver(),destination,
                 DocumentsContract.Document.MIME_TYPE_DIR,
@@ -236,7 +254,7 @@ public class BridgeDestinationPlugin extends Plugin {
         String encoded=call.getString("base64");
         if((staging==null&&singleStaging==null)||file==null||file.completed||
             !(raw instanceof Number)||encoded==null||
-            encoded.length()>43692){
+            encoded.length()>349528){
             call.reject("bridge_destination_write_invalid");return;
         }
         long offset=((Number)raw).longValue();
@@ -307,7 +325,7 @@ public class BridgeDestinationPlugin extends Plugin {
             call.reject("bridge_destination_invalid_size");return;
         }
         try{
-            if(targetExists(name))throw new IllegalStateException("bridge_destination_exists");
+            name=availableName(name);
             Uri temp=DocumentsContract.createDocument(
                 getContext().getContentResolver(),destination,
                 mime.isEmpty()?"application/octet-stream":mime,

@@ -11,17 +11,16 @@ const checkPath=path=>{
   return [...path];
 };
 export const encodeBridgeBytes=bytes=>{
-  if(!(bytes instanceof Uint8Array)||bytes.length<1||bytes.length>32768)
+  if(!(bytes instanceof Uint8Array)||bytes.length<1||bytes.length>262144)
     throw Error('bridge_destination_invalid_chunk');
   let raw='';
   for(let i=0;i<bytes.length;i+=8192)
     raw+=String.fromCharCode(...bytes.subarray(i,i+8192));
   return btoa(raw);
 };
-// Network transfer chunks are up to 256 KiB; the SAF plugin writes at most
-// 32 KiB per call. Split a large chunk into bounded, offset-correct writes so
-// the native destination plugin is unchanged. Returns the next absolute offset.
-const SAF_WRITE=32768;
+// Send each verified 256 KiB network block as one SAF write instead of
+// eight native calls and eight separate file open/close operations.
+const SAF_WRITE=262144;
 async function writeInParts(plugin,fileId,bytes,offset){
   let pos=offset;
   for(let i=0;i<bytes.length;i+=SAF_WRITE){
