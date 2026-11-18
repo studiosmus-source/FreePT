@@ -188,7 +188,7 @@ if updater_url:
     manifest_text = manifest.read_text()
     manifest.write_text(manifest_text.replace(
         "<application",
-        '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\\n    <application',
+        '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n    <application',
         1))
 if updater_url:
     u = urlparse(updater_url)
