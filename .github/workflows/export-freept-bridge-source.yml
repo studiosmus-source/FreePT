@@ -1,0 +1,26 @@
+name: Export FreePT Bridge source snapshot
+on:
+  push:
+    branches: [chore/export-freept-source-20261118]
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Export exact APK build source commit
+        run: |
+          set -euo pipefail
+          git cat-file -e ef0de2a9ba72d5f0e1dff93deb6ee5da5de37d46^{commit}
+          git archive --format=zip --prefix=FreePT_Bridge_sorgenti_20261118/ --output=FreePT_Bridge_sorgenti_20261118.zip ef0de2a9ba72d5f0e1dff93deb6ee5da5de37d46
+          test -s FreePT_Bridge_sorgenti_20261118.zip
+          unzip -t FreePT_Bridge_sorgenti_20261118.zip
+          sha256sum FreePT_Bridge_sorgenti_20261118.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-Bridge-source-snapshot
+          path: FreePT_Bridge_sorgenti_20261118.zip
+          retention-days: 30
