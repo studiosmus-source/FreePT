@@ -1,7 +1,7 @@
 name: Build unified FreePT Android APK (manual)
 on:
   push:
-    branches: [feature/bridge-chunk-receiver-20261108]
+    branches: [fix/bridge-installable-20261118]
     paths:
       - '.github/workflows/freept-unified-apk.yml'
       - 'src/bridge*.js'
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Refuse other branches
-        run: test "$GITHUB_REF" = 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        run: test "$GITHUB_REF" = 'refs/heads/fix/bridge-installable-20261118'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
