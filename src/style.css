@@ -146,3 +146,16 @@ html,body,#app{min-height:100%;height:100%}
   border-radius:8px;padding:6px 14px;font-weight:600}
 .update-banner button:disabled{opacity:.5}
 .update-banner .update-progress{flex-basis:100%;font-size:13px;color:#345}
+
+/* Allegati chat in-app (miniature, media, download) */
+.attach{margin:6px 0;display:flex;flex-direction:column;gap:6px}
+.attach-thumb{max-width:220px;max-height:200px;border-radius:10px;display:block;cursor:pointer;background:#0001}
+video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
+.attach-name{font-size:14px;word-break:break-word}
+.attach-actions{display:flex;gap:8px}
+.attach-download{background:#2f5fd0;color:#fff;border:0;border-radius:8px;padding:5px 12px;font-size:13px}
+.attach-viewer-shade{position:fixed;inset:0;background:#000d;display:flex;flex-direction:column;z-index:1000}
+.attach-viewer-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;color:#fff}
+.attach-viewer-bar strong{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attach-viewer-bar button{background:#ffffff22;color:#fff;border:0;border-radius:8px;padding:6px 14px}
+.attach-viewer-media{flex:1;max-width:100%;max-height:100%;object-fit:contain;margin:auto;padding:0 8px 16px}

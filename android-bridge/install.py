@@ -139,7 +139,7 @@ if xml.count("<application") != 1:
     raise SystemExit("Unexpected AndroidManifest.xml layout")
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
-             "BridgeTxControlPlugin", "BridgeTxBootReceiver"):
+             "BridgeTxControlPlugin", "BridgeTxBootReceiver", "FreePTUpdaterPlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
     template = template_path.read_text()
     if template.count("__PACKAGE__") != 1:
@@ -212,6 +212,20 @@ xml_dir.mkdir(parents=True, exist_ok=True)
 (values / "freept_updater.xml").write_text(
     '<resources><string name="ota_apk_endpoint">' +
     escape(updater_url) + '</string></resources>\n'
+)
+
+# Neutral monochrome notification icon for the TX foreground service (Phase 5):
+# a simple ring, tinted white by the system, instead of the upload arrow.
+drawable_dir = Path("android/app/src/main/res/drawable")
+drawable_dir.mkdir(parents=True, exist_ok=True)
+(drawable_dir / "ic_freept_service.xml").write_text(
+    '<vector xmlns:android="http://schemas.android.com/apk/res/android" '
+    'android:width="24dp" android:height="24dp" '
+    'android:viewportWidth="24" android:viewportHeight="24">\n'
+    '  <path android:fillColor="#FFFFFFFF" '
+    'android:pathData="M12,2A10,10 0 1,0 12,22A10,10 0 1,0 12,2Z '
+    'M12,5.5A6.5,6.5 0 1,1 12,18.5A6.5,6.5 0 1,1 12,5.5Z" />\n'
+    '</vector>\n'
 )
 print("FreePT APK updater wired (endpoint set:", bool(updater_url), ")")
 

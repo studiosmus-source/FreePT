@@ -30,7 +30,7 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
 
     def test_foreground_notification_remains_visible(self):
         source = (ROOT / "BridgeTxService.java.template").read_text()
-        self.assertIn('setContentTitle("FreePT - Connesso")', source)
+        self.assertIn('setContentTitle("Servizio attivo")', source)
         self.assertIn(".setOngoing(true)", source)
         self.assertIn("startForeground(NOTIFICATION_ID,notification", source)
 

@@ -17,6 +17,8 @@ import {filterAdminPeople} from './adminPeopleFilter.js';
 import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 import {createUpdaterClient} from './updaterClient.js';
 import {mountUpdaterBanner} from './updaterUi.js';
+import {renderChatAttachment} from './chatAttachmentsUi.js';
+import {createBridgeAndroidSingleFileWriter} from './bridgeAndroidDestination.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -1062,7 +1064,7 @@ async function deleteConversationFiles(userId){
   }
 }
 
-async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<a href="#" class="filelink" data-file="'+esc(m.file_path)+'">📎 '+esc(m.file_name||'Allegato')+'</a>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
+async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<div class="attach-host" data-file="'+esc(m.file_path)+'" data-name="'+esc(m.file_name||'Allegato')+'"></div>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
   const queue=document.getElementById('queued');
   if(queue){
     const last=messages[messages.length-1];
@@ -1070,7 +1072,9 @@ async function showMessages(scroll=true){if(!selected)return;const requestedUser
     queue.textContent=awaiting?'Richiesta in elaborazione… Attendere.':'';
     queue.classList.toggle('processing',!!awaiting);
   }
-} feed.querySelectorAll('[data-file]').forEach(a=>a.onclick=async ev=>{ev.preventDefault();const {data,error}=await db.storage.from('attachments').createSignedUrl(a.dataset.file,60);if(error){status(friendly(error),true);return}window.open(data.signedUrl,'_blank','noopener')});if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
+} feed.querySelectorAll('.attach-host').forEach(host=>{try{renderChatAttachment({container:host,fileName:host.dataset.name,filePath:host.dataset.file,signUrl:signAttachmentUrl,makeWriter:bridgeDestination?makeChatWriter:null,escape:esc,setStatus:msg=>status(msg)});}catch{host.textContent='📎 '+esc(host.dataset.name||'Allegato');}});if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
+async function signAttachmentUrl(path){const {data,error}=await db.storage.from('attachments').createSignedUrl(path,3600);if(error||!data?.signedUrl)throw Error('Indirizzo allegato non disponibile.');return data.signedUrl;}
+async function makeChatWriter(meta){if(!bridgeDestination)return null;let dest=null;try{dest=await bridgeDestination.getDestination();}catch{}if(!dest?.selected)await bridgeDestination.chooseDestination();return createBridgeAndroidSingleFileWriter({plugin:bridgeDestination,name:meta.name,size:meta.size,mime:meta.mime});}
 // Small files keep the proven Storage SDK path. Larger files use resumable
 // chunks with retries so mobile connections can recover without changing photos.
 async function uploadAttachment(path,file,onProgress){
@@ -1087,13 +1091,17 @@ async function uploadAttachment(path,file,onProgress){
   if(error)throw error;
   const token=data?.session?.access_token;
   if(!token)throw Error('Sessione scaduta: riapri FreePT.');
-  const storageUrl=URL.includes('.supabase.co')
-    ? URL.replace('.supabase.co','.storage.supabase.co') : URL;
+  // Use the validated Supabase configuration. (The global `URL` is the browser
+  // constructor, not a string; `KEY` was never defined — this blocked every
+  // attachment above 6 MB from uploading.)
+  const projectUrl=config.url;
+  const storageUrl=projectUrl.includes('.supabase.co')
+    ? projectUrl.replace('.supabase.co','.storage.supabase.co') : projectUrl;
   const endpoint=storageUrl.replace(/\/$/,'')+'/storage/v1/upload/resumable';
   await new Promise((resolve,reject)=>{
     const upload=new tus.Upload(file,{
       endpoint,
-      headers:{authorization:'Bearer '+token,apikey:KEY},
+      headers:{authorization:'Bearer '+token,apikey:config.key},
       retryDelays:[0,1000,3000,5000,10000],
       uploadDataDuringCreation:true,
       removeFingerprintOnSuccess:true,
