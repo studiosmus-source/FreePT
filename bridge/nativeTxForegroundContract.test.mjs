@@ -56,3 +56,11 @@ test('native TX renews the backend five-minute session but stops after refused l
   assert.match(service,/if\(!connectedOnce\)break/);
   assert.match(service,/catch\(SecurityException denied\)/);
 });
+
+test('TX uses bounded follow-up polls after read, but retains a 2s idle cadence',()=>{
+  assert.match(service,/int followupPolls=0/);
+  assert.match(service,/followupPolls="read"\.equals\(job\.optString\("operation"\)\)\?2:0/);
+  assert.match(service,/Thread\.sleep\(followupPolls>0\?750:2000\)/);
+  assert.match(service,/if\(followupPolls>0\)followupPolls--/);
+  assert.doesNotMatch(service,/else Thread\.sleep\(2000\)/);
+});
