@@ -64,7 +64,7 @@ test('read disabled by default and malformed requests fail closed',async()=>{
  const blocked=await f.admin(req('/bridge/admin/read',{deviceId:DEVICE,handle:HANDLE,offset:0,length:3}));
  assert.equal(blocked.status,500);
  assert.equal(f.calls.length,0);
- const invalid=await f.admin(req('/bridge/admin/read',{deviceId:DEVICE,handle:HANDLE,offset:0,length:40000}));
+ const invalid=await f.admin(req('/bridge/admin/read',{deviceId:DEVICE,handle:HANDLE,offset:0,length:262145}));
  assert.equal(invalid.status,400);
  assert.equal(f.calls.length,0);
 });
