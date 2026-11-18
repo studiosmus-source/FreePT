@@ -65,7 +65,7 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
         const request=validateBridgeReadRequest({
           handle:body.handle,offset:body.offset,length:body.length
         });
-        if(request.length>32768)return fail(400,'bridge_read_invalid');
+        if(request.length>262144)return fail(400,'bridge_read_invalid');
       }catch{return fail(400,'bridge_read_invalid');}
     }
     if(path === '/bridge/admin/browse' &&
