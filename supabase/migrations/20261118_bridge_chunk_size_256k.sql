@@ -11,8 +11,16 @@
 -- quindi il plugin SAF nativo non cambia.
 --
 -- base64(262144 byte) = 349528 caratteri.
--- Idempotente (CREATE OR REPLACE). Non modifica dati. Da applicare INSIEME alla
--- nuova APK e al deploy del gateway: una sola delle due parti non basta.
+-- Idempotente. Non modifica dati. Da applicare INSIEME alla nuova APK e al
+-- deploy del gateway: una sola delle due parti non basta.
+
+-- Il CHECK della tabella limita byte_length a 32768: senza questo ALTER,
+-- enqueue_read(262144) fallirebbe il vincolo a runtime. Si allarga a 262144.
+alter table public.bridge_read_requests
+  drop constraint if exists bridge_read_requests_byte_length_check;
+alter table public.bridge_read_requests
+  add constraint bridge_read_requests_byte_length_check
+  check (byte_length >= 1 and byte_length <= 262144);
 
 CREATE OR REPLACE FUNCTION public.bridge_server_enqueue_read(p_job_id uuid, p_device_id uuid, p_receiver_id uuid, p_handle uuid, p_offset bigint, p_length integer)
  RETURNS uuid
