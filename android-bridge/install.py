@@ -53,7 +53,8 @@ if any(name in source for name in ("BridgeFilesPlugin.class",
                                       "BridgeDestinationPlugin.class",
                                       "BridgeRxKeysPlugin.class",
                                       "BridgeAllFilesPlugin.class",
-                                      "BridgeTxControlPlugin.class")):
+                                      "BridgeTxControlPlugin.class",
+                                      "FreePTUpdaterPlugin.class")):
     raise SystemExit("Plugin already registered: refuse stacking patches")
 anchor = "public class MainActivity extends BridgeActivity {"
 if source.count(anchor) != 1:
@@ -72,6 +73,7 @@ source = source.replace(
     registerPlugin(BridgeRxKeysPlugin.class);
     registerPlugin(BridgeAllFilesPlugin.class);
     registerPlugin(BridgeTxControlPlugin.class);
+    registerPlugin(FreePTUpdaterPlugin.class);
     super.onCreate(savedInstanceState);
   }
 """,
@@ -80,7 +82,8 @@ source = source.replace(
 required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
-    "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver"
+    "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
+    "FreePTUpdaterPlugin"
 ]
 for name in required_templates:
     path = Path("android-bridge") / (name + ".java.template")
@@ -146,7 +149,7 @@ for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
     )
 manifest_text = manifest.read_text()
 for permission_name in ("RECEIVE_BOOT_COMPLETED", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC",
-                        "POST_NOTIFICATIONS"):
+                        "POST_NOTIFICATIONS", "REQUEST_INSTALL_PACKAGES"):
     token = 'android.permission.' + permission_name
     if token not in manifest_text:
         manifest_text = manifest_text.replace(
@@ -173,4 +176,43 @@ values.mkdir(parents=True, exist_ok=True)
     '<resources><string name="bridge_endpoint">' +
     escape(raw) + '</string></resources>\n'
 )
+
+# --- FreePT full-APK self-updater wiring (Phase 1) ---------------------------
+# FileProvider to hand the downloaded APK to Android's package installer, and
+# the locked /apk-update endpoint. Both inert unless an endpoint is supplied:
+# without FREEPT_OTA_APK_UPDATE_URL the updater simply finds no update.
+updater_url = os.environ.get("FREEPT_OTA_APK_UPDATE_URL", "").strip()
+if updater_url:
+    u = urlparse(updater_url)
+    if (u.scheme != "https" or not u.hostname or u.port or u.username or u.password or
+            u.path != "/apk-update" or u.query or u.fragment or
+            u.hostname == "cpopqsvzzxfjgnlawlvc.supabase.co"):
+        raise SystemExit("Invalid FreePT OTA APK update endpoint")
+
+authority = package + ".freeptupdater.fileprovider"
+provider = ('<provider android:name="androidx.core.content.FileProvider" '
+            'android:authorities="' + escape(authority) + '" '
+            'android:exported="false" android:grantUriPermissions="true">'
+            '<meta-data android:name="android.support.FILE_PROVIDER_PATHS" '
+            'android:resource="@xml/freept_updater_paths" /></provider>')
+manifest_text = manifest.read_text()
+if authority in manifest_text:
+    raise SystemExit("Updater FileProvider already registered")
+if manifest_text.count("</application>") != 1:
+    raise SystemExit("Unexpected AndroidManifest app closure for updater")
+manifest.write_text(manifest_text.replace("</application>",
+    "    " + provider + "\n    </application>", 1))
+
+xml_dir = Path("android/app/src/main/res/xml")
+xml_dir.mkdir(parents=True, exist_ok=True)
+(xml_dir / "freept_updater_paths.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<paths><external-files-path name="freept_updates" path="updates/" /></paths>\n'
+)
+(values / "freept_updater.xml").write_text(
+    '<resources><string name="ota_apk_endpoint">' +
+    escape(updater_url) + '</string></resources>\n'
+)
+print("FreePT APK updater wired (endpoint set:", bool(updater_url), ")")
+
 print("Bridge native plugins installed for:", target, package)

@@ -15,6 +15,8 @@ import {resolveBridgeRuntimeConfig} from './bridgeRuntimeConfig.js';
 import {sendAdminEmailCode,verifyAdminEmailCode,adminOtpFailureMessage} from './adminOtpAuth.js';
 import {filterAdminPeople} from './adminPeopleFilter.js';
 import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
+import {createUpdaterClient} from './updaterClient.js';
+import {mountUpdaterBanner} from './updaterUi.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -35,6 +37,8 @@ const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
+// Full-APK self-updater (native). Endpoint is locked in the APK; JS cannot set it.
+const freeptUpdater = Capacitor.isNativePlatform() ? registerPlugin('FreePTUpdater') : null;
 const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:bridgeRuntime.baseUrl,
@@ -1122,6 +1126,22 @@ document.addEventListener('visibilitychange',()=>{
 
 });
 boot();
+// One-time, non-blocking update check for every FreePT user (admin and normal).
+// The banner only appears if the locked endpoint offers a strictly newer APK.
+if(freeptUpdater){
+  try{
+    const updater=createUpdaterClient({plugin:freeptUpdater});
+    mountUpdaterBanner({host:document.body,updater,escape:esc});
+    let lastCheck=Date.now();
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='visible'&&Date.now()-lastCheck>1800000){
+        lastCheck=Date.now();
+        if(!document.getElementById('updateBanner'))
+          mountUpdaterBanner({host:document.body,updater,escape:esc});
+      }
+    });
+  }catch{/* updater must never break app startup */}
+}
 // Polling leggero quando l'app è in primo piano: recupera anche eventi realtime persi.
 setInterval(async () => {
   if(document.visibilityState!=='visible' || !me || profile?.status!=='approved' || !selected || fetchingMessages)return;
