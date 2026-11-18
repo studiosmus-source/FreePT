@@ -24,7 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Refuse other branches
-        run: test "$GITHUB_REF" = 'refs/heads/fix/bridge-installable-20261118'
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/fix/bridge-installable-20261118|refs/heads/feature/freept-updater-20261118) ;;
+            *) echo "Refusing build from $GITHUB_REF"; exit 1;;
+          esac
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
