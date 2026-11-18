@@ -7,6 +7,7 @@ on:
       - 'src/bridge*.js'
       - 'android-bridge/Bridge*.java.template'
       - 'bridge/*test.mjs'
+      - 'android-bridge/install.py'
       - 'android-bridge/install_firebase.py'
       - 'android-bridge/test_install_firebase.py'
       - 'src/main.js'
@@ -107,6 +108,7 @@ jobs:
           grep -Fq "com.google.gms.google-services" android/app/build.gradle
           grep -Fq "com.google.gms:google-services" android/build.gradle
           grep -Fq "BridgeTxService" android/app/src/main/AndroidManifest.xml
+          ! grep -Fq "android.permission.REQUEST_INSTALL_PACKAGES" android/app/src/main/AndroidManifest.xml
           grep -Fq "android.permission.POST_NOTIFICATIONS" android/app/src/main/AndroidManifest.xml
           grep -Fq "android.permission.USE_BIOMETRIC" android/app/src/main/AndroidManifest.xml
           grep -Fq "BridgeFilesPlugin.class" "$(find android/app/src/main/java -name MainActivity.java -print -quit)"
@@ -165,6 +167,7 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           "$AAPT" dump badging "$APK" | tee apk-info.txt
           grep -Fq "package: name='it.freept.app'" apk-info.txt
+          ! "$AAPT" dump permissions "$APK" | grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES'
           sha256sum "$APK" | tee apk-sha256.txt
       - uses: actions/upload-artifact@v4
         with:
