@@ -69,7 +69,7 @@ export class BridgePostgresJobsAdapter {
     if(!this.readJobsEnabled)throw Error('bridge_read_disabled');
     requireId(deviceId);requireId(jobId);
     const request=validateBridgeReadRequest({handle,offset,length});
-    if(length>32768)throw Error('bridge_read_chunk_limit');
+    if(length>262144)throw Error("bridge_read_chunk_limit");
     const receiverId=await this.#requireAdminId(authContext);
     const data=await this.#rpc('bridge_server_enqueue_read',{
       p_job_id:jobId,p_device_id:deviceId,p_receiver_id:receiverId,
@@ -134,7 +134,7 @@ export class BridgePostgresJobsAdapter {
          next.operation!=='read'||next.state!=='sent')
         throw Error('bridge_jobs_invalid_response');
       validateBridgeReadRequest({handle:next.handle,offset:next.offset,length:next.length});
-      if(next.length>32768)throw Error('bridge_jobs_invalid_response');
+      if(next.length>262144)throw Error("bridge_jobs_invalid_response");
       return next;
       }
     }
@@ -205,7 +205,7 @@ export class BridgePostgresJobsAdapter {
     if(!this.readJobsEnabled)throw Error('bridge_read_disabled');
     requireId(deviceId);requireId(jobId);
     const validated=validateBridgeFileChunk(chunk,chunk?.bytesRead);
-    if(validated.bytesRead>32768)throw Error('bridge_read_chunk_limit');
+    if(validated.bytesRead>262144)throw Error("bridge_read_chunk_limit");
     const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
     if(!BINDING.test(binding))throw Error('bridge_invalid_session_binding');
     const result=await this.#rpc('bridge_server_complete_read',{

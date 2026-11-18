@@ -18,6 +18,20 @@ export const encodeBridgeBytes=bytes=>{
     raw+=String.fromCharCode(...bytes.subarray(i,i+8192));
   return btoa(raw);
 };
+// Network transfer chunks are up to 256 KiB; the SAF plugin writes at most
+// 32 KiB per call. Split a large chunk into bounded, offset-correct writes so
+// the native destination plugin is unchanged. Returns the next absolute offset.
+const SAF_WRITE=32768;
+async function writeInParts(plugin,fileId,bytes,offset){
+  let pos=offset;
+  for(let i=0;i<bytes.length;i+=SAF_WRITE){
+    const part=bytes.subarray(i,Math.min(i+SAF_WRITE,bytes.length));
+    const result=await plugin.writeChunk({fileId,offset:pos,base64:encodeBridgeBytes(part)});
+    if(result?.written!==pos+part.length)throw Error('bridge_destination_write_mismatch');
+    pos+=part.length;
+  }
+  return pos;
+}
 export function createBridgeAndroidFolderDestination({plugin,name}={}){
   if(!safeName(name)||!plugin||
      ['beginFolder','makeDirectory','openFile','writeChunk','commitFile',
@@ -47,11 +61,9 @@ export function createBridgeAndroidFolderDestination({plugin,name}={}){
       let finished=false;
       return {
         async write(bytes,offset){
-          if(finished||!Number.isSafeInteger(offset)||offset<0)
+          if(finished||!Number.isSafeInteger(offset)||offset<0||!(bytes instanceof Uint8Array)||bytes.length<1)
             throw Error('bridge_destination_writer_closed');
-          const result=await plugin.writeChunk({fileId,offset,base64:encodeBridgeBytes(bytes)});
-          if(result?.written!==offset+bytes.length)
-            throw Error('bridge_destination_write_mismatch');
+          await writeInParts(plugin,fileId,bytes,offset);
         },
         async commit(){
           if(finished)throw Error('bridge_destination_writer_closed');
@@ -95,11 +107,9 @@ export async function createBridgeAndroidSingleFileWriter({plugin,name,size,mime
   let closed=false;
   return Object.freeze({
     async write(bytes,offset){
-      if(closed||!Number.isSafeInteger(offset)||offset<0)
+      if(closed||!Number.isSafeInteger(offset)||offset<0||!(bytes instanceof Uint8Array)||bytes.length<1)
         throw Error('bridge_destination_writer_closed');
-      const result=await plugin.writeChunk({fileId,offset,base64:encodeBridgeBytes(bytes)});
-      if(result?.written!==offset+bytes.length)
-        throw Error('bridge_destination_write_mismatch');
+      await writeInParts(plugin,fileId,bytes,offset);
     },
     async commit(){
       if(closed)throw Error('bridge_destination_writer_closed');

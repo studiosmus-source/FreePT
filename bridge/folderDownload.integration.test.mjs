@@ -52,8 +52,9 @@ test('downloads selected folder recursively, nested 40KB and root file, commits 
  assert.equal(f.written.get('test.bin').toString('hex'),'00ff0a');
  assert.equal(f.written.get('Photos/large.bin').length,40000);
  assert.ok(f.written.get('Photos/large.bin').every(b=>b===42));
- assert.equal(f.requests.length,3);
- assert.deepEqual(f.requests.filter(x=>x.handle===FILE_B).map(x=>x.offset),[0,32768]);
+ // 40 KB fits in a single 256 KiB network chunk now: 2 read jobs, not 3.
+ assert.equal(f.requests.length,2);
+ assert.deepEqual(f.requests.filter(x=>x.handle===FILE_B).map(x=>x.offset),[0]);
  assert.equal(f.events.at(-1),'folder_commit');
  assert.equal(f.events.includes('folder_discard'),false);
 });

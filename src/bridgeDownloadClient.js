@@ -19,7 +19,7 @@ export async function downloadBridgeFile({
   let activeJob=null;
   try{
     return await receiveBridgeFile({
-      size,signal,chunkBytes:32768,
+      size,signal,chunkBytes:262144,
       write:(bytes,offset)=>destination.write(bytes,offset),
       commit:()=>destination.commit(),
       discard:()=>destination.discard(),

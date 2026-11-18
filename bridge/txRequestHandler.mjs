@@ -98,7 +98,7 @@ export function createBridgeTxRequestHandler({
       try{
         const chunk=body.chunk;
         if(!chunk || !Number.isSafeInteger(chunk.bytesRead) ||
-           chunk.bytesRead<1||chunk.bytesRead>32768)
+           chunk.bytesRead<1||chunk.bytesRead>262144)
           return fail(400,'invalid_request');
         validateBridgeFileChunk(chunk,chunk.bytesRead);
       }catch{return fail(400,'invalid_request');}

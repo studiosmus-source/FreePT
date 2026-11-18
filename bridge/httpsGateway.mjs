@@ -31,7 +31,10 @@ const ROUTES=Object.freeze({
 const MAX_SMALL=2048;
 // Match the TX 48 KB request cap for paginated metadata.
 const MAX_CATALOGUE=48000;
-const MAX_RESPONSE=65536;
+// A file chunk is up to 256 KiB of bytes -> base64 ~349.5 KB plus a small JSON
+// envelope. The admin reads the same chunk back, so responses must fit it too.
+const MAX_CHUNK_BODY=360000;
+const MAX_RESPONSE=360000;
 const fail=(status,error)=>({status,body:{error}});
 const jsonType=header=>typeof header==='string'&&header.split(';')[0].trim().toLowerCase()==='application/json';
 export function validateBridgeGatewayConfig(env={},mode='staging'){
@@ -127,7 +130,7 @@ export function createBridgeHttpsGateway({
     const time=now();
     if(time-windowStart>=60000){windowStart=time;globalCount=0;}
     if(++globalCount>180){write(res,429,{error:'rate_limited'},origin);return;}
-    const parsed=await readJson(req,req.url==='/bridge/tx/chunk'?49152:(req.url==='/bridge/tx/folder'||req.url==='/bridge/tx/browse')?MAX_CATALOGUE:MAX_SMALL);
+    const parsed=await readJson(req,req.url==='/bridge/tx/chunk'?MAX_CHUNK_BODY:(req.url==='/bridge/tx/folder'||req.url==='/bridge/tx/browse')?MAX_CATALOGUE:MAX_SMALL);
     if(parsed.error){write(res,parsed.error.status,parsed.error.body,origin);return;}
     try{
       const handler=route==='admin'?admin:route==='tx'?tx:owner;

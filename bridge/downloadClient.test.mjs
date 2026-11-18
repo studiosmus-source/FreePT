@@ -17,14 +17,15 @@ function fixture(data,states=['queued','done']){
  return {api,destination,chunks,requests,get committed(){return committed},get discarded(){return discarded}};
 }
 test('downloads entire binary file automatically with repeated read jobs',async()=>{
- const data=Buffer.alloc(69000);for(let i=0;i<data.length;i++)data[i]=i%256;
+ const data=Buffer.alloc(600000);for(let i=0;i<data.length;i++)data[i]=i%256;
  const f=fixture(data);
  const result=await downloadBridgeFile({api:f.api,deviceId:DEVICE,handle:HANDLE,
   size:data.length,destination:f.destination,pause:async()=>{}});
  assert.equal(result.bytesReceived,data.length);
  assert.deepEqual(Buffer.concat(f.chunks),data);
- assert.deepEqual(f.requests.map(r=>r.length),[32768,32768,3464]);
- assert.deepEqual(f.requests.map(r=>r.offset),[0,32768,65536]);
+ // 256 KiB network chunks: far fewer read jobs than the old 32 KiB.
+ assert.deepEqual(f.requests.map(r=>r.length),[262144,262144,75712]);
+ assert.deepEqual(f.requests.map(r=>r.offset),[0,262144,524288]);
  assert.equal(f.committed,1);assert.equal(f.discarded,0);
 });
 test('times out without committing partial bytes',async()=>{

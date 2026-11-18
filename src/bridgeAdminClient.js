@@ -122,7 +122,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
   const requestRead=async(deviceId,request)=>{
     if(!UUID.test(deviceId))throw Error('bridge_invalid_id');
     const valid=validateBridgeReadRequest(request);
-    if(valid.length>32768)throw Error('bridge_read_chunk_limit');
+    if(valid.length>262144)throw Error("bridge_read_chunk_limit");
     const result=await readCall('read',{deviceId,...valid});
     if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
        result.state!=='queued'||Object.keys(result).sort().join(',')!=='deviceId,jobId,state')
@@ -134,7 +134,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     const result=await readCall('chunk',{jobId});
     try{
       if(!Number.isSafeInteger(result?.bytesRead)||result.bytesRead<1||
-         result.bytesRead>32768)throw Error('invalid');
+         result.bytesRead>262144)throw Error("invalid");
       return validateBridgeFileChunk(result,result.bytesRead);
     }catch{throw Error('bridge_invalid_response');}
   };
