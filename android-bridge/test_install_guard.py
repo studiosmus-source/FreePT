@@ -62,6 +62,7 @@ class InstallerGuardTests(unittest.TestCase):
             self.assertTrue((main.parent / "BridgeTxService.java").is_file())
             self.assertIn('android.permission.MANAGE_EXTERNAL_STORAGE', manifest.read_text())
             self.assertIn('BridgeTxService', manifest.read_text())
+            self.assertNotIn('android.permission.REQUEST_INSTALL_PACKAGES', manifest.read_text())
             self.assertIn('https://bridge.example.org',
                           (root / "android/app/src/main/res/values/freept_bridge.xml").read_text())
 

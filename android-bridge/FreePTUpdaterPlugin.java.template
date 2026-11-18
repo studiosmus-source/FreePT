@@ -150,6 +150,9 @@ public class FreePTUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod public void download(PluginCall call){
+        if(!validEndpoint(endpoint())){
+            call.reject("updater_not_configured");return;
+        }
         final String url=call.getString("url","");
         final String sha=call.getString("sha256","").toLowerCase();
         final long expected=call.getLong("versionCode",0L);
@@ -240,6 +243,9 @@ public class FreePTUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod public void install(PluginCall call){
+        if(!validEndpoint(endpoint())){
+            call.reject("updater_not_configured");return;
+        }
         try{
             String path=call.getString("path","");
             if(path.isEmpty())throw new Exception("no_path");

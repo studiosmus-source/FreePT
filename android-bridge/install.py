@@ -149,7 +149,7 @@ for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
     )
 manifest_text = manifest.read_text()
 for permission_name in ("RECEIVE_BOOT_COMPLETED", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC",
-                        "POST_NOTIFICATIONS", "REQUEST_INSTALL_PACKAGES"):
+                        "POST_NOTIFICATIONS"):
     token = 'android.permission.' + permission_name
     if token not in manifest_text:
         manifest_text = manifest_text.replace(
@@ -182,6 +182,14 @@ values.mkdir(parents=True, exist_ok=True)
 # the locked /apk-update endpoint. Both inert unless an endpoint is supplied:
 # without FREEPT_OTA_APK_UPDATE_URL the updater simply finds no update.
 updater_url = os.environ.get("FREEPT_OTA_APK_UPDATE_URL", "").strip()
+# Request the sensitive install-packages permission only for a configured,
+# explicitly opted-in updater. An inactive updater must not ask for it.
+if updater_url:
+    manifest_text = manifest.read_text()
+    manifest.write_text(manifest_text.replace(
+        "<application",
+        '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\\n    <application',
+        1))
 if updater_url:
     u = urlparse(updater_url)
     if (u.scheme != "https" or not u.hostname or u.port or u.username or u.password or
