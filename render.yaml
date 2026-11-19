@@ -1,14 +1,16 @@
 # Isolated FREEPT Bridge HTTPS staging. This blueprint does not deploy itself.
+# Existing service is configured in Render Dashboard/API; this file mirrors it.
+# No Blueprint creation/sync has been executed.
 # Never point the staging service to FreePT production Supabase.
 services:
   - type: web
     name: freept-bridge-staging
     runtime: node
     plan: free
-    branch: feature/bridge-chunk-receiver-20261108
+    branch: work/unified-verified-20261119
     autoDeployTrigger: off
-    buildCommand: npm install --no-audit --no-fund
-    startCommand: node bridge/runHttpsStaging.mjs
+    buildCommand: npm install --omit=dev
+    startCommand: npm run bridge:serve:staging
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -19,6 +21,8 @@ services:
         value: I_UNDERSTAND_STAGING_HTTPS_ONLY
       - key: FREEPT_BRIDGE_READ_ENABLED
         value: I_UNDERSTAND_TEST_ONLY
+      - key: FREEPT_BRIDGE_BOOTSTRAP
+        value: STAGING_DEVICE_KEY_V1
       - key: FREEPT_BRIDGE_ALLOWED_ORIGINS
         sync: false
       - key: FREEPT_BRIDGE_TEST_SUPABASE_URL

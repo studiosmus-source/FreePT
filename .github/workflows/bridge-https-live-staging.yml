@@ -1,0 +1,36 @@
+name: Bridge HTTPS staging live security probe
+on:
+  push:
+    branches: [work/unified-verified-20261119]
+    paths:
+      - scripts/verify-bootstrap-staging.mjs
+      - .github/workflows/bridge-https-live-staging.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: freept-staging-live-security-probe
+  cancel-in-progress: false
+jobs:
+  https-pending-security:
+    if: github.ref == 'refs/heads/work/unified-verified-20261119'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check probe syntax
+        run: node --check scripts/verify-bootstrap-staging.mjs
+      - name: Real HTTPS pending-device security and cancellation (not complete Auth E2E)
+        env:
+          FREEPT_LIVE_STAGING_PROBE: CREATE_AND_CANCEL_SYNTHETIC_DEVICE
+        run: node scripts/verify-bootstrap-staging.mjs
+      - name: Preserve actual live results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-live-staging-security-results
+          path: reports/FreePT-live-HTTPS-2026-11-19.json
+          if-no-files-found: error

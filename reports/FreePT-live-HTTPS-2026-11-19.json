@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-11-19T08:37:12.249Z",
+  "target": "https://freept-bridge-staging.onrender.com",
+  "level": "live HTTPS + staging Supabase RPC; Node P-256 client, not Android Keystore",
+  "checks": [
+    {
+      "name": "HTTPS health",
+      "result": "PASS"
+    },
+    {
+      "name": "Anonymous admin approval denied",
+      "result": "PASS"
+    },
+    {
+      "name": "Invalid Auth token denied",
+      "result": "PASS"
+    },
+    {
+      "name": "Foreign browser origin denied",
+      "result": "PASS"
+    },
+    {
+      "name": "Altered signature denied",
+      "result": "PASS"
+    },
+    {
+      "name": "Expired signed envelope denied",
+      "result": "PASS"
+    },
+    {
+      "name": "Signed pre-account pending",
+      "result": "PASS"
+    },
+    {
+      "name": "Persistent start replay denied",
+      "result": "PASS"
+    },
+    {
+      "name": "No diagnostic before admin approval",
+      "result": "PASS"
+    },
+    {
+      "name": "No fabricated claim token accepted",
+      "result": "PASS"
+    },
+    {
+      "name": "Signed cancellation",
+      "result": "PASS"
+    },
+    {
+      "name": "Cancelled device fenced",
+      "result": "PASS"
+    }
+  ],
+  "syntheticDevice": {
+    "id": "b8079bdc-20a0-4ad0-aa1d-8395d1493c49",
+    "created": true,
+    "cancelled": true
+  },
+  "notExecuted": [
+    "Valid Supabase admin login and approval",
+    "Synthetic transfer after authenticated approval",
+    "Personal Auth claim",
+    "Android/Oppo physical Keystore and SAF"
+  ],
+  "completeEndToEnd": false
+}

@@ -154,3 +154,40 @@ Conferma utente ricevuta per My Workspace; servizio test reale identificato: `fr
 Per cambiare il ramo occorre il pannello Render, poiché il connettore non espone tale impostazione. Il browser richiede login; nel flusso scelto dall'utente Google ha segnalato che la password era stata cambiata 5 mesi prima. Non sono stati eseguiti retry automatici né letti segreti. Autenticazione manuale protetta pendente.
 
 Nessun deploy o modifica infrastrutturale eseguiti; nessuna nuova APK o prova end-to-end attestata. Il [punto di ripresa](FreePT-PUNTO-RIPRESA-HTTPS-2026-11-19.md) contiene servizio, stato, limiti e azioni successive; non richiedere di nuovo la scelta del workspace già confermata.
+
+## Ripresa HTTPS: 19 novembre 2026, 09:37 CET
+
+Partenza verificata: HEAD locale/remoto `ec66b84a8cf1de41b316cc041123758b7436505d`; letto integralmente il punto di ripresa HTTPS. Nessuna implementazione app aggiunta o sostituita: preservati chat, push, Copia amministratore, accesso senza impronta e SAF per persona.
+
+### Modifiche effettive sul solo test
+
+Accesso Render riuscito, osservato nel browser. Servizio `srv-dbo9t6lg1s2s73ejjtn0` nel workspace già confermato `tea-daslui3ncjis73anu1v0`:
+
+- Ramo impostato a `work/unified-verified-20261119`, piano free, autoDeploy no/trigger off.
+- Health path impostato `/health`.
+- Osservate le chiavi, senza rivelare segreti. Valori non riservati verificati: progetto `https://aqjuixbuxftnjfzxmzuj.supabase.co`, origine `https://localhost`, gate staging/public/read corretti.
+- Aggiunto con merge solo `FREEPT_BRIDGE_BOOTSTRAP=STAGING_DEVICE_KEY_V1`. Credenziali esistenti non lette, ruotate, sostituite o esportate.
+- La chiamata API di aggiornamento ambiente ha avviato essa stessa il deploy, pur con autoDeploy off. Non lanciato un secondo deploy manuale. Deploy `dep-dbvb9nc9v7es73989ccg`, sorgente `ec66b84…`, **live** alle 08:36:06 UTC, confermato da API e browser.
+- `render.yaml` allineato alla configurazione osservata; Dashboard/API resta la configurazione effettiva. Nessuna creazione o sincronizzazione Blueprint eseguita.
+- Nessuna mutazione dei servizi produzione/TX/OTA, del progetto Supabase produzione, di account personali o credenziali.
+
+### Prove nuove realmente eseguite
+
+`reports/FreePT-live-HTTPS-2026-11-19.json` registra **12 controlli live PASS** su HTTPS Render → RPC del Supabase test. Client Node P-256 reale, non Android Keystore:
+health; approvazione anonima negata; token Auth invalido negato; origine estranea negata; firma alterata negata; envelope scaduto negato; start firmato pending con origine Android; replay persistente negato; nessun job prima dell'approvazione; claim senza login negato; cancel firmato; dispositivo cancellato inaccessibile.
+
+Creato esclusivamente dispositivo sintetico `b8079bdc-20a0-4ad0-aa1d-8395d1493c49`, annullato tramite propria firma. Query Supabase successiva: 4 utenti Auth invariati; 1 admin approved, 3 user approved; 1 bootstrap senza admin/owner, received=0, revoked_at valorizzato; 0 bridge_devices per questo ID. Nessun profilo personale creato. La riga tecnica annullata resta come prova e può scadere secondo la normale gestione bootstrap.
+
+Controllo sintattico del nuovo script PASS. Nuova esecuzione mirata: **11/11 test automatici PASS**, 0 skip/fail, su bootstrapProtocol, bootstrapHandler, httpsGateway. I risultati storici 447/22/2/11 restano quelli documentati in precedenza: non sono stati ripetuti né trasformati in prove fisiche.
+
+Aggiunto workflow `bridge-https-live-staging.yml`: verifica HTTPS riproducibile, crea/annulla solo un dispositivo sintetico per esecuzione, pubblica il JSON dei risultati. Non richiede né pubblica token/secret. Non certifica l'approvazione con login valido o l'end-to-end completo.
+
+### Blocco reale e criteri APK
+
+Manca una sessione **Supabase Auth reale dell'amministratore test** e, per il claim, un'identità personale di prova autorizzata. L'accesso Render non fornisce tali sessioni. Non sono stati creati JWT falsi, usati service_role come login, modificati ruoli, resettate password o utilizzati utenti reali per aggirare il blocco.
+
+**NON ESEGUITI live**: approvazione con admin autentico, codice errato sotto sessione admin valida, trasferimento sintetico 300000 byte dopo approvazione, verifica hash e replay chunk, associazione a sessione personale approvata, revoca/scadenza del grant approvato. Questi casi sono coperti storicamente dall'integrazione HTTP/Postgres con Auth simulata, che non sostituisce Auth reale.
+
+**NON ESEGUITI fisicamente**: Android Keystore hardware, Oppo/ColorOS, permessi/servizio in background, aggiornamento APK e conservazione SAF/sessione. Protocollo: `docs/COLLAUDO_OPPO_PRE_ACCOUNT_E_SAF.md`.
+
+Nessuna APK nuova prodotta/consegnata: la pipeline sperimentale storica richiede ancora consolidamento (ramo vecchio e biometria residua). La sicurezza live completa e i controlli package/firma/Firebase/configurazione staging restano prerequisiti. Non sostituire l'APK di produzione.

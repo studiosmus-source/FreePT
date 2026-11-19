@@ -90,3 +90,31 @@ Il browser deve essere completato tramite handoff di autenticazione. Non chieder
 4. Riprendere l'end-to-end reale e la pipeline sperimentale come descritto sopra. Non usare il workflow staging storico con ramo obsoleto/biometria residua per pubblicare la nuova APK senza consolidarlo.
 
 Questa fase ha prodotto solo letture e tentativo di login. Nessun cambio ramo Render, deploy, variabile, ruolo, dato, nuova APK o prova Android end-to-end è stato eseguito. I risultati precedenti restano storici.
+
+## STATO AUTOREVOLE PIÙ RECENTE — ripresa dopo autenticazione (19 novembre 09:37 CET)
+
+Le sezioni precedenti sono storico: **Render è ora autenticato e il gateway staging è stato aggiornato e distribuito**. Non chiedere nuovamente il login Render o la conferma workspace se la sessione è ancora valida.
+
+- Partenza effettiva letta: `ec66b84a8cf1de41b316cc041123758b7436505d`.
+- Servizio test invariato `srv-dbo9t6lg1s2s73ejjtn0`, workspace `tea-daslui3ncjis73anu1v0`.
+- Branch ora `work/unified-verified-20261119`; piano free; autoDeploy no/off; health `/health`.
+- URL `https://freept-bridge-staging.onrender.com`; Supabase test esatto `aqjuixbuxftnjfzxmzuj`; origine consentita `https://localhost`; gate bootstrap `STAGING_DEVICE_KEY_V1` aggiunto via merge preservando segreti.
+- Aggiornamento ambiente tramite API ha avviato deploy `dep-dbvb9nc9v7es73989ccg` da ec66b84, LIVE alle 08:36:06 UTC. Nessun secondo deploy richiesto. Nessun deploy produzione.
+- Nuove prove HTTPS reali 12/12 PASS, risultato in `reports/FreePT-live-HTTPS-2026-11-19.json`. Script riproducibile `scripts/verify-bootstrap-staging.mjs`, opt-in esplicito `FREEPT_LIVE_STAGING_PROBE=CREATE_AND_CANCEL_SYNTHETIC_DEVICE`. Usa solo chiavi Node effimere per un pending sintetico, poi cancel firmato; non file o account personali.
+- Verifica DB successiva: 4 auth.users, profili 1 admin approved/3 user approved invariati. Un solo bootstrap sintetico locale `b8079bdc-20a0-4ad0-aa1d-8395d1493c49`, senza admin/owner, received=0, revocato. Nessun bridge_devices corrispondente.
+- 11 test automatici mirati PASS e script sintatticamente valido. Non ripetuti test storici; nessun test fisico dichiarato.
+- Nuovo workflow GitHub `bridge-https-live-staging.yml` pubblica JSON delle prove live. Non confondere eventuale PASS con E2E Auth completo. La run creerà un secondo dispositivo sintetico distinto, anch'esso cancellato: conteggi globali successivi potranno quindi aumentare senza nuovi utenti personali.
+- `render.yaml` specchio documentale allineato, nessuna Blueprint sync. Non eseguire `render deploy` per creare altri servizi.
+
+### Prossimo blocco concreto
+
+**Serve login Supabase Auth legittimo dell'amministratore test**, distinto dall'account Render, e un utente personale di prova autorizzato per il successivo claim. Nessuna credenziale valida disponibile nell'ambiente agente; non ricavare password dal browser, non chiedere token/password in chat, non cambiare ruoli o credenziali. Usare una superficie di login sicura al solo progetto test, con intervento utente protetto se necessario. Non presumere che gli account esistenti siano automaticamente utilizzabili o sacrificabili.
+
+Dopo autenticazione test valida:
+1. Preparare harness E2E che acquisisca le sessioni senza esporle, usando `auth.getUser` sul progetto test e normali ruoli/policies. Start firmato pending, approve via bearer admin, errore codice/replay, fixture 300000 byte/2 chunk/hash, claim con accountProof vincolato al token personale approvato, revoca/scadenza. Non usare INSERT/UPDATE privilegiati per simulare approvazioni. Pulire solo fixture autorizzate.
+2. Consolidare `.github/workflows/bridge-android-staging.yml`: solo ramo work, nome FreePT TEST, package it.freept.bridge.next, gate bootstrap nativo+web true, endpoint HTTPS e progetto test esatto, rimuovere passo biometria residuo. Non modificare pipeline/package produzione.
+3. Build automatica, firma stabile Bridge, verifica fingerprint/package/manifest/Firebase/test endpoint realmente inclusi, nessun segreto/fallback produzione. Pubblicare APK sperimentale solo se criteri di sicurezza/configurazione soddisfatti; se no, trattenerla.
+4. Collaudi Android emulator disponibili distinti da fisico; Oppo/Keystore hardware/SAF fisico NON ESEGUITI finché non osservati. Protocollo già presente, non riscriverlo come test passato.
+5. Aggiornare rapporto, evidenze, link run, SHA effettivi e questo checkpoint prima di interrompere.
+
+Nessuna nuova APK in questa ripresa. Accesso Render e 12 controlli HTTPS sono conclusi, E2E autenticato completo e APK restano aperti.
