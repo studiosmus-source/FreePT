@@ -92,6 +92,30 @@
       "status": "completed",
       "conclusion": "success",
       "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44489499174"
+    },
+    {
+      "id": 44491909944,
+      "name": "Bridge isolated checks",
+      "head_sha": "bfd9aad8045a29bd05dcdd948419acc21093c75c",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44491909944"
+    },
+    {
+      "id": 44491910013,
+      "name": "Bridge Android isolated compile check",
+      "head_sha": "bfd9aad8045a29bd05dcdd948419acc21093c75c",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44491910013"
+    },
+    {
+      "id": 44491910075,
+      "name": "Build unified FreePT Android APK (manual)",
+      "head_sha": "bfd9aad8045a29bd05dcdd948419acc21093c75c",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44491910075"
     }
   ],
   "https_resume": {
@@ -107,5 +131,33 @@
     "live_auth_e2e": "BLOCKED_NO_AUTHENTICATED_TEST_ADMIN_SESSION",
     "android_physical": "NOT_EXECUTED",
     "apk": "NOT_PRODUCED"
+  },
+  "auth_console_resume": {
+    "starting_head": "c11607772d39fec0b66cb44bca3e6d18c993bd99",
+    "source_commit": "bfd9aad8045a29bd05dcdd948419acc21093c75c",
+    "deploy": "dep-dbvbji59el5s73dtc36g",
+    "deploy_status": "live",
+    "url": "https://freept-bridge-staging.onrender.com/test/",
+    "login_attempts": 1,
+    "secure_prompt_result": "submitted",
+    "actual_login": "FAILED_VISIBLE_PAGE",
+    "valid_admin_session": false,
+    "javascript": {
+      "tests": 451,
+      "failures": 0,
+      "skipped": 0
+    },
+    "python_jvm": {
+      "tests": 22,
+      "status": "PASS"
+    },
+    "native_saf_simulated": {
+      "tests": 11,
+      "failures": 0,
+      "skipped": 0
+    },
+    "oppo": "NOT_EXECUTED",
+    "authenticated_e2e": "BLOCKED_TEST_LOGIN",
+    "apk": "WITHHELD"
   }
 }

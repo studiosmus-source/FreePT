@@ -214,3 +214,28 @@ Prossima azione: distribuire la console esclusivamente su srv-dbo9t6lg1s2s73ejjt
 ### Verifica automatica prima del deploy console
 
 Suite JavaScript completa effettivamente eseguita: **451 test, 451 PASS, 0 fail, 0 skip**. Prima esecuzione 450 PASS/1 FAIL: controllo blueprint obsoleto sul comando letterale; corretto per verificare `npm run bridge:serve:staging` e la sua risoluzione effettiva a `node bridge/runHttpsStaging.mjs`, più il ramo work. Nessun errore occultato. I 12 probe HTTPS precedenti non sono stati ripetuti.
+
+## PUNTO DI RIPRESA ATTUALE — console TEST pubblicata, accesso da completare
+
+Commit implementazione console: `bfd9aad8045a29bd05dcdd948419acc21093c75c` (partenza c116077). Servizio staging `srv-dbo9t6lg1s2s73ejjtn0`, workspace confermato `tea-daslui3ncjis73anu1v0`. Aggiunto via merge soltanto `FREEPT_BRIDGE_TEST_CONSOLE=AUTH_E2E_ONLY`; nessuna credenziale letta/modificata. L'API ambiente ha avviato il deploy `dep-dbvbji59el5s73dtc36g`, **live** dal 19 novembre 08:57:17 UTC, commit bfd9aad. Piano free/ramo work/auto-deploy off preservati. Nessun deploy di altri servizi o produzione.
+
+Pagina verificata da HTTP e browser: **https://freept-bridge-staging.onrender.com/test/**, HTTP 200, CSP/no-store/frame DENY effettivi. Statici disponibili esclusivamente sulla composizione staging, gate esplicito e progetto test esatto. L'origine staging della console viene aggiunta in memoria alla allowlist solo quando il gate console è attivo; i controlli Auth, firme e ACL restano invariati. Chiudere la console dopo i collaudi impostando il gate a DISABLED sul solo staging (merge), senza toccare altre variabili. Questo disabilita anche l'origine della console; `https://localhost` Android rimane.
+
+### Accesso sicuro tentato realmente
+
+Browser cloud Chrome ID 1, scheda **3**, pagina sopra. Variabili runtime: `browser`, `authTab`, `testAuth`. Un solo tentativo tramite `browserAuth.request` per i campi del form admin. Il modulo protetto ha restituito `submitted`, ma la successiva osservazione della pagina ha mostrato **“Login non riuscito. Verificare le credenziali TEST senza inserirle in chat.”**. Quindi **nessuna sessione amministratore verificata**. Non è nota la causa specifica del rifiuto; non affermare automaticamente password errata o account assente. Nessun retry automatico, cambio password/ruolo o lettura token. Segnalato il blocco browser tramite capability dedicata. Necessario handoff alla stessa scheda per completare l'accesso con account applicativi TEST, non account Render/pannello Supabase. Non chiedere segreti in chat.
+
+Alla ripresa osservare subito lo stato DOM della scheda 3. **Non ricaricare/navigare se l'utente ha concluso il login: le sessioni sono solo in memoria.** Un popup chiuso o `submitted` non prova successo: serve lo stato “Autenticato TEST: ruolo e stato approvato verificati.”. Occorrono entrambi i form admin e user TEST. Non esaminare valori password, sessioni JS, cookie, storage o richieste contenenti bearer. Non tentare di esportare token alla shell. L'utente deve identificare gli account TEST autorizzati; non assumere sacrificabili profili reali.
+
+Dopo entrambi i login validi, la conferma account TEST abilita “Esegui end-to-end sintetico”. Eseguire dalla UI autorizzata, leggere il JSON visibile nel riquadro risultati (solo dati di prova, nessun token), conservarlo nel rapporto e verificare `completeEndToEnd: true`, bytes=300000, sha256, claim/revoca. Verificare inoltre in sola lettura DB test il grant al preciso admin e owner personale della fixture (non stampare email/contatti). In caso di fallimento descrivere il singolo controllo, non dichiarare successo complessivo. Non simulare l'approvazione con SQL privilegiato.
+
+### Nuove verifiche realmente completate
+
+- JavaScript locale completo: **451/451 PASS, 0 fail/skip**, output in `reports/FreePT-console-automatic-tests-2026-11-19.txt`. Primo giro 450/451: test blueprint obsoleto; consolidato controllando comando npm e suo script effettivo. Secondo giro tutto PASS.
+- Python/JVM locale: **22 test PASS**, output `reports/FreePT-console-python-tests-2026-11-19.txt`.
+- GitHub backend/web/PostgreSQL: **success** https://github.com/studiosmus-source/FreePT/actions/runs/44491909944 ; tutti i quattro job conclusi. HTTP/Postgres ha Auth fixture, non sostituisce Auth live.
+- Android isolata compile + SAF Robolectric: **success** https://github.com/studiosmus-source/FreePT/actions/runs/44491910013 . Log letto: BUILD SUCCESSFUL; suite BridgeDestinationTest **11 test, 0 skipped/failures/errors**. Report https://github.com/studiosmus-source/FreePT/actions/runs/44491910013/artifacts/14513052099 . Questa build usa endpoint `.invalid`, non è APK operativa.
+- Pipeline unificata: **success** https://github.com/studiosmus-source/FreePT/actions/runs/44491910075 ; esito job verificato. Non è nuova APK sperimentale accettata e non va consegnata come FreePT TEST.
+- I 12 controlli HTTPS precedenti non ripetuti.
+
+**Ancora NON ESEGUITI:** E2E con admin Supabase valido, trasferimento live autorizzato, hash/claim live, telefono Oppo/Keystore hardware/SAF e aggiornamento in-place fisico. Nessuna nuova APK operativa pubblicata. Workflow Android staging storico ancora da consolidare soltanto dopo E2E riuscito come richiesto. Non modificare chat/push, Copia amministratore, accesso senza impronta o cartelle SAF per persona.
