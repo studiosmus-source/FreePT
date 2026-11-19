@@ -5,7 +5,7 @@ import {randomBytes,randomUUID,generateKeyPairSync,sign} from 'node:crypto';
 import {createClient} from '@supabase/supabase-js';
 import {bootstrapMessage,bootstrapHash,bootstrapBytes} from './bootstrapProtocol.mjs';
 import {runUnifiedFunctionalChecks} from './unifiedFunctionalChecks.mjs';
-export const AUTH_E2E_RUN='AUTH_E2E_NEW_FIXTURES_20261119_02';
+export const AUTH_E2E_RUN='AUTH_E2E_NEW_FIXTURES_20261119_03';
 const TARGET='https://freept-bridge-staging.onrender.com';
 export function authE2EEnabled(env,config){
  if(env?.FREEPT_BRIDGE_AUTH_E2E!==AUTH_E2E_RUN)return false;
@@ -38,7 +38,7 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
   const listed=await db.auth.admin.listUsers({page:1,perPage:1000});
   if(listed.error||!Array.isArray(listed.data?.users)||
      listed.data.users.length>=1000)throw Error('fixture_cleanup_list_failed');
-  const orphanEmail='freept-auth-e2e-admin-20261119-02@tests.freept.invalid';
+  const orphanEmail='freept-auth-e2e-admin-20261119-03@tests.freept.invalid';
   const orphaned=listed.data.users.filter(u=>u.email===orphanEmail);
   if(orphaned.length>1)throw Error('fixture_cleanup_ambiguous');
   if(orphaned.length===1){
@@ -53,7 +53,7 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
   }
   // Fixed names make restart fail closed on duplicate, without resetting an account.
   for(const [kind,client] of [['admin',admin],['user',user]]){
-   const email='freept-auth-e2e-'+kind+'-20261119-02@tests.freept.invalid';
+   const email='freept-auth-e2e-'+kind+'-20261119-03@tests.freept.invalid';
    let password=randomBytes(36).toString('base64url')+'!aA7';
    const created=await db.auth.admin.createUser({email,password,email_confirm:true,app_metadata:{freept_test_fixture:AUTH_E2E_RUN}});
    check('Official Auth Admin API creates NEW '+kind, !created.error&&!!created.data?.user?.id);
