@@ -57,7 +57,8 @@
   "artifacts": {
     "validation": "https://github.com/studiosmus-source/FreePT/actions/runs/44481137229/artifacts/14508292361",
     "native_reports": "https://github.com/studiosmus-source/FreePT/actions/runs/44481037352/artifacts/14507394991",
-    "apk_sha256_ci_only": "2c4846c2ddb46743af51ed58d1bd21dc831d12c27b40b52c105e17421c72a9d1"
+    "apk_sha256_ci_only": "2c4846c2ddb46743af51ed58d1bd21dc831d12c27b40b52c105e17421c72a9d1",
+    "live_https_results": "https://github.com/studiosmus-source/FreePT/actions/runs/44489499174/artifacts/14511459399"
   },
   "runs": [
     {
@@ -83,6 +84,28 @@
       "status": "completed",
       "conclusion": "success",
       "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44481037352"
+    },
+    {
+      "id": 44489499174,
+      "name": "Bridge HTTPS staging live security probe",
+      "head_sha": "9ec95ce314d3a20dbf5f990efebf0140e9b14d17",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44489499174"
     }
-  ]
+  ],
+  "https_resume": {
+    "starting_head": "ec66b84a8cf1de41b316cc041123758b7436505d",
+    "probe_source_commit": "9ec95ce314d3a20dbf5f990efebf0140e9b14d17",
+    "render_service": "srv-dbo9t6lg1s2s73ejjtn0",
+    "render_deploy": "dep-dbvb9nc9v7es73989ccg",
+    "render_deployed_commit": "ec66b84a8cf1de41b316cc041123758b7436505d",
+    "render_status": "live",
+    "local_live_checks": 12,
+    "ci_live_checks": 12,
+    "targeted_unit_tests": 11,
+    "live_auth_e2e": "BLOCKED_NO_AUTHENTICATED_TEST_ADMIN_SESSION",
+    "android_physical": "NOT_EXECUTED",
+    "apk": "NOT_PRODUCED"
+  }
 }

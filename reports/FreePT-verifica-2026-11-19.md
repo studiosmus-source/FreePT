@@ -191,3 +191,10 @@ Manca una sessione **Supabase Auth reale dell'amministratore test** e, per il cl
 **NON ESEGUITI fisicamente**: Android Keystore hardware, Oppo/ColorOS, permessi/servizio in background, aggiornamento APK e conservazione SAF/sessione. Protocollo: `docs/COLLAUDO_OPPO_PRE_ACCOUNT_E_SAF.md`.
 
 Nessuna APK nuova prodotta/consegnata: la pipeline sperimentale storica richiede ancora consolidamento (ramo vecchio e biometria residua). La sicurezza live completa e i controlli package/firma/Firebase/configurazione staging restano prerequisiti. Non sostituire l'APK di produzione.
+
+### Conferma GitHub Actions della nuova prova live
+
+Commit script/configurazione/rapporto: `9ec95ce314d3a20dbf5f990efebf0140e9b14d17`.
+Run https://github.com/studiosmus-source/FreePT/actions/runs/44489499174 conclusa **success**; job `135441225368`, log letto realmente, 12 controlli live PASS anche dal runner GitHub. Report CI estratto dal JSON effettivo nel log: `reports/FreePT-live-HTTPS-CI-2026-11-19.json`. Dispositivo sintetico CI `3c7acb06-ee45-457a-867a-e68a9dc743ac`, creato e cancellato mediante protocollo. Questa seconda esecuzione non è una prova Android né Auth E2E completo.
+Artefatto https://github.com/studiosmus-source/FreePT/actions/runs/44489499174/artifacts/14511459399, digest ZIP GitHub `ffcb858f9036bee5f0518b6f1ffdc9ce5d45921ce23af086b100a4f9a5147f6f`.
+Il gateway rimane sul deploy ec66b84; i commit successivi aggiornano solamente script, configurazione dichiarativa, workflow e rapporti, senza modificare codice runtime app/backend.
