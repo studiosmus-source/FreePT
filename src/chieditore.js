@@ -92,11 +92,10 @@ export function mountChieditore({host,heading='',controller,onVerified,onExit,on
    if(previous==='bridge'&&r.step==='bridge'&&!r.verified){
     polls+=1;
     if(polls>=12)status.textContent+=' Verifica automatica sospesa: premi Riprova verifica o esporta il rapporto.';
-    else later();
    }
   }catch{
    if(active){draw('Errore durante la verifica. Esporta il rapporto diagnostico per identificare il problema.');polls=12;}
-  }finally{busy=false;if(active)next.disabled=false;}
+  }finally{busy=false;if(active){next.disabled=false;if(polls>0&&polls<12)later();}}
  }
  next.onclick=()=>{if(polls>=12)polls=0;void run();};
  report.onclick=()=>void controller.report().catch(()=>{status.textContent='Impossibile esportare il rapporto: verifica che Android consenta di aprire la finestra di condivisione.';});
