@@ -35,6 +35,7 @@ public class BridgeDestinationPlugin extends Plugin {
     private static final long MAX_FILE_BYTES=1099511627776L;
     private static final int MAX_CHUNK=262144;
     private Uri destination;
+    private Uri transferParent;
     private Uri staging;
     private String finalName;
     private Uri singleStaging;
@@ -65,7 +66,7 @@ public class BridgeDestinationPlugin extends Plugin {
         if(destination==null||!validName(requestedName))
             throw new IllegalArgumentException("bridge_destination_invalid_target");
         Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(
-            destination,DocumentsContract.getDocumentId(destination));
+            parent(),DocumentsContract.getDocumentId(parent()));
         try(Cursor cursor=getContext().getContentResolver().query(
             children,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
             null,null,null)){
@@ -100,6 +101,62 @@ public class BridgeDestinationPlugin extends Plugin {
         throw new IllegalStateException("bridge_destination_no_free_name");
     }
 
+    private Uri parent(){return transferParent==null?destination:transferParent;}
+
+    private boolean documentMatches(Uri uri,String mime,Long size) throws Exception {
+        try(Cursor c=getContext().getContentResolver().query(uri,
+            new String[]{DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE},null,null,null)){
+            return c!=null&&c.moveToFirst()&&(mime==null||mime.equals(c.getString(0)))&&
+                (size==null||(!c.isNull(1)&&c.getLong(1)==size));
+        }
+    }
+
+    private Uri ownerDirectory(PluginCall call) throws Exception {
+        String ownerId=call.getString("ownerId");
+        if(ownerId==null)return destination; // Preserve the existing non-admin writer.
+        if(!ownerId.matches("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"))
+            throw new IllegalArgumentException("bridge_destination_invalid_owner");
+        String root=DocumentsContract.getDocumentId(destination);
+        String mapping="owner:"+destination.toString()+":"+ownerId.toLowerCase(java.util.Locale.ROOT);
+        android.content.SharedPreferences prefs=getContext().getSharedPreferences(PREFS,0);
+        String saved=prefs.getString(mapping,null);
+        Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(destination,root);
+        java.util.Set<String> names=new java.util.HashSet<>();
+        try(Cursor c=getContext().getContentResolver().query(children,
+            new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE},null,null,null)){
+            if(c==null)throw new IllegalStateException("bridge_destination_unreadable");
+            while(c.moveToNext()){
+                if(saved!=null&&saved.equals(c.getString(0))&&
+                    DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(2)))
+                    return DocumentsContract.buildDocumentUriUsingTree(destination,saved);
+                String n=c.getString(1);
+                if(n!=null)names.add(java.text.Normalizer.normalize(n,java.text.Normalizer.Form.NFC).toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        // Never adopt an existing directory merely because its name matches.
+        String label=call.getString("ownerName","Persona");
+        label=java.text.Normalizer.normalize(label,java.text.Normalizer.Form.NFC)
+            .replaceAll("[\\/\\\\<>:\"|?*\\p{Cntrl}\\p{Cf}]","_").trim()
+            .replaceAll("[. ]+$","");
+        if(label.isEmpty()||label.equals(".")||label.equals(".."))label="Persona";
+        label=label.substring(0,label.offsetByCodePoints(0,Math.min(80,label.codePointCount(0,label.length()))));
+        String candidate=label;
+        for(int i=2;names.contains(candidate.toLowerCase(java.util.Locale.ROOT));i++){
+            if(i>10000)throw new IllegalStateException("bridge_destination_no_free_name");
+            candidate=label+" ("+i+")";
+        }
+        Uri created=DocumentsContract.createDocument(getContext().getContentResolver(),destination,
+            DocumentsContract.Document.MIME_TYPE_DIR,candidate);
+        if(created==null||!documentMatches(created,DocumentsContract.Document.MIME_TYPE_DIR,null))
+            throw new IllegalStateException("bridge_destination_owner_failed");
+        if(!prefs.edit().putString(mapping,DocumentsContract.getDocumentId(created)).commit()){
+            DocumentsContract.deleteDocument(getContext().getContentResolver(),created);
+            throw new IllegalStateException("bridge_destination_owner_persistence_failed");
+        }
+        return created;
+    }
+
     private String[] path(PluginCall call){
         JSArray array=call.getArray("path");
         if(array==null||array.length()<1||array.length()>32)
@@ -124,23 +181,25 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     private void restore(){
-        if(destination!=null)return;
+        destination=null;
         String saved=getContext().getSharedPreferences(PREFS,0).getString(SELECTED,null);
         if(saved==null)return;
         Uri uri=Uri.parse(saved);
         for(android.content.UriPermission permission:
                 getContext().getContentResolver().getPersistedUriPermissions()){
-            if(permission.getUri().equals(uri)&&permission.isWritePermission()){
+            if(permission.getUri().equals(uri)&&permission.isWritePermission()&&permission.isReadPermission()){
                 destination=DocumentsContract.buildDocumentUriUsingTree(
                     uri,DocumentsContract.getTreeDocumentId(uri));
-                return;
+                try{if(documentMatches(destination,DocumentsContract.Document.MIME_TYPE_DIR,null))return;}
+                catch(Exception ignored){}
+                destination=null;
             }
         }
         getContext().getSharedPreferences(PREFS,0).edit().remove(SELECTED).apply();
     }
 
     @PluginMethod
-    public void getDestination(PluginCall call){
+    public synchronized void getDestination(PluginCall call){
         restore();
         JSObject result=new JSObject();
         result.put("selected",destination!=null);
@@ -148,7 +207,7 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void chooseDestination(PluginCall call){
+    public synchronized void chooseDestination(PluginCall call){
         if(staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
@@ -181,16 +240,17 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void beginFolder(PluginCall call){
+    public synchronized void beginFolder(PluginCall call){
         restore();
         String name=call.getString("name");
         if(destination==null||staging!=null||singleStaging!=null||!validName(name)){
             call.reject("bridge_destination_not_ready");return;
         }
         try{
+            transferParent=ownerDirectory(call);
             name=availableName(name);
             Uri temp=DocumentsContract.createDocument(
-                getContext().getContentResolver(),destination,
+                getContext().getContentResolver(),parent(),
                 DocumentsContract.Document.MIME_TYPE_DIR,
                 ".freept-partial-"+UUID.randomUUID());
             if(temp==null)throw new IllegalStateException();
@@ -202,7 +262,7 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void makeDirectory(PluginCall call){
+    public synchronized void makeDirectory(PluginCall call){
         if(staging==null){call.reject("bridge_destination_not_started");return;}
         try{
             String[] names=path(call);
@@ -222,7 +282,7 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void openFile(PluginCall call){
+    public synchronized void openFile(PluginCall call){
         if(staging==null){call.reject("bridge_destination_not_started");return;}
         try{
             String[] names=path(call);
@@ -248,7 +308,7 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void writeChunk(PluginCall call){
+    public synchronized void writeChunk(PluginCall call){
         FileEntry file=files.get(call.getString("fileId"));
         Object raw=call.getData().opt("offset");
         String encoded=call.getString("base64");
@@ -283,18 +343,23 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void commitFile(PluginCall call){
+    public synchronized void commitFile(PluginCall call){
         FileEntry file=files.get(call.getString("fileId"));
         if((staging==null&&singleStaging==null)||file==null||file.completed||
             file.written!=file.expected){
             call.reject("bridge_destination_file_incomplete");return;
         }
+        try{
+            if(!documentMatches(file.uri,null,file.expected)){
+                call.reject("bridge_destination_size_mismatch");return;
+            }
+        }catch(Exception error){call.reject("bridge_destination_verify_failed");return;}
         file.completed=true;
         call.resolve();
     }
 
     @PluginMethod
-    public void discardFile(PluginCall call){
+    public synchronized void discardFile(PluginCall call){
         String id=call.getString("fileId");
         FileEntry file=files.get(id);
         if((staging==null&&singleStaging==null)||file==null){call.reject("bridge_destination_file_missing");return;}
@@ -309,7 +374,7 @@ public class BridgeDestinationPlugin extends Plugin {
 
     /** Stage a single file directly under the user's selected destination. */
     @PluginMethod
-    public void beginSingleFile(PluginCall call){
+    public synchronized void beginSingleFile(PluginCall call){
         restore();
         String name=call.getString("name");
         String mime=call.getString("mime","application/octet-stream");
@@ -325,9 +390,10 @@ public class BridgeDestinationPlugin extends Plugin {
             call.reject("bridge_destination_invalid_size");return;
         }
         try{
+            transferParent=ownerDirectory(call);
             name=availableName(name);
             Uri temp=DocumentsContract.createDocument(
-                getContext().getContentResolver(),destination,
+                getContext().getContentResolver(),parent(),
                 mime.isEmpty()?"application/octet-stream":mime,
                 ".freept-partial-"+UUID.randomUUID());
             if(temp==null)throw new IllegalStateException();
@@ -341,7 +407,7 @@ public class BridgeDestinationPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void commitSingleFile(PluginCall call){
+    public synchronized void commitSingleFile(PluginCall call){
         if(singleStaging==null||files.size()!=1){
             call.reject("bridge_destination_not_started");return;
         }
@@ -361,25 +427,27 @@ public class BridgeDestinationPlugin extends Plugin {
                     !singleName.equals(cursor.getString(0)))
                     throw new IllegalStateException();
             }
-            singleStaging=null;singleName=null;files.clear();
+            if(!documentMatches(renamed,null,files.values().iterator().next().expected))
+                throw new IllegalStateException("bridge_destination_size_mismatch");
+            singleStaging=null;singleName=null;transferParent=null;files.clear();
             call.resolve();
         }catch(Exception error){call.reject("bridge_destination_commit_failed");}
     }
 
     @PluginMethod
-    public void discardSingleFile(PluginCall call){
+    public synchronized void discardSingleFile(PluginCall call){
         if(singleStaging==null){call.resolve();return;}
         try{
             if(!DocumentsContract.deleteDocument(
                 getContext().getContentResolver(),singleStaging))
                 throw new IllegalStateException();
-            singleStaging=null;singleName=null;files.clear();
+            singleStaging=null;singleName=null;transferParent=null;files.clear();
             call.resolve();
         }catch(Exception error){call.reject("bridge_destination_cleanup_failed");}
     }
 
     @PluginMethod
-    public void commitFolder(PluginCall call){
+    public synchronized void commitFolder(PluginCall call){
         if(staging==null){call.reject("bridge_destination_not_started");return;}
         for(FileEntry file:files.values()){
             if(!file.completed){call.reject("bridge_destination_files_incomplete");return;}
@@ -398,26 +466,26 @@ public class BridgeDestinationPlugin extends Plugin {
                 if(c==null||!c.moveToFirst()||!finalName.equals(c.getString(0)))
                     throw new IllegalStateException();
             }
-            staging=null;finalName=null;
+            staging=null;finalName=null;transferParent=null;
             directories.clear();files.clear();
             call.resolve();
         }catch(Exception error){call.reject("bridge_destination_commit_failed");}
     }
 
     @PluginMethod
-    public void discardFolder(PluginCall call){
+    public synchronized void discardFolder(PluginCall call){
         if(staging==null){call.resolve();return;}
         try{
             if(!DocumentsContract.deleteDocument(getContext().getContentResolver(),staging))
                 throw new IllegalStateException();
-            staging=null;finalName=null;
+            staging=null;finalName=null;transferParent=null;
             directories.clear();files.clear();
             call.resolve();
         }catch(Exception error){call.reject("bridge_destination_cleanup_failed");}
     }
 
     @PluginMethod
-    public void clearDestination(PluginCall call){
+    public synchronized void clearDestination(PluginCall call){
         if(staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
         destination=null;
         if(!getContext().getSharedPreferences(PREFS,0).edit()

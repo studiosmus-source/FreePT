@@ -207,7 +207,7 @@ async function completeAdminLogin(user){
 function adminScreen(){
   closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
-    '<p class="small">Accedi con email e password del tuo account amministratore FreePT. Finché la sessione resta valida, agli avvii successivi basta l’impronta digitale.</p>'+
+    '<p class="small">Accedi con email e password del tuo account amministratore FreePT. La sessione resta attiva finché è valida.</p>'+
     '<form id="adminForm" class="form">'+
     '<label>Email amministratore<input type="email" name="email" autocomplete="username" placeholder="Email amministratore" required></label>'+
     '<label>Password<input type="password" name="password" autocomplete="current-password" placeholder="Password" required></label>'+
@@ -843,7 +843,7 @@ function renderLayout(){
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
       const ownerId=user.id;
       chatFilesCleanup=renderBridgeRemoteFiles({
-        host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,
+        host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
         isAuthorized:()=>panel.isConnected&&selected===ownerId&&
           me?.id&&profile?.role==='admin'&&adminUnlocked
       });
@@ -1056,18 +1056,6 @@ async function copyAdminChatText(value){
   else throw Error('Copia non disponibile');
   status('Testo copiato.');
 }
-async function shareAdminChatText(value){
-  if(profile?.role!=='admin'||!adminUnlocked||!me?.id)return;
-  if(freeptAdminShare)await freeptAdminShare.shareText({text:value});
-  else if(navigator.share)await navigator.share({text:value});
-  else throw Error('Condivisione non disponibile');
-}
-async function shareAdminChatAttachment(message){
-  if(profile?.role!=='admin'||!adminUnlocked||!me?.id||!message.file_path)return;
-  if(!freeptAdminShare)throw Error('Condivisione file disponibile su Android');
-  const url=await signAttachmentUrl(message.file_path);
-  await freeptAdminShare.shareFile({url,name:message.file_name||'allegato'});
-}
 function mountAdminChatShareActions(feed){
   if(profile?.role!=='admin'||!adminUnlocked||!me?.id)return;
   feed.querySelectorAll('article.bubble').forEach((bubble,index)=>{
@@ -1087,10 +1075,8 @@ function mountAdminChatShareActions(feed){
       };actions.appendChild(b);
     };
     if(message.body){
-      button('Copia testo',()=>copyAdminChatText(message.body));
-      button('Condividi testo',()=>shareAdminChatText(message.body));
+      button('Copia',()=>copyAdminChatText(message.body));
     }
-    if(message.file_path)button('Condividi file',()=>shareAdminChatAttachment(message));
     bubble.appendChild(actions);
   });
 }
@@ -1102,9 +1088,29 @@ async function showMessages(scroll=true){if(!selected)return;const requestedUser
     queue.textContent=awaiting?'Richiesta in elaborazione… Attendere.':'';
     queue.classList.toggle('processing',!!awaiting);
   }
-} feed.querySelectorAll('.attach-host').forEach(host=>{try{renderChatAttachment({container:host,fileName:host.dataset.name,filePath:host.dataset.file,signUrl:signAttachmentUrl,makeWriter:bridgeDestination?makeChatWriter:null,escape:esc,setStatus:msg=>status(msg)});}catch{host.textContent='📎 '+esc(host.dataset.name||'Allegato');}});mountAdminChatShareActions(feed);if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
+} feed.querySelectorAll('.attach-host').forEach(host=>{try{renderChatAttachment({container:host,fileName:host.dataset.name,filePath:host.dataset.file,signUrl:signAttachmentUrl,makeWriter:bridgeDestination?(profile?.role==='admin'?adminAttachmentWriter(requestedUser):makeChatWriter):null,escape:esc,setStatus:msg=>status(msg)});}catch{host.textContent='📎 '+esc(host.dataset.name||'Allegato');}});mountAdminChatShareActions(feed);if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
 async function signAttachmentUrl(path){const {data,error}=await db.storage.from('attachments').createSignedUrl(path,3600);if(error||!data?.signedUrl)throw Error('Indirizzo allegato non disponibile.');return data.signedUrl;}
 async function makeChatWriter(meta){if(!bridgeDestination)return null;let dest=null;try{dest=await bridgeDestination.getDestination();}catch{}if(!dest?.selected)await bridgeDestination.chooseDestination();return createBridgeAndroidSingleFileWriter({plugin:bridgeDestination,name:meta.name,size:meta.size,mime:meta.mime});}
+function adminAttachmentWriter(ownerId){
+  // Capture identity when rendering, before an attachment fetch or picker.
+  const actor=me?.id;
+  const ownerName=people.find(p=>p.id===ownerId)?.full_name||'Persona';
+  const allowed=()=>profile?.role==='admin'&&profile?.status==='approved'&&adminUnlocked&&
+    !!actor&&me?.id===actor&&selected===ownerId&&people.some(p=>p.id===ownerId&&p.status==='approved');
+  return async meta=>{
+    if(!allowed())throw Error('Download non autorizzato');
+    let dest=null;try{dest=await bridgeDestination.getDestination();}catch{}
+    if(!dest?.selected)await bridgeDestination.chooseDestination();
+    if(!allowed())throw Error('Download non autorizzato');
+    const writer=await createBridgeAndroidSingleFileWriter({plugin:bridgeDestination,
+      name:meta.name,size:meta.size,mime:meta.mime,ownerId,ownerName});
+    const protect=action=>async(...args)=>{
+      try{if(!allowed())throw Error('Download non autorizzato');return await action(...args);}
+      catch(error){await writer.discard();throw error;}
+    };
+    return {write:protect(writer.write),commit:protect(writer.commit),discard:writer.discard};
+  };
+}
 // Small files keep the proven Storage SDK path. Larger files use resumable
 // chunks with retries so mobile connections can recover without changing photos.
 async function uploadAttachment(path,file,onProgress){

@@ -3,25 +3,14 @@ package __PACKAGE__;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
-import androidx.core.content.FileProvider;
-import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLConnection;
 
-/** User-initiated copy/share of authorized admin chat content. */
+/** Clipboard only. Invoked from the authenticated administrator UI. */
 @CapacitorPlugin(name="FreePTAdminShare")
 public class FreePTAdminSharePlugin extends Plugin {
-    private static final long MAX_FILE_BYTES=25L*1024L*1024L;
     @PluginMethod public void copyText(PluginCall call){
         String text=call.getString("text");
         if(text==null||text.isEmpty()){call.reject("share_invalid_text");return;}
@@ -29,79 +18,5 @@ public class FreePTAdminSharePlugin extends Plugin {
         if(manager==null){call.reject("share_clipboard_unavailable");return;}
         manager.setPrimaryClip(ClipData.newPlainText("FreePT",text));
         call.resolve();
-    }
-    @PluginMethod public void shareText(PluginCall call){
-        String text=call.getString("text");
-        if(text==null||text.isEmpty()){call.reject("share_invalid_text");return;}
-        Intent intent=new Intent(Intent.ACTION_SEND);
-        intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_TEXT,text);
-        try{
-            getActivity().startActivity(Intent.createChooser(intent,"Condividi testo"));
-            call.resolve();
-        }catch(Exception error){call.reject("share_target_unavailable");}
-    }
-    @PluginMethod public void shareFile(PluginCall call){
-        String source=call.getString("url"),name=call.getString("name","allegato");
-        if(source==null||name==null||name.length()>160||
-           name.isEmpty()||name.equals(".")||name.equals("..")){
-            call.reject("share_invalid_file");return;
-        }
-        final URL url;
-        try{
-            url=new URL(source);
-            if(!"https".equals(url.getProtocol())||
-               !"cpopqsvzzxfjgnlawlvc.supabase.co".equals(url.getHost())||
-               url.getPort()!=-1||url.getUserInfo()!=null||url.getRef()!=null||
-               !url.getPath().startsWith("/storage/v1/object/sign/attachments/"))
-                throw new IllegalArgumentException();
-        }catch(Exception error){call.reject("share_invalid_source");return;}
-        final String safeName=name.replaceAll("[^a-zA-Z0-9._-]","_");
-        new Thread(()->{
-            File staged=null;
-            HttpURLConnection connection=null;
-            try{
-                File directory=new File(getContext().getCacheDir(),"freept-share");
-                if(!directory.isDirectory()&&!directory.mkdirs())
-                    throw new java.io.IOException("cache_not_available");
-                staged=File.createTempFile("freept-", "-"+safeName,directory);
-                connection=(HttpURLConnection)url.openConnection();
-                connection.setInstanceFollowRedirects(false);
-                connection.setConnectTimeout(12000);
-                connection.setReadTimeout(30000);
-                if(connection.getResponseCode()!=200)throw new java.io.IOException("download_failed");
-                long length=connection.getContentLengthLong();
-                if(length>MAX_FILE_BYTES)throw new java.io.IOException("file_too_large");
-                long received=0;
-                try(InputStream input=connection.getInputStream();
-                    FileOutputStream output=new FileOutputStream(staged)){
-                    byte[] data=new byte[32768];int count;
-                    while((count=input.read(data))!=-1){
-                        received+=count;
-                        if(received>MAX_FILE_BYTES)throw new java.io.IOException("file_too_large");
-                        output.write(data,0,count);
-                    }
-                }
-                if(received==0)throw new java.io.IOException("empty_file");
-                Uri uri=FileProvider.getUriForFile(getContext(),
-                    getContext().getPackageName()+".freeptupdater.fileprovider",staged);
-                String mime=URLConnection.guessContentTypeFromName(safeName);
-                if(mime==null)mime="application/octet-stream";
-                Intent send=new Intent(Intent.ACTION_SEND);
-                send.setType(mime);
-                send.putExtra(Intent.EXTRA_STREAM,uri);
-                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                send.setClipData(ClipData.newUri(getContext().getContentResolver(),safeName,uri));
-                getActivity().runOnUiThread(()->{
-                    try{
-                        getActivity().startActivity(Intent.createChooser(send,"Condividi file"));
-                        call.resolve();
-                    }catch(Exception error){call.reject("share_target_unavailable");}
-                });
-            }catch(Exception error){
-                if(staged!=null)staged.delete();
-                call.reject("share_file_unavailable");
-            }finally{if(connection!=null)connection.disconnect();}
-        },"freept-admin-file-share").start();
     }
 }

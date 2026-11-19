@@ -9,18 +9,16 @@ test('admin session unlock does not depend on biometric hardware',()=>{
  assert.match(main,/mountAdminChatShareActions\(feed\)/);
  assert.match(main,/if\(profile\?\.role!=='admin'\|\|!adminUnlocked/);
 });
-test('admin-only message copy/share is explicit, including native file sharing',()=>{
+test('admin-only message copy has no sharing endpoint or biometric promise',()=>{
  const main=read('src/main.js');
- assert.match(main,/button\('Copia testo'/);
- assert.match(main,/button\('Condividi testo'/);
- assert.match(main,/button\('Condividi file'/);
+ assert.match(main,/button\('Copia'/);
+ assert.doesNotMatch(main,/shareAdminChatText|shareAdminChatAttachment|Condividi testo|Condividi file|impronta/);
+ assert.doesNotMatch(read('src/adminOtpAuth.js'),/impronta/);
  const native=read('android-bridge/FreePTAdminSharePlugin.java.template');
- assert.match(native,/Intent\.ACTION_SEND/);
- assert.match(native,/getUriForFile/);
- assert.match(native,/FLAG_GRANT_READ_URI_PERMISSION/);
- assert.match(native,/MAX_FILE_BYTES=25L\*1024L\*1024L/);
- assert.match(native,/getPath\(\)\.startsWith\("\/storage\/v1\/object\/sign\/attachments\/"\)/);
+ assert.match(native,/setPrimaryClip/);
+ assert.doesNotMatch(native,/ACTION_SEND|shareText|shareFile|HttpURLConnection|getUriForFile/);
  const installer=read('android-bridge/install.py');
  assert.match(installer,/registerPlugin\(FreePTAdminSharePlugin\.class\)/);
- assert.match(installer,/freept_chat_share/);
+ assert.doesNotMatch(installer,/freept_chat_share/);
+ assert.match(installer,/freept_updates/);
 });

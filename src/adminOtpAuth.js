@@ -38,6 +38,6 @@ export function adminOtpFailureMessage(error){
   const reason=String(error?.message||'');
   if(reason==='admin_email_invalid')return 'Inserisci un indirizzo email valido.';
   if(reason.startsWith('admin_code_delivery_failed:otp_disabled:'))
-    return 'Il server FreePT non consente i codici email (OTP disattivato). Accedi con email e password qui sopra. Con la sessione attiva, agli avvii successivi basta l’impronta.';
+    return 'Il server FreePT non consente i codici email (OTP disattivato). Accedi con email e password qui sopra. La sessione resta attiva finché è valida.';
   return 'Non è stato possibile inviare il codice email. Usa email e password qui sopra.';
 }

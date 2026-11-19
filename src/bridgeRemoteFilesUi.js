@@ -18,7 +18,7 @@ function create(node,label,parent){
 }
 
 export function renderBridgeRemoteFiles({
-  host,db,bridgeClient,bridgeDestination,adminId,ownerId=null,isAuthorized
+  host,db,bridgeClient,bridgeDestination,adminId,ownerId=null,ownerName=null,isAuthorized
 }={}){
   if(!host||typeof db?.from!=='function'||typeof isAuthorized!=='function')
     throw Error('bridge_remote_ui_invalid_options');
@@ -47,12 +47,14 @@ export function renderBridgeRemoteFiles({
   const destinationReady=async()=>{
     if(!bridgeDestination)throw Error('Bridge disponibile solo nella versione Android di prova.');
     const dest=await bridgeDestination.getDestination();
-    if(!dest?.selected)throw Error('Scegli prima la cartella di destinazione.');
+    if(!dest?.selected)await bridgeDestination.chooseDestination();
+    if(!alive())throw Error('Download non autorizzato');
   };
   const setStatus=value=>{if(alive())status.textContent=value};
   const fileDownload=async(item,deviceId)=>{
     const writer=await createBridgeAndroidSingleFileWriter({
-      plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime
+      plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime,
+      ownerId,ownerName
     });
     await downloadBridgeFile({
       api:bridgeClient,deviceId,handle:item.handle,size:item.size,
@@ -121,10 +123,11 @@ export function renderBridgeRemoteFiles({
     cancel.hidden=false;
     controller=new AbortController();
     try{
+      if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
       await destinationReady();
       setStatus('Preparazione download…');
       if(root||item.directory){
-        const writer=createBridgeAndroidFolderDestination({plugin:bridgeDestination,name:title});
+        const writer=createBridgeAndroidFolderDestination({plugin:bridgeDestination,name:title,ownerId,ownerName});
         const result=await downloadBridgeFolder({
           api:bridgeClient,deviceId,root:root?'root':item.handle,
           destination:writer,signal:controller.signal,

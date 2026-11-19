@@ -1,3 +1,10 @@
+const ownerArguments=(ownerId,ownerName)=>{
+  if(ownerId===undefined)return {};
+  if(typeof ownerId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerId)||
+    typeof ownerName!=='string'||!ownerName.trim()||ownerName.length>500)
+    throw Error('bridge_destination_invalid_owner');
+  return {ownerId,ownerName};
+};
 /**
  * Android SAF destination adapter for atomic Bridge folder downloads.
  * The user explicitly chooses the destination in Android's folder picker.
@@ -31,16 +38,17 @@ async function writeInParts(plugin,fileId,bytes,offset){
   }
   return pos;
 }
-export function createBridgeAndroidFolderDestination({plugin,name}={}){
+export function createBridgeAndroidFolderDestination({plugin,name,ownerId,ownerName}={}){
   if(!safeName(name)||!plugin||
      ['beginFolder','makeDirectory','openFile','writeChunk','commitFile',
       'discardFile','commitFolder','discardFolder'].some(k=>typeof plugin[k]!=='function'))
     throw Error('bridge_destination_invalid_options');
+  ownerArguments(ownerId,ownerName);
   let active=false;
   return Object.freeze({
     async begin(){
       if(active)throw Error('bridge_destination_already_started');
-      const result=await plugin.beginFolder({name});
+      const result=await plugin.beginFolder({name,...ownerArguments(ownerId,ownerName)});
       if(result?.started!==true)throw Error('bridge_destination_begin_invalid');
       active=true;
     },
@@ -93,13 +101,13 @@ export function createBridgeAndroidFolderDestination({plugin,name}={}){
  * Direct single-file destination. The SAF plugin creates a temporary document
  * and renames it only after its expected byte count has been written.
  */
-export async function createBridgeAndroidSingleFileWriter({plugin,name,size,mime}={}){
+export async function createBridgeAndroidSingleFileWriter({plugin,name,size,mime,ownerId,ownerName}={}){
   if(!plugin||['beginSingleFile','writeChunk','commitFile','commitSingleFile',
      'discardSingleFile'].some(k=>typeof plugin[k]!=='function')||
      !safeName(name)||!Number.isSafeInteger(size)||size<0||size>1024**4||
      typeof mime!=='string'||mime.length>160)
     throw Error('bridge_single_file_destination_invalid');
-  const opened=await plugin.beginSingleFile({name,size,mime});
+  const opened=await plugin.beginSingleFile({name,size,mime,...ownerArguments(ownerId,ownerName)});
   const fileId=opened?.fileId;
   if(typeof fileId!=='string'||!(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(fileId)))
     throw Error('bridge_destination_invalid_file_id');

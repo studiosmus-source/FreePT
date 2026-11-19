@@ -219,7 +219,7 @@ xml_dir.mkdir(parents=True, exist_ok=True)
 (xml_dir / "freept_updater_paths.xml").write_text(
     '<?xml version="1.0" encoding="utf-8"?>\n'
     '<paths><external-files-path name="freept_updates" path="updates/" />'
-    '<cache-path name="freept_chat_share" path="freept-share/" /></paths>\n'
+    '</paths>\n'
 )
 (values / "freept_updater.xml").write_text(
     '<resources><string name="ota_apk_endpoint">' +

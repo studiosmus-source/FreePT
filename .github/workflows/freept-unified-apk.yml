@@ -1,7 +1,7 @@
 name: Build unified FreePT Android APK (manual)
 on:
   push:
-    branches: [fix/bridge-installable-20261118, build/bridge-256kb-20261118, feature/bridge-adaptive-poll-20261118, feature/bridge-fast-save-20261118, feature/oppo-install-clean-20261118, feature/admin-share-no-biometric-20261119]
+    branches: [fix/bridge-installable-20261118, build/bridge-256kb-20261118, feature/bridge-adaptive-poll-20261118, feature/bridge-fast-save-20261118, feature/oppo-install-clean-20261118, feature/admin-share-no-biometric-20261119, work/unified-verified-20261119]
     paths:
       - '.github/workflows/freept-unified-apk.yml'
       - 'src/bridge*.js'
@@ -28,7 +28,7 @@ jobs:
       - name: Refuse other branches
         run: |
           case "$GITHUB_REF" in
-            refs/heads/fix/bridge-installable-20261118|refs/heads/feature/freept-updater-20261118|refs/heads/build/bridge-256kb-20261118|refs/heads/feature/bridge-adaptive-poll-20261118|refs/heads/feature/bridge-fast-save-20261118|refs/heads/feature/oppo-install-clean-20261118|refs/heads/feature/admin-share-no-biometric-20261119) ;;
+            refs/heads/fix/bridge-installable-20261118|refs/heads/feature/freept-updater-20261118|refs/heads/build/bridge-256kb-20261118|refs/heads/feature/bridge-adaptive-poll-20261118|refs/heads/feature/bridge-fast-save-20261118|refs/heads/feature/oppo-install-clean-20261118|refs/heads/feature/admin-share-no-biometric-20261119|refs/heads/work/unified-verified-20261119) ;;
             *) echo "Refusing build from $GITHUB_REF"; exit 1;;
           esac
       - uses: actions/setup-node@v4
@@ -54,9 +54,8 @@ jobs:
           PY
       - name: Install dependencies and run regression tests
         run: |
-          npm install --no-audit --no-fund
-          npm run test:bridge
-          node --test src/bridgeRuntimeConfig.test.mjs src/pushRegistration.test.mjs
+          npm ci --no-audit --no-fund
+          node --test bridge/*.test.mjs src/*.test.mjs supabase/*.test.mjs | tee test-results.txt
           node --check src/main.js
           node --check src/pushRegistration.js
           python3 -m py_compile android-bridge/install.py android-bridge/install_firebase.py
@@ -169,10 +168,21 @@ jobs:
           ! "$AAPT" dump permissions "$APK" | grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES'
           sha256sum "$APK" | tee apk-sha256.txt
       - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/work/unified-verified-20261119'
         with:
           name: FreePT-unified-stable-apk
           path: |
             android/app/build/outputs/apk/debug/FreePT-unified-stable.apk
             apk-info.txt
             apk-sha256.txt
+          if-no-files-found: error
+      - name: Upload validation evidence only; APK withheld pending acceptance
+        if: github.ref == 'refs/heads/work/unified-verified-20261119'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-validation-evidence
+          path: |
+            apk-info.txt
+            apk-sha256.txt
+            test-results.txt
           if-no-files-found: error
