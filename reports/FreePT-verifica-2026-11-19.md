@@ -134,3 +134,14 @@ Rollback del ramo: non unire le modifiche. Rollback staging: disabilitare il gat
 - Protocollo dispositivo: [COLLAUDO_OPPO_PRE_ACCOUNT_E_SAF.md](../docs/COLLAUDO_OPPO_PRE_ACCOUNT_E_SAF.md).
 
 SHA256 del candidato unificato calcolato da GitHub Actions: `2c4846c2ddb46743af51ed58d1bd21dc831d12c27b40b52c105e17421c72a9d1`. Firma stabile verificata dalla pipeline con `apksigner` e confronto col certificato atteso. Il candidato non è stato pubblicato/scaricato e l'hash non è stato ricalcolato localmente. Package unificata `it.freept.app`; la build conserva il formato debug firmato del workflow esistente. Questo identificatore non certifica il Chieditore in produzione né l'installazione su Oppo.
+
+
+## Ripresa successiva — verifica infrastruttura e decisione pendente
+
+Verificato nuovamente HEAD remoto/locale `1894ec07d379ff41bc62a00eae8732ff07d30194`, sorgenti gateway, blueprint e workflow. Supabase test confermato sano; nuova lettura ACL/RLS e conteggi bootstrap: nessuna esposizione anon, entrambe le tabelle vuote. Nessuna modifica applicativa o infrastrutturale in questa ripresa; nessun nuovo test end-to-end o build dichiarati.
+
+Render non ha workspace selezionato. L'unico workspace elencato è **My Workspace** (`tea-daslui3ncjis73anu1v0`, account `studiosmus@gmail.com`); serve conferma dell'utente prima di individuare/usare il servizio test in quel workspace. L'health URL storico nei sorgenti è andato in timeout a 20 secondi, senza risposta HTTP: non è prova di servizio assente o guasto.
+
+Il blueprint/workflow staging storico punta a un vecchio ramo e il workflow aggiunge ancora un permesso biometrico: va consolidato prima di costruire la nuova APK sperimentale. I valori correnti dei secret GitHub/Render non sono stati letti o verificati. Produzione invariata; nessuna APK sperimentale non configurata è stata pubblicata.
+
+Punto di ripresa operativo completo: [FreePT-PUNTO-RIPRESA-HTTPS-2026-11-19.md](FreePT-PUNTO-RIPRESA-HTTPS-2026-11-19.md).
