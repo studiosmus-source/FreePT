@@ -239,3 +239,13 @@ Dopo entrambi i login validi, la conferma account TEST abilita “Esegui end-to-
 - I 12 controlli HTTPS precedenti non ripetuti.
 
 **Ancora NON ESEGUITI:** E2E con admin Supabase valido, trasferimento live autorizzato, hash/claim live, telefono Oppo/Keystore hardware/SAF e aggiornamento in-place fisico. Nessuna nuova APK operativa pubblicata. Workflow Android staging storico ancora da consolidare soltanto dopo E2E riuscito come richiesto. Non modificare chat/push, Copia amministratore, accesso senza impronta o cartelle SAF per persona.
+
+## Autorizzazione nuovi account TEST — 19 novembre 2026
+
+L'utente ha dichiarato di non ricordare le credenziali e ha autorizzato esplicitamente due nuovi account di collaudo (admin e personale), senza modificare account esistenti o produzione. Il suo accesso personale non viene reimpostato.
+
+Preparato runner una tantum backend `bridge/stagingAuthE2E.mjs`, nessuna route HTTP di provisioning. Gate esatto `FREEPT_BRIDGE_AUTH_E2E=AUTH_E2E_NEW_FIXTURES_20261119_01`, solo progetto aqjuixbuxftnjfzxmzuj e console/Bootstrap staging espliciti. Usa il service credential già presente in Render soltanto nel processo, API ufficiale Auth Admin createUser per identità nuove con email fixture fisse, password casuali mai esportate e normale signInWithPassword/getUser. Un conflitto di account preesistente interrompe tutto: nessun reset/upsert/fallback. Provisiona solo il nuovo profilo admin autorizzato e, dopo la diagnostica, un nuovo profilo user pending; la sua approvazione usa la vera sessione admin e RLS, non UPDATE privilegiati per simulare approvazioni. Tutte le operazioni bootstrap passano dal gateway HTTPS reale con firme/nonce, trasferimento 300000 byte/hash/claim/revoca e conferma DB del grant esatto. Sessioni di prova invalidate a fine corsa; account fixture e dispositivo revocato conservati come evidenza, senza cancellazioni o cambi su utenti esistenti.
+
+Il runner pubblica soltanto un JSON di esito senza credenziali su `/test/server-e2e.json` quando il gate è abilitato. Nessuna chiamata pubblica può avviarlo o creare utenti. Disabilitare subito il gate dopo la prova; non rieseguire con email diverse senza verificare e registrare la necessità. Pass test automatici da riportare dopo esecuzione; E2E reale non ancora dichiarato riuscito prima della distribuzione/esito.
+
+Runner nuovi account: suite completa JavaScript **455/455 PASS**, 0 fail/skip; output `reports/FreePT-auth-fixtures-tests-2026-11-19.txt`.

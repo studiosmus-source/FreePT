@@ -6,6 +6,7 @@
  * Both explicit gates are required: staging Supabase and public HTTPS proxy.
  * In particular, FreePT production Supabase is rejected by shared validator.
  */
+import {authE2EEnabled,runStagingAuthE2E} from './stagingAuthE2E.mjs';
 import {stagingTestConsoleAssets,TEST_CONSOLE_ORIGIN} from './stagingTestConsole.mjs';
 import {createBootstrapHandler} from './bootstrapHandler.mjs';
 import {createClient} from '@supabase/supabase-js';
@@ -37,12 +38,18 @@ export function createBridgeStagingHttpsService({
   const bootstrap=env.FREEPT_BRIDGE_BOOTSTRAP==='STAGING_DEVICE_KEY_V1'
     ?createBootstrapHandler({authClient,db:serviceClient,enabled:true}):null;
   const staticAssets=stagingTestConsoleAssets(env,dbConfig);
+  const runAuthE2E=authE2EEnabled(env,dbConfig);
+  if(runAuthE2E&&!staticAssets)throw Error('auth_e2e_console_required');
+  const publish=report=>staticAssets.set('/test/server-e2e.json',{type:'application/json; charset=utf-8',body:JSON.stringify(report),csp:"default-src 'none'"});
+  if(runAuthE2E)publish({phase:'starting'});
   const config=staticAssets?{...httpConfig,origins:[...new Set([...httpConfig.origins,TEST_CONSOLE_ORIGIN])]}:httpConfig;
   const gateway=createBridgeHttpsGateway({admin,tx,owner,bootstrap,config,staticAssets});
   return Object.freeze({
     async start(){
       // Bound only to an ISOLATED managed proxy service that supplies HTTPS.
-      return gateway.start({host:'0.0.0.0',port:httpConfig.port});
+      const address=await gateway.start({host:'0.0.0.0',port:httpConfig.port});
+      if(runAuthE2E)void runStagingAuthE2E({config:dbConfig,publish}).then(r=>console.log('staging_auth_e2e',r.phase)).catch(()=>publish({phase:'failed',failure:'runner_failed',completeEndToEnd:false}));
+      return address;
     },
     stop:()=>gateway.stop()
   });
