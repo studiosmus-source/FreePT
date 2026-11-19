@@ -32,18 +32,24 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
   }
   check('Dedicated HTTPS gateway serves exact one-off run',ready);
   report.phase='provisioning_new_test_accounts';update();
-  // Roll back only the exact unconfigured Auth identity created by failed attempt 01.
-  // Never reset a password or select/delete an unrelated or configured account.
-  const failedId='c1a3e09a-0289-4559-9a08-827839e53dd7';
-  const failed=await db.auth.admin.getUserById(failedId);
-  if(failed.data?.user){
-   const u=failed.data.user;
-   const profile=await db.from('profiles').select('id').eq('id',failedId).maybeSingle();
-   check('Failed fixture rollback identity and no profile verified',u.id===failedId&&u.email==='freept-auth-e2e-admin-20261119-01@tests.freept.invalid'&&u.app_metadata?.freept_test_fixture===AUTH_E2E_RUN&&!profile.error&&profile.data===null);
-   const removal=await db.auth.admin.deleteUser(failedId);
+  // Discover only our exact orphaned fixture; never assume an old UUID still exists.
+  // Fail closed if the account list is incomplete or matches are ambiguous.
+  const listed=await db.auth.admin.listUsers({page:1,perPage:1000});
+  if(listed.error||!Array.isArray(listed.data?.users)||
+     listed.data.users.length>=1000)throw Error('fixture_cleanup_list_failed');
+  const orphanEmail='freept-auth-e2e-admin-20261119-01@tests.freept.invalid';
+  const orphaned=listed.data.users.filter(u=>u.email===orphanEmail);
+  if(orphaned.length>1)throw Error('fixture_cleanup_ambiguous');
+  if(orphaned.length===1){
+   const u=orphaned[0];
+   const profile=await db.from('profiles').select('id').eq('id',u.id).maybeSingle();
+   check('Failed fixture rollback identity and no profile verified',
+     u.app_metadata?.freept_test_fixture===AUTH_E2E_RUN &&
+     !profile.error&&profile.data===null);
+   const removal=await db.auth.admin.deleteUser(u.id);
    check('Only failed new unconfigured Auth fixture rolled back',!removal.error);
    report.failedProvisioningRolledBack=true;
-  }else if(failed.error&&failed.error.status!==404)throw Error('fixture_cleanup_lookup_failed');
+  }
   // Fixed names make restart fail closed on duplicate, without resetting an account.
   for(const [kind,client] of [['admin',admin],['user',user]]){
    const email='freept-auth-e2e-'+kind+'-20261119-01@tests.freept.invalid';
@@ -54,8 +60,8 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
    if(kind==='admin')adminId=id;else userId=id;
    // Provision only the newly returned admin id, never upsert or modify an existing id.
    if(kind==='admin'){
-    const p=await db.from('profiles').insert({id,full_name:'FreePT TEST E2E admin 20261119-01',phone:'+999202611190011',role:'admin',status:'approved'});
-    check('Provision only new authorized TEST admin profile',!p.error);
+    const p=await db.rpc('freept_auth_e2e_provision_fixture',{p_user_id:id,p_kind:'admin'});
+    check('Provision only new authorized TEST admin profile',!p.error&&p.data===true);
    }
    const login=await client.auth.signInWithPassword({email,password});password=undefined;
    check('Real Supabase password login '+kind,!login.error&&!!login.data?.session?.access_token);
@@ -94,8 +100,8 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
   const deviceSecret=randomBytes(32).toString('hex'),claim=()=>envelope('claim',{deviceSecret,accountProof:bootstrapHash(userToken)});
   r=await post('claim',claim(),userToken);check('Claim denied before personal registration',r.status===403);
   // Fixture provisioning creates pending registration. Actual approval below uses admin's RLS-bound session.
-  const registration=await db.from('profiles').insert({id:userId,full_name:'FreePT TEST E2E user 20261119-01',phone:'+999202611190012',role:'user',status:'pending'});
-  check('Only new TEST personal profile provisioned pending',!registration.error);
+  const registration=await db.rpc('freept_auth_e2e_provision_fixture',{p_user_id:userId,p_kind:'user'});
+  check('Only new TEST personal profile provisioned pending',!registration.error&&registration.data===true);
   r=await post('claim',claim(),userToken);check('Pending personal profile cannot claim',r.status===403);
   const approval=await admin.from('profiles').update({status:'approved'}).eq('id',userId).select('id,status');
   check('Actual authenticated admin approves personal profile under RLS',!approval.error&&approval.data?.length===1&&approval.data[0].id===userId&&approval.data[0].status==='approved');
