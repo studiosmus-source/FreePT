@@ -54,20 +54,10 @@ function diagnosticScreen(complete=()=>requestScreen()){
 }
 let bridgeClaimBusy=false;
 async function bindBootstrapAfterApproval(){
- if(bridgeClaimBusy||!bridgeBootstrap||profile?.role!=='user'||profile?.status!=='approved')return;
+ if(bridgeClaimBusy||!bridgeAutoSetup||profile?.role!=='user'||profile?.status!=='approved')return;
  bridgeClaimBusy=true;
- try{
-  if(bridgeAutoSetup){await bridgeAutoSetup.run();return;}
-  const local=await bridgeBootstrap.localStatus();
-  if(!local?.initialized||local.bound)return;
-  const tx=await bridgeTxControl.status();
-  if(!tx?.running)await bridgeTxControl.start();
-  const remote=await bridgeBootstrap.status();
-  if(remote?.verified!==true)return;
-  const {data,error}=await db.auth.getSession();
-  if(!error&&data?.session?.access_token)
-   await bridgeBootstrap.claim({accessToken:data.session.access_token});
- }catch{/* Bridge approval must not block chat. */}
+ try{await bridgeAutoSetup.run();}
+ catch{/* Retry at resume/poll; Bridge setup must not block chat. */}
  finally{bridgeClaimBusy=false;}
 }
 

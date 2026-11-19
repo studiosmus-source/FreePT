@@ -13,7 +13,11 @@ export function createBridgeAutoSetup({native,files,tx,owner,controls,getUser}={
   const permission=await files.status();
   if(!permission?.granted||!current())return;
   const state=await tx.status();
-  if(state?.paused||!current())return;
+  if(!current())return;
+  // Older onboarding called stop() when closing its consent screen. That
+  // flag belongs to the synthetic pre-account lane, before any file grant.
+  // Existing bound devices returned above keep their deliberate pause state.
+  if(state?.paused)await tx.start();
   const device=await owner.enroll('Dispositivo FreePT');
   if(!current())return;
   await controls.activateFamily(device.deviceId);

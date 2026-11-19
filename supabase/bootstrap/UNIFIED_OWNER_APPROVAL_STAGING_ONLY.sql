@@ -14,7 +14,7 @@ begin
  return new;
 end; $$;
 revoke all on function public.freept_record_approver() from public,anon,authenticated;
-create trigger freept_record_approver before update of status on public.profiles
+create or replace trigger freept_record_approver before update of status on public.profiles
 for each row execute function public.freept_record_approver();
 
 create or replace function public.bridge_owner_activate_family(p_device_id uuid)
@@ -32,8 +32,12 @@ begin
   where p.id=(select auth.uid()) and a.role='admin' and a.status='approved';
  if v_receiver is null then
   -- Historical installs retain the previous fail-closed unique-admin rule.
-  select array_agg(id) into v_admins from public.profiles
-   where role='admin' and status='approved';
+  -- Synthetic administrators must never become the implicit recipient for
+  -- an older real installation. Trusted fixture metadata is server-managed.
+  select array_agg(p.id) into v_admins from public.profiles p
+   join auth.users u on u.id=p.id
+   where p.role='admin' and p.status='approved'
+    and coalesce(u.raw_app_meta_data->>'freept_test_fixture','')='';
   if coalesce(array_length(v_admins,1),0)<>1 then
    raise exception 'bridge_unique_admin_required' using errcode='42501';
   end if;

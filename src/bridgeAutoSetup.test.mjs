@@ -18,10 +18,14 @@ function fixture(options={}){
 test('existing consent continues enrollment and grant before starting real file TX',async()=>{
  const f=fixture();await f.c.run();assert.deepEqual(f.calls,['enroll','grant','finish','start']);
 });
-test('no prompts or grants for missing consent, revoked permission, paused or bound devices',async()=>{
- for(const options of [{local:{initialized:false}},{permission:false},{paused:true},{local:{bound:true}},{pending:true}]){
+test('no prompts or grants for missing consent, revoked permission or bound devices',async()=>{
+ for(const options of [{local:{initialized:false}},{permission:false},{local:{bound:true}},{pending:true}]){
   const f=fixture(options);await f.c.run();assert.deepEqual(f.calls,[]);
  }
+});
+test('repair the old consent-screen stop flag only before account binding',async()=>{
+ const f=fixture({paused:true});await f.c.run();assert.deepEqual(f.calls,['start','enroll','grant','finish','start']);
+ const bound=fixture({paused:true,local:{bound:true}});await bound.c.run();assert.deepEqual(bound.calls,[]);
 });
 test('failed grant is retryable and never switches to file access',async()=>{
  const f=fixture({failGrant:true});await assert.rejects(f.c.run(),/offline/);
