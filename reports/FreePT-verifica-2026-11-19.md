@@ -145,3 +145,12 @@ Render non ha workspace selezionato. L'unico workspace elencato è **My Workspac
 Il blueprint/workflow staging storico punta a un vecchio ramo e il workflow aggiunge ancora un permesso biometrico: va consolidato prima di costruire la nuova APK sperimentale. I valori correnti dei secret GitHub/Render non sono stati letti o verificati. Produzione invariata; nessuna APK sperimentale non configurata è stata pubblicata.
 
 Punto di ripresa operativo completo: [FreePT-PUNTO-RIPRESA-HTTPS-2026-11-19.md](FreePT-PUNTO-RIPRESA-HTTPS-2026-11-19.md).
+
+
+## Workspace confermato — servizio test identificato, autenticazione pannello pendente
+
+Conferma utente ricevuta per My Workspace; servizio test reale identificato: `freept-bridge-staging`, ID `srv-dbo9t6lg1s2s73ejjtn0`, piano free, auto-deploy off, repo FreePT e ramo storico `feature/bridge-chunk-receiver-20261108`. Deploy live osservato `37eb2df491241581019c74d62019cea0fcd3bf44`; nuova richiesta `/health` riuscita con HTTP 200. Produzione/TX/OTA identificati separatamente e non modificati.
+
+Per cambiare il ramo occorre il pannello Render, poiché il connettore non espone tale impostazione. Il browser richiede login; nel flusso scelto dall'utente Google ha segnalato che la password era stata cambiata 5 mesi prima. Non sono stati eseguiti retry automatici né letti segreti. Autenticazione manuale protetta pendente.
+
+Nessun deploy o modifica infrastrutturale eseguiti; nessuna nuova APK o prova end-to-end attestata. Il [punto di ripresa](FreePT-PUNTO-RIPRESA-HTTPS-2026-11-19.md) contiene servizio, stato, limiti e azioni successive; non richiedere di nuovo la scelta del workspace già confermata.

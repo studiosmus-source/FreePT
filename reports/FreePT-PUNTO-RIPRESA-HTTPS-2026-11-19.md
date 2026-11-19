@@ -49,3 +49,44 @@ Dopo conferma:
 - Protocollo: `docs/BOOTSTRAP_PRE_ACCOUNT_V1.md`
 - Collaudo: `docs/COLLAUDO_OPPO_PRE_ACCOUNT_E_SAF.md`
 - Ultime prove storiche: Actions `44481137229`, `44481137277`, `44481037352`, con i limiti descritti nel rapporto.
+
+
+## Aggiornamento dopo conferma del workspace
+
+L'utente ha confermato My Workspace. Non chiedere nuovamente questa conferma.
+
+HEAD verificato all'inizio di questa fase: `f6ee1c695235d57e1ca310d274a9a9fc857627a0`.
+
+Servizio di test identificato da API Render:
+
+- Nome: `freept-bridge-staging`.
+- ID: `srv-dbo9t6lg1s2s73ejjtn0`.
+- Workspace confermato: `tea-daslui3ncjis73anu1v0`.
+- Repository: `https://github.com/studiosmus-source/FreePT`.
+- Ramo attualmente configurato: `feature/bridge-chunk-receiver-20261108`.
+- Comandi: `npm install --omit=dev`, `npm run bridge:serve:staging`.
+- Piano servizio: `free`, regione Frankfurt, autoDeploy `no`/trigger `off`, healthCheckPath configurato vuoto.
+- Deploy live osservato: `dep-dboq67bl550s73aiaiog`, commit `37eb2df491241581019c74d62019cea0fcd3bf44`.
+- URL: `https://freept-bridge-staging.onrender.com`.
+- Nuova richiesta HTTPS `/health`: HTTP **200** dopo attesa massima 55 secondi. I timeout precedenti non provavano un servizio assente.
+
+Servizi distinti che NON vanno modificati: `freept-bridge-production` (`srv-dbp2s20u01pc73dfv4lg`), `TX` (`srv-dbk7ab8473hc73frcdfg`), `freept-ota` (`srv-dbq0gfajnfac73enahr0`). Non modificare branch/configurazione/deploy di questi servizi.
+
+Nuova query aggregata Supabase test: 4 utenti Auth, 1 profilo admin approved e 3 profili user approved; bootstrap devices/nonces sempre 0. Non sono stati letti password/token né identificativi personali dei profili; non usare il conteggio come prova di credenziali di login disponibili.
+
+### Blocco attuale concreto
+
+Il connettore Render espone deploy e aggiornamento delle variabili, ma non il cambio ramo del servizio o la lettura dell'intera configurazione d'ambiente. Nessuna CLI Render o API key Render locale disponibile (verificata solo la presenza, nessun segreto stampato).
+
+Aperto il pannello del SOLO servizio staging per il cambio ramo, usando il fallback browser. Il browser non era autenticato. Attraverso la richiesta sicura l'utente ha scelto Render → GitHub → Google. Dopo l'invio protetto della password, Google ha mostrato **Your password was changed 5 months ago**; accesso non riuscito e nessun retry automatico.
+
+Il browser deve essere completato tramite handoff di autenticazione. Non chiedere password o OTP in chat, non ricostruire URL OAuth con parametri e non copiare cookie/sessioni in shell o strumenti. Dopo la ripresa verificare prima lo stato visibile del browser e il ritorno a Render; non dedurre il login da un popup chiuso.
+
+### Prossima azione dopo autenticazione riuscita
+
+1. Verificare che il pannello sia del servizio test `srv-dbo9t6lg1s2s73ejjtn0` nel workspace confermato. Preservare piano free e auto-deploy off.
+2. Preparare/controllare il cambio verso `work/unified-verified-20261119`, senza toccare il vecchio ramo GitHub o i servizi produzione. Verificare in sicurezza solo gli elementi di configurazione test necessari; non esporre service_role/secret.
+3. Prima del deploy verificare URL Supabase test esatto, validità credenziali backend e gate `FREEPT_BRIDGE_BOOTSTRAP=STAGING_DEVICE_KEY_V1`, origini native ammesse e health path. Se emerge una scelta di costo/nuova risorsa o una modifica fuori test, chiedere la decisione concreta all'utente.
+4. Riprendere l'end-to-end reale e la pipeline sperimentale come descritto sopra. Non usare il workflow staging storico con ramo obsoleto/biometria residua per pubblicare la nuova APK senza consolidarlo.
+
+Questa fase ha prodotto solo letture e tentativo di login. Nessun cambio ramo Render, deploy, variabile, ruolo, dato, nuova APK o prova Android end-to-end è stato eseguito. I risultati precedenti restano storici.
