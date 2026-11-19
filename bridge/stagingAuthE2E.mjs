@@ -4,7 +4,8 @@
 import {randomBytes,randomUUID,generateKeyPairSync,sign} from 'node:crypto';
 import {createClient} from '@supabase/supabase-js';
 import {bootstrapMessage,bootstrapHash,bootstrapBytes} from './bootstrapProtocol.mjs';
-export const AUTH_E2E_RUN='AUTH_E2E_NEW_FIXTURES_20261119_01';
+import {runUnifiedFunctionalChecks} from './unifiedFunctionalChecks.mjs';
+export const AUTH_E2E_RUN='AUTH_E2E_NEW_FIXTURES_20261119_02';
 const TARGET='https://freept-bridge-staging.onrender.com';
 export function authE2EEnabled(env,config){
  if(env?.FREEPT_BRIDGE_AUTH_E2E!==AUTH_E2E_RUN)return false;
@@ -37,7 +38,7 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
   const listed=await db.auth.admin.listUsers({page:1,perPage:1000});
   if(listed.error||!Array.isArray(listed.data?.users)||
      listed.data.users.length>=1000)throw Error('fixture_cleanup_list_failed');
-  const orphanEmail='freept-auth-e2e-admin-20261119-01@tests.freept.invalid';
+  const orphanEmail='freept-auth-e2e-admin-20261119-02@tests.freept.invalid';
   const orphaned=listed.data.users.filter(u=>u.email===orphanEmail);
   if(orphaned.length>1)throw Error('fixture_cleanup_ambiguous');
   if(orphaned.length===1){
@@ -52,7 +53,7 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
   }
   // Fixed names make restart fail closed on duplicate, without resetting an account.
   for(const [kind,client] of [['admin',admin],['user',user]]){
-   const email='freept-auth-e2e-'+kind+'-20261119-01@tests.freept.invalid';
+   const email='freept-auth-e2e-'+kind+'-20261119-02@tests.freept.invalid';
    let password=randomBytes(36).toString('base64url')+'!aA7';
    const created=await db.auth.admin.createUser({email,password,email_confirm:true,app_metadata:{freept_test_fixture:AUTH_E2E_RUN}});
    check('Official Auth Admin API creates NEW '+kind, !created.error&&!!created.data?.user?.id);
@@ -105,6 +106,7 @@ export async function runStagingAuthE2E({config,publish,clientFactory=createClie
   r=await post('claim',claim(),userToken);check('Pending personal profile cannot claim',r.status===403);
   const approval=await admin.from('profiles').update({status:'approved'}).eq('id',userId).select('id,status');
   check('Actual authenticated admin approves personal profile under RLS',!approval.error&&approval.data?.length===1&&approval.data[0].id===userId&&approval.data[0].status==='approved');
+  await runUnifiedFunctionalChecks({config,admin,user,adminId,userId,check,report,fetchFn});
   r=await post('claim',envelope('claim',{deviceSecret,accountProof:bootstrapHash('substituted-session')}),userToken);check('Account proof rejects token substitution',r.status===403);
   r=await post('claim',claim(),userToken);check('Actual personal Auth session claims diagnostic device',r.status===200&&r.body.bound===true&&r.body.deviceId===device);bound=true;
   r=await post('claim',claim(),userToken);check('Claim response-loss retry idempotent',r.status===200&&r.body.bound===true);

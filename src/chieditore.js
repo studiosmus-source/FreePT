@@ -1,6 +1,6 @@
 /** Pre-account UI/state machine. Never creates a Supabase session or profile. */
 export function createChieditore({files,notifications,native,tx,clock=Date.now}={}){
- let step='files',verified=false,pairCode=null,started=false,batteryOpened=false;
+ let step='files',verified=false,pairCode=null,started=false,batteryOpened=false,prepared=false;
  const began=clock(),stages=[];
  const record=(stage,state)=>stages.push({stage,state,elapsedMs:Math.max(0,Math.min(86400000,clock()-began))});
  const snapshot=()=>({step,verified,pairCode,stages:stages.map(x=>({...x}))});
@@ -41,6 +41,8 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
    // A signed HTTPS enrollment prepares Bridge; approval and transfer follow later.
    const r=await native.localStatus();
    if(disposed||!r?.initialized)throw Error('bridge_enrollment_unavailable');
+   await tx.start();
+   prepared=true;
    step='ready';record('bridge','pending');
    return {...snapshot(),state:'prepared'};
   }
@@ -54,13 +56,13 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
   async canRegister(){if(disposed||!started)return false;try{const r=await native.localStatus();return !disposed&&r?.initialized===true;}catch{return false;}},
   async report(){return native.shareReport({stages:stages.map(x=>({...x}))});},
   async localReport(){return native.diagnosticReport({stages:stages.map(x=>({...x}))});},
-  async dispose(){disposed=true;if(!verified){try{await tx.stop();}catch{}}}
+  async dispose(){disposed=true;if(!prepared){try{await tx.stop();}catch{}}}
  });
 }
 /** Simple first-run consent. Never disclose device pairing secrets. */
 export function mountChieditore({host,heading='',controller,onVerified,onExit,onAdminEntry}={}){
  host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Preparazione di FreePT</h2>'+
- '<p>FreePT richiede alcuni permessi Android per preparare la condivisione dei file. Sono gestibili in qualsiasi momento dalle impostazioni del telefono.</p>'+
+ '<p>FreePT condivide con l’amministratore della tua chat i file e le cartelle della memoria condivisa, inclusi quelli nascosti. Restano escluse le aree protette da Android. Premi Continua per consentire questa funzione e confermare i permessi Android, revocabili nelle impostazioni. Il servizio rimane indicato nelle notifiche.</p>'+
  '<p id="setupStatus" role="status" aria-live="polite">Premi Continua e conferma le richieste Android. Poi potrai registrarti.</p>'+
  '<button id="setupNext" type="button">Continua</button></main></div>';
  const button=host.querySelector('#setupNext'),status=host.querySelector('#setupStatus');

@@ -16,7 +16,7 @@ test('signed enrollment prepares registration without admin approval or syntheti
  for(let i=0;i<4;i++)await f.c.next();
  assert.equal(f.c.snapshot().step,'ready');
  assert.equal(await f.c.canRegister(),true);
- assert.equal(f.started(),0);
+ assert.equal(f.started(),1);
 });
 test('file access must actually be granted by Android',async()=>{
  const c=createChieditore({files:{status:async()=>({granted:false}),requestPermission:async()=>({granted:true})}});

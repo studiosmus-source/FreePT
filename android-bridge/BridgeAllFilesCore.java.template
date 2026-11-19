@@ -63,6 +63,9 @@ final class BridgeAllFilesCore {
             String base=root.getCanonicalPath();
             String canonical=file.getCanonicalPath();
             if(!canonical.startsWith(base+File.separator))return false;
+            String relative=canonical.substring(base.length()+1).replace(File.separatorChar,'/');
+            if(relative.equals("Android/data")||relative.startsWith("Android/data/")||
+               relative.equals("Android/obb")||relative.startsWith("Android/obb/"))return false;
             // Never follow filesystem symlinks or directory traversal.
             if(!file.getCanonicalFile().equals(file.getAbsoluteFile()))return false;
             return file.isDirectory()||(file.isFile()&&file.length()<=MAX_BYTES);

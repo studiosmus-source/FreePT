@@ -59,6 +59,19 @@ public class BridgeBootstrapPlugin extends Plugin {
   r.put("initialized",BridgeBootstrapCore.configured(getContext())||BridgeBootstrapCore.bound(getContext()));
   r.put("bound",BridgeBootstrapCore.bound(getContext()));call.resolve(r);
  }
+ @PluginMethod public void finishOwnerEnrollment(PluginCall call){
+  getBridge().execute(()->{
+   try{
+    // Credentials were issued by the authenticated owner enrollment endpoint.
+    // This flag switches transport lanes; it grants no server-side access.
+    if(!BridgeBootstrapCore.enabled(getContext())||!BridgeAllFilesCore.granted()||
+       !BridgeDeviceSecretStore.configured(getContext()))throw new SecurityException();
+    if(!getContext().getSharedPreferences("freept_bootstrap_v1",0).edit()
+       .putBoolean("bound",true).commit())throw new java.io.IOException();
+    call.resolve(new JSObject().put("bound",true));
+   }catch(Exception error){call.reject("bridge_owner_setup_incomplete");}
+  });
+ }
  private JSObject batteryStatus(){
   PowerManager p=(PowerManager)getContext().getSystemService(android.content.Context.POWER_SERVICE);
   JSObject r=new JSObject();r.put("unrestricted",Build.VERSION.SDK_INT<23||p!=null&&p.isIgnoringBatteryOptimizations(getContext().getPackageName()));

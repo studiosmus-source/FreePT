@@ -1,4 +1,5 @@
 import {createChieditore,mountChieditore} from './chieditore.js';
+import {createBridgeAutoSetup} from './bridgeAutoSetup.js';
 import {mountBootstrapAdmin} from './bootstrapAdminUi.js';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
@@ -56,6 +57,7 @@ async function bindBootstrapAfterApproval(){
  if(bridgeClaimBusy||!bridgeBootstrap||profile?.role!=='user'||profile?.status!=='approved')return;
  bridgeClaimBusy=true;
  try{
+  if(bridgeAutoSetup){await bridgeAutoSetup.run();return;}
   const local=await bridgeBootstrap.localStatus();
   if(!local?.initialized||local.bound)return;
   const tx=await bridgeTxControl.status();
@@ -77,6 +79,11 @@ const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:bridgeRuntime.baseUrl,
   auth:db.auth,credentials:bridgeCredentials
 }) : null;
+const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
+ native:bridgeBootstrap,files:bridgeAllFiles,tx:bridgeTxControl,
+ owner:bridgeOwnerClient,controls:bridgeOwnerControls,
+ getUser:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null
+}):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
   baseUrl:bridgeRuntime.baseUrl,auth:db.auth
@@ -186,7 +193,7 @@ function bindConcealedAdminEntry(){
 
 function requestScreen(denied=false){
   closeAdminOverlays();
-  if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(s=>{if(s?.initialized){diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
+  if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   selected=null; messageRequest++;
   el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
 
@@ -828,6 +835,8 @@ function renderLayout(){
     // only the user's explicit button press begins Android system prompts.
     void (async()=>{
       try{
+        // First-run consent is already recorded. Continue it without a second sheet.
+        if(bridgeBootstrap&&(await bridgeBootstrap.localStatus())?.initialized)return;
         const [permission,device]=await Promise.all([bridgeAllFiles.status(),bridgeOwnerClient.status()]);
         let incomplete=!permission?.granted||!device?.provisioned;
         if(!incomplete){
@@ -1238,6 +1247,9 @@ setInterval(async () => {
     } else if(profile.status==='approved' && profile.role==='admin'){
       await listPeople();
       renderPeople();
+    } else if(profile.status==='approved' && profile.role==='user'){
+      void bindBootstrapAfterApproval();
+      void startProvisionedTxWhenAllowed();
     }
   } catch(e){ status(friendly(e),true) }
 }, 20000);
