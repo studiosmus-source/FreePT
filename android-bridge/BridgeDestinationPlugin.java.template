@@ -55,7 +55,7 @@ public class BridgeDestinationPlugin extends Plugin {
     private boolean validName(String name){
         return name!=null&&name.length()>=1&&name.length()<=255&&
             !name.equals(".")&&!name.equals("..")&&
-            !name.matches(".*[\\\\/\\p{Cntrl}].*");
+            !name.matches("(?s).*[\\\\/\\p{Cntrl}].*");
     }
 
     /**
@@ -107,7 +107,8 @@ public class BridgeDestinationPlugin extends Plugin {
     private boolean documentMatches(Uri uri,String mime,Long size) throws Exception {
         try(Cursor c=getContext().getContentResolver().query(uri,
             new String[]{DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE},null,null,null)){
-            return c!=null&&c.moveToFirst()&&(mime==null||mime.equals(c.getString(0)))&&
+            if(c==null)throw new IllegalStateException("bridge_destination_provider_unavailable");
+            return c.moveToFirst()&&(mime==null||mime.equals(c.getString(0)))&&
                 (size==null||(!c.isNull(1)&&c.getLong(1)==size));
         }
     }
@@ -126,7 +127,7 @@ public class BridgeDestinationPlugin extends Plugin {
             }
         }
         Uri made=DocumentsContract.createDocument(getContext().getContentResolver(),parent,mime,requested);
-        if(made==null||ids.contains(DocumentsContract.getDocumentId(made)))
+        if(made==null||DocumentsContract.getDocumentId(parent).equals(DocumentsContract.getDocumentId(made))||ids.contains(DocumentsContract.getDocumentId(made)))
             throw new IllegalStateException("bridge_destination_existing_document_returned");
         try(Cursor c=getContext().getContentResolver().query(made,
             new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE},null,null,null)){
@@ -251,7 +252,11 @@ public class BridgeDestinationPlugin extends Plugin {
                 destination=DocumentsContract.buildDocumentUriUsingTree(
                     uri,DocumentsContract.getTreeDocumentId(uri));
                 try{if(documentMatches(destination,DocumentsContract.Document.MIME_TYPE_DIR,null)){recoverPending();return;}}
-                catch(Exception ignored){}
+                catch(Exception unavailable){
+                    // Retain the persisted grant on a transient provider outage;
+                    // beginning a transfer still fails closed on native queries.
+                    return;
+                }
                 destination=null;
             }
         }
@@ -262,7 +267,7 @@ public class BridgeDestinationPlugin extends Plugin {
     public synchronized void getDestination(PluginCall call){
         restore();
         JSObject result=new JSObject();
-        result.put("selected",destination!=null&&!recoveryBlocked);
+        result.put("selected",destination!=null);
         result.put("recoveryPending",recoveryBlocked);
         call.resolve(result);
     }

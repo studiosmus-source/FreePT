@@ -7,6 +7,7 @@ on:
       - feature/bridge-chunk-receiver-20261108
       - work/unified-verified-20261119
     paths:
+      - 'android-bridge/**'
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
@@ -21,6 +22,7 @@ on:
       - '.github/workflows/bridge-checks.yml'
   pull_request:
     paths:
+      - 'android-bridge/**'
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
