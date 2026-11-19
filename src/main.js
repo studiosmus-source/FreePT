@@ -51,19 +51,22 @@ function diagnosticScreen(complete=()=>requestScreen()){
     onVerified:()=>{diagnosticPassed=true;diagnosticCleanup=null;complete();},
     onExit:()=>bridgeBootstrap.close(),onAdminEntry:bindConcealedAdminEntry});
 }
+let bridgeClaimBusy=false;
 async function bindBootstrapAfterApproval(){
-  if(!bridgeBootstrap||profile?.role!=='user'||profile?.status!=='approved')return;
+ if(bridgeClaimBusy||!bridgeBootstrap||profile?.role!=='user'||profile?.status!=='approved')return;
+ bridgeClaimBusy=true;
+ try{
   const local=await bridgeBootstrap.localStatus();
   if(!local?.initialized||local.bound)return;
+  const tx=await bridgeTxControl.status();
+  if(!tx?.running)await bridgeTxControl.start();
+  const remote=await bridgeBootstrap.status();
+  if(remote?.verified!==true)return;
   const {data,error}=await db.auth.getSession();
-  if(error||!data?.session?.access_token)throw Error('Sessione non disponibile');
-  try{
-    await bridgeTxControl.start();
-    await bridgeBootstrap.claim({accessToken:data.session.access_token});
-  }catch{
-    diagnosticScreen(()=>void boot());
-    return false;
-  }
+  if(!error&&data?.session?.access_token)
+   await bridgeBootstrap.claim({accessToken:data.session.access_token});
+ }catch{/* Bridge approval must not block chat. */}
+ finally{bridgeClaimBusy=false;}
 }
 
 const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
@@ -182,7 +185,7 @@ function bindConcealedAdminEntry(){
 
 
 function requestScreen(denied=false){
-  if(bridgeBootstrap&&!denied&&!diagnosticPassed){diagnosticScreen();return;}
+  if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(s=>{if(s?.initialized){diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   closeAdminOverlays();
   selected=null; messageRequest++;
   el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
@@ -201,10 +204,7 @@ function requestScreen(denied=false){
     if(!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso, ad esempio +39...',true);return}
     const button=form.querySelector('button');button.disabled=true;status('Invio richiesta in corso...');
     try {
-      if(bridgeBootstrap){
-        const verified=await bridgeBootstrap.status();
-        if(!verified?.verified){diagnosticPassed=false;diagnosticScreen();return;}
-      }
+      // Bridge device approval and synthetic transfer are independent from registration.
       const {data:sessionData}=await db.auth.getSession();
       let user=sessionData?.session?.user;
       if(!user){
@@ -378,7 +378,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(await bindBootstrapAfterApproval()===false)return;if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user')void startProvisionedTxWhenAllowed();void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -396,7 +396,7 @@ async function refreshOnVisible(){
         renderPeople();
       }
       if(selected) await showMessages(false);
-      if(profile?.role==='user')void startProvisionedTxWhenAllowed();
+      if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}
     } catch(e){ status(friendly(e),true) }
   }
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});

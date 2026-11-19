@@ -36,15 +36,13 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
     const r=await native.begin();pairCode=r?.pairCode||null;
     if(typeof pairCode!=='string'||!/^[0-9a-f]{12}$/.test(pairCode))throw Error('diagnostic_invalid_response');
     if(disposed)throw Error('diagnostic_closed');
-    started=true;await tx.start();
-    if(disposed){await tx.stop();throw Error('diagnostic_closed');}
+    started=true;
    }
-   const r=await native.status();
-   // A foreground-service flag is never an acceptance criterion.
-   if(disposed)throw Error('diagnostic_closed');
-   verified=r?.verified===true;
-   record(step,verified?'verified':'pending');
-   return {...snapshot(),state:verified?'verified':'pending'};
+   // A signed HTTPS enrollment prepares Bridge; approval and transfer follow later.
+   const r=await native.localStatus();
+   if(disposed||!r?.initialized)throw Error('bridge_enrollment_unavailable');
+   step='ready';record('bridge','pending');
+   return {...snapshot(),state:'prepared'};
   }
   throw Error('diagnostic_invalid_step');
  }
@@ -53,72 +51,41 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
    if(pending)return pending;
    pending=advance().catch(error=>{record(step,'error');if(step==='bridge')started=false;throw error;}).finally(()=>{pending=null;});return pending;
   },
-  async canRegister(){if(!verified||disposed)return false;try{const r=await native.status();verified=r?.verified===true;return !disposed&&verified;}catch{verified=false;return false;}},
+  async canRegister(){if(disposed||!started)return false;try{const r=await native.localStatus();return !disposed&&r?.initialized===true;}catch{return false;}},
   async report(){return native.shareReport({stages:stages.map(x=>({...x}))});},
   async localReport(){return native.diagnosticReport({stages:stages.map(x=>({...x}))});},
   async dispose(){disposed=true;if(!verified){try{await tx.stop();}catch{}}}
  });
 }
+/** Simple first-run consent. Never disclose device pairing secrets. */
 export function mountChieditore({host,heading='',controller,onVerified,onExit,onAdminEntry}={}){
- host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Preparazione del telefono</h2><p id="diagnosticProgress" class="small"></p><h3 id="diagnosticName"></h3><p id="diagnosticHelp"></p><p id="diagnosticState" role="status" aria-live="polite"></p><div class="form"><button id="diagnosticNext" type="button">Continua</button><button id="diagnosticReport" type="button">Visualizza rapporto</button><button id="diagnosticShare" type="button">Condividi file JSON</button><pre id="diagnosticOutput" tabindex="0" hidden></pre><button id="diagnosticClose" type="button">Chiudi diagnostica</button></div></main></div>';
- const name=host.querySelector('#diagnosticName'),status=host.querySelector('#diagnosticState'),next=host.querySelector('#diagnosticNext'),report=host.querySelector('#diagnosticReport');
- const help=host.querySelector('#diagnosticHelp'),progress=host.querySelector('#diagnosticProgress'),close=host.querySelector('#diagnosticClose');
- const output=host.querySelector('#diagnosticOutput'),share=host.querySelector('#diagnosticShare');
- let active=true,busy=false,timer=null,polls=0;
- const order=['files','notifications','battery','bridge'];
- const names={files:'Accesso ai file',notifications:'Notifiche',battery:'Batteria',bridge:'Collegamento Bridge'};
- const explanation={
-  files:'Concedi l’accesso richiesto da Android solo se vuoi attivare la condivisione dei file tramite Bridge.',
-  notifications:'Autorizza le notifiche per ricevere gli avvisi e mantenere visibile il servizio.',
-  battery:'Controlla le impostazioni della batteria. Alcune limitazioni del telefono non possono essere verificate automaticamente.',
-  bridge:'Il telefono genera un codice: chi amministra FreePT deve inserirlo nel pannello Bridge della propria app, poi autorizzare il dispositivo. Non serve ancora il tuo nome o numero.'
- };
- const stopPolling=()=>{clearTimeout(timer);timer=null;};
- const draw=(state='Da verificare')=>{
-  const s=controller.snapshot();name.textContent=names[s.step]||'Verifica';
-  progress.textContent='Passaggio '+(order.indexOf(s.step)+1)+' di 4';
-  help.textContent=explanation[s.step]||'';
-  const code=s.pairCode&&!s.verified?s.pairCode.toUpperCase():null;
-  status.textContent=state+(code?' — Codice da comunicare all’amministratore: '+code:'');
-  next.hidden=!!s.verified;
-  next.textContent=s.step==='bridge'?'Riprova verifica':'Continua';
-  close.textContent=s.verified?'Concludi e prosegui':'Chiudi diagnostica';
- };
- const later=()=>{if(active&&!busy&&controller.snapshot().step==='bridge'&&polls<12)timer=setTimeout(run,5000);};
- async function run(){
-  if(!active||busy)return;busy=true;next.disabled=true;stopPolling();
+ host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Preparazione di FreePT</h2>'+
+ '<p>FreePT richiede alcuni permessi Android per preparare la condivisione dei file. Sono gestibili in qualsiasi momento dalle impostazioni del telefono.</p>'+
+ '<p id="setupStatus" role="status" aria-live="polite">Premi Continua e conferma le richieste Android. Poi potrai registrarti.</p>'+
+ '<button id="setupNext" type="button">Continua</button></main></div>';
+ const button=host.querySelector('#setupNext'),status=host.querySelector('#setupStatus');
+ let active=true,busy=false;
+ const help={files:'Conferma il permesso per i file in Android.',notifications:'Conferma le notifiche in Android.',
+  battery:'Controllo delle impostazioni della batteria…',bridge:'Preparazione del collegamento protetto…'};
+ async function proceed(){
+  if(!active||busy)return;busy=true;button.disabled=true;
   try{
-   const previous=controller.snapshot().step;
-   const r=await controller.next();if(!active)return;
-   draw(r.step!==previous?'Da verificare':({denied:'Permesso non concesso: controlla le impostazioni e riprova.',granted:'Verificato',restricted:'Limitazione batteria rilevata; ColorOS non è sempre verificabile.',pending:'In attesa dell’autorizzazione amministratore o del trasferimento diagnostico.',verified:'Verificato'})[r.state]||'Stato da verificare');
-   if(previous==='bridge'&&r.step==='bridge'&&!r.verified){
-    polls+=1;
-    if(polls>=12)status.textContent+=' Verifica automatica sospesa: premi Riprova verifica o esporta il rapporto.';
+   for(let n=0;n<4&&active;n++){
+    const stage=controller.snapshot().step;
+    if(stage==='ready')break;
+    status.textContent=help[stage]||'Preparazione in corso…';
+    const r=await controller.next();
+    if(!active)return;
+    if(r.state==='denied'){status.textContent='Il permesso non è stato concesso. Premi Riprova quando sei pronto.';return;}
    }
-  }catch{
-   if(active){draw('Errore durante la verifica. Esporta il rapporto diagnostico per identificare il problema.');polls=12;}
-  }finally{busy=false;if(active){next.disabled=false;if(polls>0&&polls<12)later();}}
+   if(!active)return;
+   if(await controller.canRegister()){
+    active=false;await controller.dispose();onVerified();
+   }else status.textContent='Preparazione incompleta. Premi Riprova.';
+  }catch{if(active)status.textContent='Preparazione non riuscita. Controlla Internet e premi Riprova.';}
+  finally{busy=false;if(active){button.disabled=false;button.textContent='Riprova';}}
  }
- next.onclick=()=>{if(polls>=12)polls=0;void run();};
- report.onclick=()=>void controller.localReport().then(data=>{
-  if(!active)return;
-  output.textContent=JSON.stringify(data,null,2);
-  output.hidden=false;
-  status.textContent='Rapporto diagnostico visualizzato qui sotto. Puoi selezionare e copiare il testo.';
- }).catch(()=>{if(active)status.textContent='Rapporto nativo non disponibile (diagnostic_unavailable).';});
- share.onclick=()=>void controller.report().catch(()=>{
-  if(active){status.textContent='Condivisione Android non disponibile. Premi Visualizza rapporto per leggere il JSON qui.';}
- });
- close.onclick=async()=>{
-  if(busy||!active)return;busy=true;next.disabled=true;stopPolling();
-  try{
-   const ready=await controller.canRegister();if(!active)return;
-   if(ready){active=false;await controller.dispose();onVerified();}
-   else{active=false;await controller.dispose();await onExit();}
-  }catch{
-   if(active){busy=false;next.disabled=false;draw('Chiusura non riuscita: riprova oppure esporta il rapporto.');}
-  }
- };
- if(onAdminEntry)onAdminEntry();draw();
- return ()=>{active=false;stopPolling();void controller.dispose();};
+ button.onclick=()=>void proceed();
+ if(onAdminEntry)onAdminEntry();
+ return ()=>{active=false;void controller.dispose();};
 }

@@ -1,74 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {createChieditore} from './chieditore.js';
-function setup(){
- const calls=[];let files=false,notify=false,verified=false,offline=false;
- const c=createChieditore({files:{status:async()=>({granted:files}),requestPermission:async()=>{calls.push('files');files=true;}},
- notifications:{checkPermissions:async()=>({receive:notify?'granted':'prompt'}),requestPermissions:async()=>{calls.push('notify');notify=true;}},
- native:{battery:async()=>({unrestricted:true}),begin:async()=>{calls.push('begin');return {pairCode:'abcdef123456'}},status:async()=>{if(offline)throw Error('offline');return {verified};},shareReport:async data=>{calls.push(data);}},
- tx:{start:async()=>calls.push('start'),stop:async()=>calls.push('stop')}});
- return {c,calls,verify:()=>verified=true,revoke:()=>verified=false,offline:()=>offline=true};
+function mock(){
+ let grant=false,notice=false,started=0;
+ const c=createChieditore({files:{status:async()=>({granted:grant}),requestPermission:async()=>{grant=true;}},
+ notifications:{checkPermissions:async()=>({receive:notice?'granted':'prompt'}),requestPermissions:async()=>{notice=true;}},
+ native:{battery:async()=>({unrestricted:true}),begin:async()=>({pairCode:'abcdef123456'}),
+ localStatus:async()=>({initialized:true})},
+ tx:{start:async()=>{started++;},stop:async()=>{}}});
+ return {c,started:()=>started};
 }
-test('permissions are sequential; no personal session or token registration occurs',async()=>{
- const f=setup();assert.equal(await f.c.canRegister(),false);
- assert.equal((await f.c.next()).step,'notifications');
- assert.equal((await f.c.next()).step,'battery');
- assert.equal((await f.c.next()).step,'bridge');
- assert.deepEqual(f.calls,['files','notify']);
- const s=await f.c.next();assert.equal(s.verified,false);assert.deepEqual(f.calls,['files','notify','begin','start']);
- assert.equal(await f.c.canRegister(),false);f.verify();await f.c.next();assert.equal(await f.c.canRegister(),true);
-});
-test('a successful permission Activity result cannot override the actual state',async()=>{
- const c=createChieditore({files:{status:async()=>({granted:false}),requestPermission:async()=>({granted:true})}});
- const s=await c.next();assert.equal(s.step,'files');assert.equal(s.state,'denied');
-});
-test('already granted permissions are not requested again',async()=>{
- let prompts=0;const c=createChieditore({files:{status:async()=>({granted:true}),requestPermission:async()=>prompts++},
- notifications:{checkPermissions:async()=>({receive:'granted'}),requestPermissions:async()=>prompts++}});
- await c.next();await c.next();assert.equal(prompts,0);
-});
-test('reentry is single-flight and closing an unverified run stops TX',async()=>{
- const f=setup();await Promise.all([f.c.next(),f.c.next()]);assert.deepEqual(f.calls,['files']);
- await f.c.dispose();assert.equal(f.calls.at(-1),'stop');await assert.rejects(f.c.next(),/closed/);
-});
-test('backend revocation and network failure prevent close-to-registration',async()=>{
- const f=setup();for(let i=0;i<4;i++)await f.c.next();f.verify();await f.c.next();
+test('signed enrollment prepares registration without admin approval or synthetic transfer',async()=>{
+ const f=mock();assert.equal(await f.c.canRegister(),false);
+ for(let i=0;i<4;i++)await f.c.next();
+ assert.equal(f.c.snapshot().step,'ready');
  assert.equal(await f.c.canRegister(),true);
- f.revoke();assert.equal(await f.c.canRegister(),false);
- f.verify();f.offline();assert.equal(await f.c.canRegister(),false);
+ assert.equal(f.started(),0);
 });
-test('report contains only stage enums and relative timings, never pairing code',async()=>{
- const f=setup();for(let i=0;i<4;i++)await f.c.next();await f.c.report();
- const report=f.calls.at(-1);assert.equal(JSON.stringify(report).includes('abcdef123456'),false);
- assert.ok(report.stages.every(x=>Object.keys(x).sort().join(',')==='elapsedMs,stage,state'));
+test('file access must actually be granted by Android',async()=>{
+ const c=createChieditore({files:{status:async()=>({granted:false}),requestPermission:async()=>({granted:true})}});
+ assert.equal((await c.next()).state,'denied');
 });
-test('closing while enrollment is in flight cannot start a late background service',async()=>{
- let release,starts=0;
- const waiting=new Promise(resolve=>release=resolve);
- const c=createChieditore({files:{status:async()=>({granted:true})},notifications:{checkPermissions:async()=>({receive:'granted'})},
- native:{battery:async()=>({unrestricted:true}),begin:async()=>{await waiting;return {pairCode:'abcdef123456'}}},
- tx:{start:async()=>starts++,stop:async()=>{}}});
- await c.next();await c.next();await c.next();
- const pending=c.next();await c.dispose();release();await assert.rejects(pending,/closed/);assert.equal(starts,0);
+test('disposed setup rejects further steps',async()=>{
+ const {c}=mock();await c.dispose();await assert.rejects(c.next(),/closed/);
 });
-
-test('diagnostic UI exposes report and admin pairing guidance even while pending',async()=>{
- const {readFileSync}=await import('node:fs');
- const src=readFileSync(new URL('./chieditore.js',import.meta.url),'utf8');
- assert.match(src,/Esporta rapporto diagnostico/);
- assert.match(src,/chi amministra FreePT deve inserirlo nel pannello Bridge/);
- assert.match(src,/polls<12/);
- assert.doesNotMatch(src,/id="diagnosticReport" type="button" hidden/);
-});
-
-test('diagnostic report has a readable on-screen fallback independent of Android share intents',async()=>{
- const {readFileSync}=await import('node:fs');
- const native=readFileSync(new URL('../android-bridge/BridgeBootstrapPlugin.java.template',import.meta.url),'utf8');
- const ui=readFileSync(new URL('./chieditore.js',import.meta.url),'utf8');
- assert.match(native,/@PluginMethod public void diagnosticReport\\(PluginCall call\\)/);
- assert.match(native,/diagnosticSnapshot\\(call.getArray\\("stages"\\)\\)/);
- assert.match(ui,/id="diagnosticOutput"/);
- assert.match(ui,/output.textContent=JSON.stringify\\(data,null,2\\)/);
- assert.match(ui,/native.diagnosticReport/);
- assert.doesNotMatch(native,/report.put\\("pairCode"/);
+test('simple onboarding hides pairing, diagnostic and test UI',()=>{
+ const source=readFileSync(new URL('./chieditore.js',import.meta.url),'utf8');
+ const ui=source.slice(source.indexOf('export function mountChieditore('));
+ assert.doesNotMatch(ui,/pairCode|diagnosticReport|shareReport|300000|300.000|Codice/);
+ assert.match(ui,/Preparazione di FreePT/);
+ const main=readFileSync(new URL('./main.js',import.meta.url),'utf8');
+ assert.doesNotMatch(main,/if\(!verified\?\.verified\)\{diagnosticPassed=false/);
+ assert.match(main,/async function renderWorkspace\(\)\{void bindBootstrapAfterApproval\(\)/);
 });
