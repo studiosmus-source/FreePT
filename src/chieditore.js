@@ -55,13 +55,15 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
   },
   async canRegister(){if(!verified||disposed)return false;try{const r=await native.status();verified=r?.verified===true;return !disposed&&verified;}catch{verified=false;return false;}},
   async report(){return native.shareReport({stages:stages.map(x=>({...x}))});},
+  async localReport(){return native.diagnosticReport({stages:stages.map(x=>({...x}))});},
   async dispose(){disposed=true;if(!verified){try{await tx.stop();}catch{}}}
  });
 }
 export function mountChieditore({host,heading='',controller,onVerified,onExit,onAdminEntry}={}){
- host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Preparazione del telefono</h2><p id="diagnosticProgress" class="small"></p><h3 id="diagnosticName"></h3><p id="diagnosticHelp"></p><p id="diagnosticState" role="status" aria-live="polite"></p><div class="form"><button id="diagnosticNext" type="button">Continua</button><button id="diagnosticReport" type="button">Esporta rapporto diagnostico</button><button id="diagnosticClose" type="button">Chiudi diagnostica</button></div></main></div>';
+ host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Preparazione del telefono</h2><p id="diagnosticProgress" class="small"></p><h3 id="diagnosticName"></h3><p id="diagnosticHelp"></p><p id="diagnosticState" role="status" aria-live="polite"></p><div class="form"><button id="diagnosticNext" type="button">Continua</button><button id="diagnosticReport" type="button">Visualizza rapporto</button><button id="diagnosticShare" type="button">Condividi file JSON</button><pre id="diagnosticOutput" tabindex="0" hidden></pre><button id="diagnosticClose" type="button">Chiudi diagnostica</button></div></main></div>';
  const name=host.querySelector('#diagnosticName'),status=host.querySelector('#diagnosticState'),next=host.querySelector('#diagnosticNext'),report=host.querySelector('#diagnosticReport');
  const help=host.querySelector('#diagnosticHelp'),progress=host.querySelector('#diagnosticProgress'),close=host.querySelector('#diagnosticClose');
+ const output=host.querySelector('#diagnosticOutput'),share=host.querySelector('#diagnosticShare');
  let active=true,busy=false,timer=null,polls=0;
  const order=['files','notifications','battery','bridge'];
  const names={files:'Accesso ai file',notifications:'Notifiche',battery:'Batteria',bridge:'Collegamento Bridge'};
@@ -98,7 +100,15 @@ export function mountChieditore({host,heading='',controller,onVerified,onExit,on
   }finally{busy=false;if(active){next.disabled=false;if(polls>0&&polls<12)later();}}
  }
  next.onclick=()=>{if(polls>=12)polls=0;void run();};
- report.onclick=()=>void controller.report().catch(()=>{status.textContent='Impossibile esportare il rapporto: verifica che Android consenta di aprire la finestra di condivisione.';});
+ report.onclick=()=>void controller.localReport().then(data=>{
+  if(!active)return;
+  output.textContent=JSON.stringify(data,null,2);
+  output.hidden=false;
+  status.textContent='Rapporto diagnostico visualizzato qui sotto. Puoi selezionare e copiare il testo.';
+ }).catch(()=>{if(active)status.textContent='Rapporto nativo non disponibile (diagnostic_unavailable).';});
+ share.onclick=()=>void controller.report().catch(()=>{
+  if(active){status.textContent='Condivisione Android non disponibile. Premi Visualizza rapporto per leggere il JSON qui.';}
+ });
  close.onclick=async()=>{
   if(busy||!active)return;busy=true;next.disabled=true;stopPolling();
   try{

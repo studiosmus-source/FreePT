@@ -31,7 +31,11 @@ public class BridgeBootstrapPlugin extends Plugin {
     lastError="none";call.resolve(JSObject.fromJSONObject(r));
    }catch(Exception error){
     BridgeBootstrapCore.verified=false;
-    lastError=error instanceof SecurityException?"authorization_denied":"network_or_setup_failed";
+    lastError=error instanceof SecurityException?"authorization_denied":
+      error instanceof java.net.SocketTimeoutException?"network_timeout":
+      error instanceof java.net.UnknownHostException?"network_dns":
+      error instanceof java.net.ConnectException?"network_connect":
+      error instanceof java.io.IOException?"network_io":"native_setup_failed";
     call.reject(lastError);
    }
   });
@@ -67,23 +71,32 @@ public class BridgeBootstrapPlugin extends Plugin {
   catch(Exception error){call.reject("settings_unavailable");}
  }
  @ActivityCallback private void batteryReturned(PluginCall call,ActivityResult result){if(call!=null)call.resolve(batteryStatus());}
- @PluginMethod public void shareReport(PluginCall call){
-  // Build report natively from an allowlist. Never export raw JS errors/body,
-  // pairing code, keys, account, phone, document paths or backend addresses.
-  JSObject report=new JSObject();report.put("schema",1);report.put("sdk",Build.VERSION.SDK_INT);
+ private JSObject diagnosticSnapshot(org.json.JSONArray stages){
+  JSObject report=new JSObject();report.put("schema",2);report.put("sdk",Build.VERSION.SDK_INT);
   report.put("manufacturer",Build.MANUFACTURER);report.put("model",Build.MODEL);
   report.put("colorOs","non verificabile");report.put("error",lastError);
   report.put("serviceActive",BridgeTxService.active);report.put("allFiles",BridgeAllFilesCore.granted());
   report.put("battery",batteryStatus());
   report.put("bridgeVerifiedInProcess",BridgeBootstrapCore.verified);
-  org.json.JSONArray stages=call.getArray("stages");org.json.JSONArray safe=new org.json.JSONArray();
+  report.put("bootstrapInitialized",BridgeBootstrapCore.configured(getContext())||BridgeBootstrapCore.bound(getContext()));
+  org.json.JSONArray safe=new org.json.JSONArray();
   if(stages!=null)for(int i=0;i<Math.min(stages.length(),32);i++){
    JSONObject row=stages.optJSONObject(i);if(row==null)continue;
    String stage=row.optString("stage"),state=row.optString("state");long ms=row.optLong("elapsedMs",-1);
-   if(stage.matches("files|notifications|battery|bridge|close")&&state.matches("granted|denied|verified|pending|error|unverifiable|restricted|closed")&&ms>=0&&ms<=86400000)
+   if(stage.matches("files|notifications|battery|bridge|close")&&
+      state.matches("granted|denied|verified|pending|error|unverifiable|restricted|closed")&&ms>=0&&ms<=86400000)
     safe.put(new JSObject().put("stage",stage).put("state",state).put("elapsedMs",ms));
   }
   report.put("stages",safe);
+  return report;
+ }
+ @PluginMethod public void diagnosticReport(PluginCall call){
+  try{call.resolve(diagnosticSnapshot(call.getArray("stages")));}
+  catch(Exception error){call.reject("diagnostic_unavailable");}
+ }
+ @PluginMethod public void shareReport(PluginCall call){
+  // Same allowlisted diagnostic snapshot is exposed locally if Android sharing fails.
+  JSObject report=diagnosticSnapshot(call.getArray("stages"));
   try{
    java.io.File folder=new java.io.File(getContext().getCacheDir(),"freept-diagnostics");
    if(!folder.isDirectory()&&!folder.mkdirs())throw new java.io.IOException();

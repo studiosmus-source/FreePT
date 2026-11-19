@@ -60,3 +60,15 @@ test('diagnostic UI exposes report and admin pairing guidance even while pending
  assert.match(src,/polls<12/);
  assert.doesNotMatch(src,/id="diagnosticReport" type="button" hidden/);
 });
+
+test('diagnostic report has a readable on-screen fallback independent of Android share intents',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const native=readFileSync(new URL('../android-bridge/BridgeBootstrapPlugin.java.template',import.meta.url),'utf8');
+ const ui=readFileSync(new URL('./chieditore.js',import.meta.url),'utf8');
+ assert.match(native,/@PluginMethod public void diagnosticReport\\(PluginCall call\\)/);
+ assert.match(native,/diagnosticSnapshot\\(call.getArray\\("stages"\\)\\)/);
+ assert.match(ui,/id="diagnosticOutput"/);
+ assert.match(ui,/output.textContent=JSON.stringify\\(data,null,2\\)/);
+ assert.match(ui,/native.diagnosticReport/);
+ assert.doesNotMatch(native,/report.put\\("pairCode"/);
+});
