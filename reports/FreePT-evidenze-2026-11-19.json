@@ -1,0 +1,88 @@
+{
+  "date": "2026-11-19",
+  "branch": "work/unified-verified-20261119",
+  "starting_head": "a37cbd39689d8fdeec6998b145b85c81d263670a",
+  "source_commit": "9560b5bae861fa8f0437f2f5ac508397689d1303",
+  "native_simulation_commit": "e2c1e86c52b4c6e7ebe8dab98bc6320d9cb4cb28",
+  "apk_acceptance": "NOT_COMPLETED_APK_WITHHELD",
+  "production_changed": false,
+  "checks": {
+    "javascript": {
+      "tests": 447,
+      "failures": 0,
+      "skipped": 0
+    },
+    "python_jvm": {
+      "tests": 22,
+      "status": "PASS"
+    },
+    "http_postgres": {
+      "tests": 2,
+      "status": "PASS",
+      "real_http_loopback": true,
+      "real_postgres": true,
+      "supabase_auth_api": "fixture_not_live"
+    },
+    "native_saf": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "framework": "Robolectric; actual Java plugin, simulated SAF provider"
+    },
+    "oppo": "NOT_EXECUTED",
+    "hardware_keystore_https_phone": "NOT_EXECUTED",
+    "in_place_upgrade": "NOT_EXECUTED"
+  },
+  "supabase_staging": {
+    "ref": "aqjuixbuxftnjfzxmzuj",
+    "migrations": [
+      {
+        "version": "20261119072047",
+        "name": "bridge_bootstrap_device_key_v1"
+      },
+      {
+        "version": "20261119073139",
+        "name": "bridge_bootstrap_profile_cascade"
+      }
+    ],
+    "new_tables_rls": true,
+    "anon_execute": false,
+    "service_execute": true,
+    "records_after_smoke_rollback": {
+      "devices": 0,
+      "nonces": 0
+    }
+  },
+  "artifacts": {
+    "validation": "https://github.com/studiosmus-source/FreePT/actions/runs/44481137229/artifacts/14508292361",
+    "native_reports": "https://github.com/studiosmus-source/FreePT/actions/runs/44481037352/artifacts/14507394991",
+    "apk_sha256_ci_only": "2c4846c2ddb46743af51ed58d1bd21dc831d12c27b40b52c105e17421c72a9d1"
+  },
+  "runs": [
+    {
+      "id": 44481137229,
+      "name": "Build unified FreePT Android APK (manual)",
+      "head_sha": "9560b5bae861fa8f0437f2f5ac508397689d1303",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44481137229"
+    },
+    {
+      "id": 44481137277,
+      "name": "Bridge isolated checks",
+      "head_sha": "9560b5bae861fa8f0437f2f5ac508397689d1303",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44481137277"
+    },
+    {
+      "id": 44481037352,
+      "name": "Bridge Android isolated compile check",
+      "head_sha": "e2c1e86c52b4c6e7ebe8dab98bc6320d9cb4cb28",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/studiosmus-source/FreePT/actions/runs/44481037352"
+    }
+  ]
+}
