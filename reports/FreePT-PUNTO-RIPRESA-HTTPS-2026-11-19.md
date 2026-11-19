@@ -125,3 +125,19 @@ Commit script/configurazione/rapporto: `9ec95ce314d3a20dbf5f990efebf0140e9b14d17
 Run https://github.com/studiosmus-source/FreePT/actions/runs/44489499174 conclusa **success**; job `135441225368`, log letto realmente, 12 controlli live PASS anche dal runner GitHub. Report CI estratto dal JSON effettivo nel log: `reports/FreePT-live-HTTPS-CI-2026-11-19.json`. Dispositivo sintetico CI `3c7acb06-ee45-457a-867a-e68a9dc743ac`, creato e cancellato mediante protocollo. Questa seconda esecuzione non è una prova Android né Auth E2E completo.
 Artefatto https://github.com/studiosmus-source/FreePT/actions/runs/44489499174/artifacts/14511459399, digest ZIP GitHub `ffcb858f9036bee5f0518b6f1ffdc9ce5d45921ce23af086b100a4f9a5147f6f`.
 Il gateway rimane sul deploy ec66b84; i commit successivi aggiornano solamente script, configurazione dichiarativa, workflow e rapporti, senza modificare codice runtime app/backend.
+
+## Ripresa c116077 — preparazione accesso Supabase TEST
+
+HEAD iniziale locale/remoto confermato `c11607772d39fec0b66cb44bca3e6d18c993bd99`; punto di ripresa letto integralmente. Non ripetuti i 12 controlli HTTPS già superati. Nessuna credenziale o ruolo cambiato, nessun utente reale modificato.
+
+Preparata console temporanea `/test/` sul solo gateway staging, attiva esclusivamente con `FREEPT_BRIDGE_TEST_CONSOLE=AUTH_E2E_ONLY`, bootstrap v1 e progetto esatto aqjuixbuxftnjfzxmzuj. La composizione produzione non installa la console. CSP senza script inline/CDN, frame vietati, HTTPS obbligatorio, no-store; configurazione pubblica contiene solo URL test e publishable key. Credenziali inviate dal browser direttamente a Supabase TEST; token conservati nella sola closure in memoria, mai in storage, URL, log o rapporti. Nessuna raccolta di password/token tramite strumenti o chat.
+
+Due login normali (admin TEST e user TEST), verifica Auth `/user` e profilo via RLS, nessuna creazione/modifica profili. Il pulsante E2E richiede conferma che siano account di prova: genera chiave WebCrypto e fixture, approva tramite bearer admin, prova codice errato/ACL/replay, invia 262144+37856 byte, confronta SHA256, claim legato al token personale, verifica retry e stato bound, revoca il dispositivo. In caso di errore tenta cancel/revoke della sola fixture. Non certifica Android Keystore o Oppo.
+
+Nuovi test: conversione firme WebCrypto P1363→DER verificata 64 volte con verifica crittografica Node; byte fixture browser confrontati con server; isolamento progetto/gate e routing HTTPS/CSP provati. 11/11 test mirati PASS. Suite completa JavaScript in corso al momento di questa nota (registrare risultato effettivo prima della consegna).
+
+Prossima azione: distribuire la console esclusivamente su srv-dbo9t6lg1s2s73ejjtn0 dopo verifiche, aprire il suo login e acquisire le sessioni mediante procedura browser sicura o handoff. Non chiedere password/token in chat. Prima di un handoff salvare commit/deploy/URL e stato preciso. E2E autenticato e APK restano NON ESEGUITI finché non conclusi realmente; consolidamento workflow Android da eseguire dopo E2E riuscito.
+
+### Verifica automatica prima del deploy console
+
+Suite JavaScript completa effettivamente eseguita: **451 test, 451 PASS, 0 fail, 0 skip**. Prima esecuzione 450 PASS/1 FAIL: controllo blueprint obsoleto sul comando letterale; corretto per verificare `npm run bridge:serve:staging` e la sua risoluzione effettiva a `node bridge/runHttpsStaging.mjs`, più il ramo work. Nessun errore occultato. I 12 probe HTTPS precedenti non sono stati ripetuti.

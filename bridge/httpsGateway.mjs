@@ -98,7 +98,7 @@ async function readJson(req,limit){
   }catch{return {error:fail(400,'invalid_json')};}
 }
 export function createBridgeHttpsGateway({
-  admin,owner,tx,bootstrap=null,config,
+  admin,owner,tx,bootstrap=null,config,staticAssets=null,
   allowHttpInUnitTests=false,now=()=>Date.now()
 }={}){
   if(typeof admin!=='function'||typeof owner!=='function'||typeof tx!=='function'||
@@ -116,6 +116,14 @@ export function createBridgeHttpsGateway({
     if(!allowHttpInUnitTests&&
        !(req.socket.encrypted||req.headers['x-forwarded-proto']==='https')){
       write(res,403,{error:'https_required'},origin);return;
+    }
+    const asset=staticAssets?.get(req.url);
+    if(asset&&req.method==='GET'){
+      res.writeHead(200,{'content-type':asset.type,'cache-control':'no-store',
+        'content-security-policy':asset.csp,'x-content-type-options':'nosniff',
+        'referrer-policy':'no-referrer','x-frame-options':'DENY',
+        'permissions-policy':'camera=(), microphone=(), geolocation=()'});
+      res.end(asset.body);return;
     }
     if(req.url==='/health'&&req.method==='GET'){
       write(res,200,{status:'ok'},origin);return;

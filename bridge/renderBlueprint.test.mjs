@@ -5,7 +5,10 @@ const config=readFileSync(new URL('../render.yaml',import.meta.url),'utf8');
 const gateway=readFileSync(new URL('./runHttpsStaging.mjs',import.meta.url),'utf8');
 test('Render blueprint deploys isolated Bridge service, never production API',()=>{
   assert.match(config,/name: freept-bridge-staging/);
-  assert.match(config,/startCommand: node bridge\/runHttpsStaging\.mjs/);
+  assert.match(config,/startCommand: npm run bridge:serve:staging/);
+  const pkg=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'));
+  assert.equal(pkg.scripts['bridge:serve:staging'],'node bridge/runHttpsStaging.mjs');
+  assert.match(config,/branch: work\/unified-verified-20261119/);
   assert.match(config,/healthCheckPath: \/health/);
   assert.match(config,/autoDeployTrigger: off/);
   assert.doesNotMatch(config,/cpopqsvzzxfjgnlawlvc/);

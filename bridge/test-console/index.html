@@ -1,0 +1,10 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FreePT TEST — accesso e collaudo</title></head><body>
+<main><h1>FreePT TEST — collaudo autenticato</h1><p>Solo progetto aqjuixbuxftnjfzxmzuj. Nessun accesso alla produzione.</p>
+<p>Email e password vengono inviate direttamente a Supabase TEST via HTTPS. Le sessioni restano in memoria in questa scheda: nessun token nei rapporti o nella memoria persistente.</p>
+<p>Usare esclusivamente account di prova autorizzati. Non usare utenti reali, credenziali Render o credenziali del pannello Supabase.</p>
+<form id="admin"><h2>Amministratore TEST</h2><label>Email amministratore TEST <input name="email" type="email" autocomplete="username" required></label><label>Password amministratore TEST <input name="password" type="password" autocomplete="current-password" required></label><button>Accedi amministratore TEST</button><p role="status" id="admin-status">Non autenticato</p></form>
+<form id="user"><h2>Utente personale TEST</h2><label>Email utente TEST <input name="email" type="email" autocomplete="username" required></label><label>Password utente TEST <input name="password" type="password" autocomplete="current-password" required></label><button>Accedi utente TEST</button><p role="status" id="user-status">Non autenticato</p></form>
+<p><label><input id="fixtures" type="checkbox">Confermo che entrambi sono account TEST autorizzati. Il collaudo assocerà un dispositivo sintetico all'utente e poi ne revocherà l'accesso.</label></p>
+<button id="run" disabled>Esegui end-to-end sintetico</button><button id="clear">Dimentica le sessioni in questa scheda</button>
+<h2>Risultati senza credenziali</h2><pre id="results" role="status">In attesa dei login TEST.</pre>
+<p>Questa prova usa WebCrypto nel browser. Non certifica Android Keystore, Oppo, SAF o comportamento in background.</p></main><script type="module" src="/test/console.mjs"></script></body></html>
