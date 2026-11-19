@@ -51,3 +51,12 @@ test('closing while enrollment is in flight cannot start a late background servi
  await c.next();await c.next();await c.next();
  const pending=c.next();await c.dispose();release();await assert.rejects(pending,/closed/);assert.equal(starts,0);
 });
+
+test('diagnostic UI exposes report and admin pairing guidance even while pending',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const src=readFileSync(new URL('./chieditore.js',import.meta.url),'utf8');
+ assert.match(src,/Esporta rapporto diagnostico/);
+ assert.match(src,/chi amministra FreePT deve inserirlo nel pannello Bridge/);
+ assert.match(src,/polls<12/);
+ assert.doesNotMatch(src,/id="diagnosticReport" type="button" hidden/);
+});

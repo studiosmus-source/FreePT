@@ -59,34 +59,57 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
  });
 }
 export function mountChieditore({host,heading='',controller,onVerified,onExit,onAdminEntry}={}){
- host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Chieditore</h2><p id="diagnosticName"></p><p id="diagnosticState" role="status"></p><button id="diagnosticNext" type="button">Continua</button><button id="diagnosticReport" type="button" hidden>Condividi rapporto</button><button id="diagnosticClose" type="button">Chiudi diagnostica</button></main></div>';
+ host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Preparazione del telefono</h2><p id="diagnosticProgress" class="small"></p><h3 id="diagnosticName"></h3><p id="diagnosticHelp"></p><p id="diagnosticState" role="status" aria-live="polite"></p><div class="form"><button id="diagnosticNext" type="button">Continua</button><button id="diagnosticReport" type="button">Esporta rapporto diagnostico</button><button id="diagnosticClose" type="button">Chiudi diagnostica</button></div></main></div>';
  const name=host.querySelector('#diagnosticName'),status=host.querySelector('#diagnosticState'),next=host.querySelector('#diagnosticNext'),report=host.querySelector('#diagnosticReport');
- let active=true,busy=false,timer=null;
- const names={files:'File',notifications:'Notifiche',battery:'Batteria',bridge:'Bridge'};
- const draw=(state='da verificare')=>{
-  const s=controller.snapshot();name.textContent=names[s.step];
-  status.textContent=state+(s.pairCode&&!s.verified?' · '+s.pairCode.toUpperCase():'');
-  next.hidden=s.verified;
+ const help=host.querySelector('#diagnosticHelp'),progress=host.querySelector('#diagnosticProgress'),close=host.querySelector('#diagnosticClose');
+ let active=true,busy=false,timer=null,polls=0;
+ const order=['files','notifications','battery','bridge'];
+ const names={files:'Accesso ai file',notifications:'Notifiche',battery:'Batteria',bridge:'Collegamento Bridge'};
+ const explanation={
+  files:'Concedi l’accesso richiesto da Android solo se vuoi attivare la condivisione dei file tramite Bridge.',
+  notifications:'Autorizza le notifiche per ricevere gli avvisi e mantenere visibile il servizio.',
+  battery:'Controlla le impostazioni della batteria. Alcune limitazioni del telefono non possono essere verificate automaticamente.',
+  bridge:'Il telefono genera un codice: chi amministra FreePT deve inserirlo nel pannello Bridge della propria app, poi autorizzare il dispositivo. Non serve ancora il tuo nome o numero.'
  };
+ const stopPolling=()=>{clearTimeout(timer);timer=null;};
+ const draw=(state='Da verificare')=>{
+  const s=controller.snapshot();name.textContent=names[s.step]||'Verifica';
+  progress.textContent='Passaggio '+(order.indexOf(s.step)+1)+' di 4';
+  help.textContent=explanation[s.step]||'';
+  const code=s.pairCode&&!s.verified?s.pairCode.toUpperCase():null;
+  status.textContent=state+(code?' — Codice da comunicare all’amministratore: '+code:'');
+  next.hidden=!!s.verified;
+  next.textContent=s.step==='bridge'?'Riprova verifica':'Continua';
+  close.textContent=s.verified?'Concludi e prosegui':'Chiudi diagnostica';
+ };
+ const later=()=>{if(active&&!busy&&controller.snapshot().step==='bridge'&&polls<12)timer=setTimeout(run,5000);};
  async function run(){
-  if(!active||busy)return;busy=true;next.disabled=true;clearTimeout(timer);
+  if(!active||busy)return;busy=true;next.disabled=true;stopPolling();
   try{
    const previous=controller.snapshot().step;
    const r=await controller.next();if(!active)return;
-   draw(r.step!==previous?'da verificare':({denied:'negato',granted:'verificato',restricted:'limitata · ColorOS: non verificabile',pending:'in attesa di autorizzazione / verifica',verified:'verificato'})[r.state]);
-   if(previous==='bridge'&&r.step==='bridge'&&!r.verified)timer=setTimeout(run,3000);
-  }catch{if(active){draw('errore');report.hidden=false;}}
-  finally{busy=false;if(active)next.disabled=false;}
+   draw(r.step!==previous?'Da verificare':({denied:'Permesso non concesso: controlla le impostazioni e riprova.',granted:'Verificato',restricted:'Limitazione batteria rilevata; ColorOS non è sempre verificabile.',pending:'In attesa dell’autorizzazione amministratore o del trasferimento diagnostico.',verified:'Verificato'})[r.state]||'Stato da verificare');
+   if(previous==='bridge'&&r.step==='bridge'&&!r.verified){
+    polls+=1;
+    if(polls>=12)status.textContent+=' Verifica automatica sospesa: premi Riprova verifica o esporta il rapporto.';
+    else later();
+   }
+  }catch{
+   if(active){draw('Errore durante la verifica. Esporta il rapporto diagnostico per identificare il problema.');polls=12;}
+  }finally{busy=false;if(active)next.disabled=false;}
  }
- next.onclick=run;
- report.onclick=()=>void controller.report().catch(()=>{status.textContent='Rapporto non disponibile';});
- host.querySelector('#diagnosticClose').onclick=async()=>{
-  if(busy||!active)return;busy=true;next.disabled=true;
-  const ready=await controller.canRegister();if(!active)return;
-  if(ready){
-   active=false;clearTimeout(timer);await controller.dispose();onVerified();
-  }else{active=false;clearTimeout(timer);await controller.dispose();await onExit();}
+ next.onclick=()=>{if(polls>=12)polls=0;void run();};
+ report.onclick=()=>void controller.report().catch(()=>{status.textContent='Impossibile esportare il rapporto: verifica che Android consenta di aprire la finestra di condivisione.';});
+ close.onclick=async()=>{
+  if(busy||!active)return;busy=true;next.disabled=true;stopPolling();
+  try{
+   const ready=await controller.canRegister();if(!active)return;
+   if(ready){active=false;await controller.dispose();onVerified();}
+   else{active=false;await controller.dispose();await onExit();}
+  }catch{
+   if(active){busy=false;next.disabled=false;draw('Chiusura non riuscita: riprova oppure esporta il rapporto.');}
+  }
  };
  if(onAdminEntry)onAdminEntry();draw();
- return ()=>{active=false;clearTimeout(timer);void controller.dispose();};
+ return ()=>{active=false;stopPolling();void controller.dispose();};
 }
