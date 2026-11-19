@@ -1,0 +1,19 @@
+{
+  "apk": "FreePT-Unificata.apk",
+  "bytes": 4976065,
+  "sha256": "8d43d80a37e24cc0bd7987d74080b94a85f238eb8c1425ece036d79de3c1eef0",
+  "signatureV2Verified": true,
+  "contentDigestVerified": true,
+  "certificateSha256": "7f9a7a4b77ec6fe9f87221cc5afd0ad6943e21c25b9ddde1e28ce0fedace06f6",
+  "isolatedWebConfigVerified": true,
+  "zipIntegrityVerified": true,
+  "sameSignerAsInstalled185f90e": true,
+  "sourceCommit": "d4c24c359845c61dfab7479d656d02e648579a8e",
+  "workflowRun": 44613764141,
+  "artifactId": 14574196569,
+  "package": "it.freept.bridge.next",
+  "workflowConclusion": "success",
+  "physicalDeviceTest": "NOT_EXECUTED",
+  "gatewayHealth": 200,
+  "testConsole": 404
+}

@@ -39,3 +39,15 @@ Il tentativo reale 02 ha superato registrazione/chat/allegati/lista nascosta, ma
 L'E2E HTTPS usa un trasmettitore Node con contenuto sintetico, NON un telefono Android. Non sono stati eseguiti: avvio fisico OPPO, Android Keystore hardware, permanenza in background/ColorOS, notifica FCM effettiva, aggiornamento in-place e conservazione permessi fisicamente osservata. Il package e la firma stabili rendono possibile l'aggiornamento del TEST, ma non costituiscono una prova fisica di conservazione dati.
 
 APK da consegnare solo dopo build Android reale, verifica firma, package it.freept.bridge.next, integrità e SHA256. Non sostituire la produzione it.freept.app e non consegnare l'artefatto della pipeline di produzione. La qualifica finale su OPPO resta subordinata al collaudo fisico; non dichiararla eseguita.
+
+## APK effettivamente prodotta e verificata
+- Commit sorgenti: `d4c24c359845c61dfab7479d656d02e648579a8e`.
+- Run staging: https://github.com/studiosmus-source/FreePT/actions/runs/44613764141 — success.
+- Artefatto APK: `FreePT-bridge-staging-stable-apk`, ID 14574196569; rapporto CI ID 14573987004.
+- Nome consegna: FreePT-Unificata.apk, 4.976.065 byte; package it.freept.bridge.next, versione 1.0/code 1, minSdk 23, targetSdk 35. Il Bridge all-files richiede Android 11+; il minSdk generale della chat non equivale al supporto all-files su Android precedenti.
+- SHA256 APK: `8d43d80a37e24cc0bd7987d74080b94a85f238eb8c1425ece036d79de3c1eef0`.
+- SHA256 certificato: `7f9a7a4b77ec6fe9f87221cc5afd0ad6943e21c25b9ddde1e28ce0fedace06f6`.
+- Verifiche locali sul file scaricato: integrità ZIP, firma APK v2 crittografica, digest dei contenuti APK, configurazione web isolata effettiva. SHA256 coincide con rapporto CI.
+- Scaricato anche l'APK storico 185f90e (artefatto 14561792634): firma verificata e certificato identico alla nuova APK. Questo consente l'aggiornamento della medesima app TEST; mantenimento permessi/sessioni fisico resta NON ESEGUITO.
+- Gateway finale deploy dep-dbvm52cipgvc73dkqqp0 da d4c24c3 LIVE. /health HTTP 200; /test/ e /test/server-e2e.json HTTP 404. Gate one-off e console DISABLED.
+- L'upload persistente della copia APK è fallito per library_storage_limit_exceeded. Il binario è disponibile nel messaggio corrente e nell'artefatto GitHub sopra. Nessun file utente eliminato per liberare spazio.
