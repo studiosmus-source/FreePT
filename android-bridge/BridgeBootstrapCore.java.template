@@ -139,4 +139,12 @@ final class BridgeBootstrapCore {
  static void cancel(Context c)throws Exception{
   if(configured(c)){post(c,"cancel",new JSONObject(),null);verified=false;}
  }
+ static synchronized void resetUnboundTest(Context c)throws Exception{
+  if(bound(c)||BridgeDeviceSecretStore.configured(c))throw new SecurityException("test_identity_is_bound");
+  android.content.SharedPreferences prefs=c.getSharedPreferences(PREFS,0);
+  if(!prefs.contains("id"))return;
+  if(!prefs.edit().clear().commit())throw new java.io.IOException("test_reset_failed");
+  KeyStore keys=store();if(keys.containsAlias(ALIAS))keys.deleteEntry(ALIAS);
+  verified=false;
+ }
 }

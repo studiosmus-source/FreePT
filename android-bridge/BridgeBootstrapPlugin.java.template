@@ -48,6 +48,12 @@ public class BridgeBootstrapPlugin extends Plugin {
   if(!BridgeBootstrapCore.verified)getContext().stopService(new Intent(getContext(),BridgeTxService.class));
   call.resolve();getActivity().finish();
  }
+ @PluginMethod public void resetUnboundTest(PluginCall call){
+  getBridge().execute(()->{
+   try{BridgeBootstrapCore.resetUnboundTest(getContext());call.resolve();}
+   catch(Exception error){call.reject("test_reset_denied");}
+  });
+ }
  @PluginMethod public void localStatus(PluginCall call){
   JSObject r=new JSObject();r.put("enabled",BridgeBootstrapCore.enabled(getContext()));
   r.put("initialized",BridgeBootstrapCore.configured(getContext())||BridgeBootstrapCore.bound(getContext()));

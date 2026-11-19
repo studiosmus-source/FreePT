@@ -598,6 +598,7 @@ function showAdminBridge(){
     '</section>';
   document.body.appendChild(panel);
   if(bridgeBootstrap)mountBootstrapAdmin({host:panel.querySelector('section'),db,baseUrl:bridgeRuntime.baseUrl,
+    testNative:bridgeBootstrap,testFiles:bridgeAllFiles,testTx:bridgeTxControl,
     isAuthorized:()=>panel.isConnected&&profile?.role==='admin'&&profile?.status==='approved'&&adminUnlocked&&!!me?.id});
   const message=panel.querySelector('#bridgeKeyStatus');
   const provider=bridgeRxKeys;
