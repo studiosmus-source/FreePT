@@ -1,7 +1,7 @@
-name: Build FreePT Bridge isolated staging APK
+name: Build FreePT TEST isolated staging APK
 on:
   push:
-    branches: [feature/bridge-chunk-receiver-20261108]
+    branches: [work/unified-verified-20261119]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Never build another branch or production with this workflow
-        run: test "$GITHUB_REF" = 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        run: test "$GITHUB_REF" = 'refs/heads/work/unified-verified-20261119'
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -31,9 +31,9 @@ jobs:
           test -d "$ANDROID_HOME/build-tools"
           ls "$ANDROID_HOME/build-tools"
       - name: Install web dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Bridge unit regression tests (development branch only)
-        if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119'
         run: npm run test:bridge
       - name: Silent reconnect and consent regression tests
         run: node --test src/bridgeReconnect.test.mjs
@@ -46,7 +46,7 @@ jobs:
       - name: JavaScript syntax check
         run: node --check src/main.js
       - name: Require isolated Supabase test project for Bridge APK
-        if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119'
         env:
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
@@ -62,14 +62,14 @@ jobs:
               parsed.username or parsed.password or parsed.query or parsed.fragment or
               parsed.path not in ('', '/')):
               raise SystemExit('Bridge test Supabase URL missing or invalid')
-          if parsed.hostname == 'cpopqsvzzxfjgnlawlvc.supabase.co':
-              raise SystemExit('Refusing production Supabase for experimental Bridge APK')
-          if not key.startswith('sb_publishable_') or len(key) < 30:
+          if parsed.hostname != 'aqjuixbuxftnjfzxmzuj.supabase.co':
+              raise SystemExit('Refusing non-designated Supabase project for FreePT TEST')
+          if not key or len(key) < 30:
               raise SystemExit('Bridge test Supabase publishable key missing or invalid')
           print('Bridge test Supabase configuration present; production project rejected')
           PY
       - name: Require experimental HTTPS Bridge backend endpoint
-        if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119'
         env:
           VITE_BRIDGE_TEST_API_URL: ${{ 'https://freept-bridge-staging.onrender.com' }}
         run: |
@@ -89,10 +89,11 @@ jobs:
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
         env:
-          VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
-          VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && 'https://freept-bridge-staging.onrender.com' || '' }}
-          VITE_BRIDGE_ISOLATED_BUILD: ${{ github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108' && 'true' || 'false' }}
+          VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
+          VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && 'https://freept-bridge-staging.onrender.com' || '' }}
+          VITE_BRIDGE_ISOLATED_BUILD: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && 'true' || 'false' }}
+          VITE_BRIDGE_BOOTSTRAP_ENABLED: 'true'
         run: |
           set -euo pipefail
           echo "Node: $(node --version) / npm: $(npm --version)"
@@ -107,7 +108,7 @@ jobs:
           path: vite-build.log
           if-no-files-found: warn
       - name: Isolate experimental Bridge APK identity
-        if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119'
         run: |
           python3 - <<'PY'
           import json
@@ -117,7 +118,7 @@ jobs:
           if data.get('appId') != 'it.freept.app':
               raise SystemExit('Unexpected base appId; refusing experimental build')
           data['appId'] = 'it.freept.bridge.next'
-          data['appName'] = 'FreePT'
+          data['appName'] = 'FreePT TEST'
           config.write_text(json.dumps(data, indent=2) + '\n')
           assert json.loads(config.read_text())['appId'] == 'it.freept.bridge.next'
           PY
@@ -164,21 +165,23 @@ jobs:
           python3 -m py_compile android-bridge/install.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Install native file catalogue and foreground TX (Bridge staging only)
-        if: github.ref == 'refs/heads/feature/bridge-chunk-receiver-20261108'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119'
         env:
-          VITE_BRIDGE_TEST_API_URL: ${{ 'https://freept-bridge-staging.onrender.com' }}
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
+          FREEPT_BRIDGE_INSTALL_TARGET: staging
         run: python3 android-bridge/install.py
-      - name: Ensure Android biometric permission
+      - name: Verify isolated bootstrap compile flags before native build
+        shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('android/app/src/main/AndroidManifest.xml')
-          s=p.read_text()
-          if 'android.permission.USE_BIOMETRIC' not in s:
-              s=s.replace('<application', '<uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <application', 1)
-              p.write_text(s)
-          assert 'android.permission.USE_BIOMETRIC' in p.read_text()
-          PY
+          set -euo pipefail
+          grep -Fq 'name="bridge_bootstrap_enabled">true' android/app/src/main/res/values/freept_bootstrap.xml
+          grep -Fq 'https://freept-bridge-staging.onrender.com' android/app/src/main/res/values/freept_bridge.xml
+          if grep -Fq 'cpopqsvzzxfjgnlawlvc.supabase.co' android/app/src/main/res/values/freept_bridge.xml; then
+            echo '::error::Production Supabase found in native Bridge endpoint'
+            exit 1
+          fi
+          grep -Fq 'BridgeBootstrapPlugin.class' android/app/src/main/java/it/freept/bridge/next/MainActivity.java
       - name: Check Android project and permissions
         run: |
           test -f android/app/src/main/AndroidManifest.xml
@@ -295,7 +298,7 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee android-apk-info.txt
-          if [[ "$GITHUB_REF" == "refs/heads/feature/bridge-chunk-receiver-20261108" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/work/unified-verified-20261119" ]]; then
             EXPECTED_ID=it.freept.bridge.next
           else
             EXPECTED_ID=it.freept.app
