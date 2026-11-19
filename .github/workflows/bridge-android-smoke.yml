@@ -86,7 +86,7 @@ jobs:
           selected=[s for s in suites if s.get('name','').endswith('BridgeDestinationTest')]
           assert len(selected)==1, 'Actual native SAF test report missing'
           s=selected[0]
-          assert int(s.get('tests','0'))>=9 and all(int(s.get(k,'0'))==0 for k in ('failures','errors','skipped')), s.attrib
+          assert int(s.get('tests','0'))>=11 and all(int(s.get(k,'0'))==0 for k in ('failures','errors','skipped')), s.attrib
           print('NATIVE_SAF_SIMULATION:',s.attrib)
           PY_VERIFY_NATIVE
       - name: Verify this is not the production app

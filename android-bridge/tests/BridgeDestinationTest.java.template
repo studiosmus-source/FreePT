@@ -163,4 +163,34 @@ public class BridgeDestinationTest {
   assertArrayEquals(new byte[]{9,8,7},Files.readAllBytes(previous.bytes.toPath()));assertTrue(docs.containsKey(previous.id));
  }
 
+ @Test public void chatAndRemoteFolderUseSameOwnerAndPreserveNestedPaths()throws Exception{
+  finish(begin(A,"chat.bin",0),new byte[0]);
+  Call c=call(Map.of("ownerId",A,"ownerName","Cristina","name","DownloadTelefono"));plugin.beginFolder(c.call);assertNull(c.error);assertTrue(c.result.getBoolean("started"));
+  c=call(Map.of("path",List.of("sub")));plugin.makeDirectory(c.call);assertNull(c.error);
+  Map<String,Object> args=Map.of("path",List.of("sub","remote.bin"),"size",4,"mime","application/octet-stream");
+  c=call(args);plugin.openFile(c.call);assertNull(c.error);String id=c.result.getString("fileId");
+  c=call(args);plugin.openFile(c.call);assertNotNull(c.error);
+  c=call(Map.of("path",List.of("sub","remote.bin")));plugin.makeDirectory(c.call);assertNotNull(c.error);
+  c=call(Map.of("path",List.of("..")));plugin.makeDirectory(c.call);assertNotNull(c.error);
+  c=call(Map.of("fileId",id,"offset",0,"base64","AQIDBA=="));plugin.writeChunk(c.call);assertNull(c.error);
+  c=call(Map.of("fileId",id));plugin.commitFile(c.call);assertNull(c.error);
+  c=call(Map.of());plugin.commitFolder(c.call);assertNull(c.error);
+  assertEquals(1,docs.values().stream().filter(d->"root".equals(d.parent)).count());
+  Doc owner=docs.values().stream().filter(d->"Cristina".equals(d.name)).findFirst().orElseThrow();
+  Doc folder=docs.values().stream().filter(d->"DownloadTelefono".equals(d.name)).findFirst().orElseThrow();
+  Doc sub=docs.values().stream().filter(d->"sub".equals(d.name)).findFirst().orElseThrow();
+  Doc file=docs.values().stream().filter(d->"remote.bin".equals(d.name)).findFirst().orElseThrow();
+  assertEquals(owner.id,folder.parent);assertEquals(folder.id,sub.parent);assertEquals(sub.id,file.parent);
+  assertArrayEquals(new byte[]{1,2,3,4},Files.readAllBytes(file.bytes.toPath()));
+ }
+ @Test public void profileRenameAndManualDirectoryRenamePreserveTheMapping()throws Exception{
+  finish(begin(A,"first.bin",0),new byte[0]);
+  Doc owner=docs.values().stream().filter(d->"Cristina".equals(d.name)).findFirst().orElseThrow();owner.name="Nome manuale";
+  plugin=freshPlugin();
+  Call c=call(Map.of("ownerId",A,"ownerName","Nuovo nome profilo","name","second.bin","size",0,"mime","application/octet-stream"));
+  plugin.beginSingleFile(c.call);assertNull(c.error);finish(c.result.getString("fileId"),new byte[0]);
+  assertEquals(1,docs.values().stream().filter(d->"root".equals(d.parent)).count());
+  Doc second=docs.values().stream().filter(d->"second.bin".equals(d.name)).findFirst().orElseThrow();assertEquals(owner.id,second.parent);
+ }
+
 }
