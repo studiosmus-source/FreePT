@@ -29,7 +29,8 @@ test('simple onboarding hides pairing, diagnostic and test UI',()=>{
  const source=readFileSync(new URL('./chieditore.js',import.meta.url),'utf8');
  const ui=source.slice(source.indexOf('export function mountChieditore('));
  assert.doesNotMatch(ui,/pairCode|diagnosticReport|shareReport|300000|300.000|Codice/);
- assert.match(ui,/Preparazione di FreePT/);
+ assert.match(ui,/>Avvia configurazione<\/button>/);
+ assert.doesNotMatch(ui,/Preparazione di FreePT|condivide con|amministratore della tua chat|Premi Continua|Il permesso non è stato concesso|Riprova/);
  const main=readFileSync(new URL('./main.js',import.meta.url),'utf8');
  assert.doesNotMatch(main,/if\(!verified\?\.verified\)\{diagnosticPassed=false/);
  assert.match(main,/async function renderWorkspace\(\)\{void bindBootstrapAfterApproval\(\)/);
