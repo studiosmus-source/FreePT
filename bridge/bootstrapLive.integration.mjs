@@ -83,6 +83,17 @@ test('pre-profile signed TX transfers 300000 synthetic bytes only after admin ap
   assert.equal((await post('revoke',{deviceId:d.id},TOKEN)).body.revoked,true);
   assert.equal((await post('status',d.envelope('status'))).status,403);
   assert.equal(sql(`select bridge_enabled from public.bridge_devices where id='${d.id}'`),'f');
+  const other=device();
+  await post('start',other.envelope('start',{publicKey:other.publicKey,pairCode:other.pairCode,consent:true}));
+  const alien=other.envelope('poll');alien.deviceId=d.id;
+  assert.equal((await post('poll',alien)).status,403,'proof cannot move to another device');
+  await post('approve',{pairCode:other.pairCode},TOKEN);
+  sql(`update public.profiles set status='blocked' where id='${ADMIN}'`);
+  assert.equal((await post('poll',other.envelope('poll'))).status,403,'revoked admin immediately fences its grant');
+  sql(`update public.profiles set status='approved' where id='${ADMIN}'`);
+  sql(`update public.bridge_bootstrap_devices set expires_at=now()-interval '1 second' where id='${other.id}'`);
+  assert.equal((await post('status',other.envelope('status'))).status,403,'expired approval cannot open registration');
+
  }finally{await gateway.stop();}
 });
 test('bootstrap schema denies anon/authenticated execution and raw table access',()=>{

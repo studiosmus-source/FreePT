@@ -81,7 +81,7 @@ public class BridgeBootstrapPlugin extends Plugin {
    JSONObject row=stages.optJSONObject(i);if(row==null)continue;
    String stage=row.optString("stage"),state=row.optString("state");long ms=row.optLong("elapsedMs",-1);
    if(stage.matches("files|notifications|battery|bridge|close")&&state.matches("granted|denied|verified|pending|error|unverifiable|restricted|closed")&&ms>=0&&ms<=86400000)
-    safe.put(new JSONObject().put("stage",stage).put("state",state).put("elapsedMs",ms));
+    safe.put(new JSObject().put("stage",stage).put("state",state).put("elapsedMs",ms));
   }
   report.put("stages",safe);
   try{

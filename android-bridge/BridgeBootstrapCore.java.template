@@ -21,6 +21,8 @@ import java.io.OutputStream;
 final class BridgeBootstrapCore {
  private static final String PREFS="freept_bootstrap_v1",ALIAS="it.freept.bootstrap.key.v1";
  private static final int SIZE=300000;
+ private static final java.util.concurrent.ConcurrentHashMap<Thread,HttpURLConnection> connections=new java.util.concurrent.ConcurrentHashMap<>();
+ static void interrupt(Thread thread){HttpURLConnection c=thread==null?null:connections.get(thread);if(c!=null)c.disconnect();}
  static volatile boolean verified=false;
  private BridgeBootstrapCore(){}
  static boolean enabled(Context c){
@@ -33,7 +35,8 @@ final class BridgeBootstrapCore {
  private static String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte v:b)s.append(String.format(java.util.Locale.ROOT,"%02x",v&255));return s.toString();}
  private static String random(int n){byte[] b=new byte[n];new SecureRandom().nextBytes(b);return hex(b);}
  private static String sha(byte[] b)throws Exception{return hex(MessageDigest.getInstance("SHA-256").digest(b));}
- static synchronized JSONObject begin(Context c)throws Exception{
+ static synchronized JSONObject begin(Context c)throws Exception{return begin(c,true);}
+ private static JSONObject begin(Context c,boolean allowReset)throws Exception{
   if(!enabled(c)||!BridgeAllFilesCore.granted()||(BridgeDeviceSecretStore.configured(c)&&!configured(c)))throw new SecurityException("bootstrap_unavailable");
   android.content.SharedPreferences p=c.getSharedPreferences(PREFS,0);
   if(!p.contains("id")){
@@ -44,7 +47,16 @@ final class BridgeBootstrapCore {
    if(!p.edit().putString("id",java.util.UUID.randomUUID().toString()).putString("pairCode",random(6)).putBoolean("bound",false).commit())throw new java.io.IOException();
   }
   String publicKey=Base64.encodeToString(store().getCertificate(ALIAS).getPublicKey().getEncoded(),Base64.NO_WRAP);
-  JSONObject r=post(c,"start",new JSONObject().put("publicKey",publicKey).put("pairCode",p.getString("pairCode","")).put("consent",true),null);
+  JSONObject r;
+  try{r=post(c,"start",new JSONObject().put("publicKey",publicKey).put("pairCode",p.getString("pairCode","")).put("consent",true),null);}
+  catch(SecurityException denied){
+   // Explicit next action after expiry/revocation needs a new admin approval.
+   // Never reset credentials from a claim whose acknowledgement was lost.
+   if(!allowReset||BridgeDeviceSecretStore.configured(c)||bound(c))throw denied;
+   if(!p.edit().clear().commit())throw new java.io.IOException();
+   KeyStore keys=store();if(keys.containsAlias(ALIAS))keys.deleteEntry(ALIAS);
+   verified=false;return begin(c,false);
+  }
   return new JSONObject().put("state",r.getString("state")).put("pairCode",p.getString("pairCode",""));
  }
  private static String endpoint(Context c)throws Exception{
@@ -57,12 +69,13 @@ final class BridgeBootstrapCore {
  private static JSONObject post(Context c,String action,JSONObject payload,String accessToken)throws Exception{
   String id=c.getSharedPreferences(PREFS,0).getString("id",null),nonce=random(16),body=payload.toString();
   long timestamp=System.currentTimeMillis();
-  String proof="freept-bootstrap-v1\n"+action+"\n"+id+"\n"+timestamp+"\n"+nonce+"\n"+body;
+  String proof=BridgeBootstrapProof.message(action,id,timestamp,nonce,body);
   Signature signer=Signature.getInstance("SHA256withECDSA");
   signer.initSign((java.security.PrivateKey)store().getKey(ALIAS,null));signer.update(proof.getBytes(StandardCharsets.UTF_8));
   JSONObject envelope=new JSONObject().put("deviceId",id).put("timestamp",timestamp).put("nonce",nonce)
     .put("payload",body).put("signature",Base64.encodeToString(signer.sign(),Base64.NO_WRAP));
   HttpURLConnection conn=(HttpURLConnection)new URL(endpoint(c)+"/bridge/bootstrap/"+action).openConnection();
+  connections.put(Thread.currentThread(),conn);
   try{
    conn.setRequestMethod("POST");conn.setInstanceFollowRedirects(false);conn.setConnectTimeout(10000);conn.setReadTimeout(15000);
    conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");
@@ -78,13 +91,7 @@ final class BridgeBootstrapCore {
     while((n=in.read(b))!=-1){if(out.size()+n>10000)throw new java.io.IOException();out.write(b,0,n);}
     return new JSONObject(out.toString("UTF-8"));
    }
-  }finally{conn.disconnect();}
- }
- private static byte[] fixture(String challenge){
-  if(!challenge.matches("[0-9a-f]{64}"))throw new SecurityException();
-  byte[] seed=new byte[32],all=new byte[SIZE];
-  for(int i=0;i<32;i++)seed[i]=(byte)Integer.parseInt(challenge.substring(i*2,i*2+2),16);
-  for(int i=0;i<SIZE;i++)all[i]=(byte)(seed[i%32]^(i&255));return all;
+  }finally{connections.remove(Thread.currentThread());conn.disconnect();}
  }
  static JSONObject tick(Context c)throws Exception{
   JSONObject r=post(c,"poll",new JSONObject(),null);
@@ -99,7 +106,7 @@ final class BridgeBootstrapCore {
    if(!"diagnostic".equals(job.getString("operation"))||job.getInt("size")!=SIZE)throw new SecurityException();
    int offset=job.getInt("offset"),length=job.getInt("length");
    if(offset<0||offset>=SIZE||length!=Math.min(262144,SIZE-offset))throw new SecurityException();
-   byte[] all=fixture(job.getString("challenge"));String hash=sha(all);
+   byte[] all=BridgeBootstrapProof.fixture(job.getString("challenge"));String hash=sha(all);
    if(!c.getSharedPreferences(PREFS,0).edit().putString("fixtureHash",hash).commit())throw new java.io.IOException();
    // Generated bytes only: no filesystem catalogue, handle or user file accepted.
    JSONObject ack=post(c,"chunk",new JSONObject().put("offset",offset)

@@ -90,7 +90,7 @@ required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin", "BridgeDestinationNames",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
-    "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore"
+    "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"
 ]
 for name in required_templates:
     path = Path("android-bridge") / (name + ".java.template")
@@ -107,7 +107,7 @@ if (manifest_preflight.count("<application") != 1 or
     raise SystemExit("Unexpected AndroidManifest.xml; refusing Bridge patch")
 main.write_text(source)
 # Bootstrap is compile-time isolated; never enable it in a production build.
-for helper_name in ("BridgeBootstrapPlugin", "BridgeBootstrapCore"):
+for helper_name in ("BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"):
     main.with_name(helper_name + ".java").write_text(
         (Path("android-bridge") / (helper_name + ".java.template")).read_text().replace("__PACKAGE__", package)
     )

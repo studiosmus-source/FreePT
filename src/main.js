@@ -44,11 +44,11 @@ const bootstrapEnabled=import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'&&impo
 const bridgeBootstrap=bootstrapEnabled&&bridgeFiles?registerPlugin('BridgeBootstrap'):null;
 let diagnosticCleanup=null;
 let diagnosticPassed=false;
-function diagnosticScreen(){
+function diagnosticScreen(complete=()=>requestScreen()){
   if(diagnosticCleanup)diagnosticCleanup();
   const controller=createChieditore({files:bridgeAllFiles,notifications:PushNotifications,native:bridgeBootstrap,tx:bridgeTxControl});
   diagnosticCleanup=mountChieditore({host:el,heading:heading('FreePT'),controller,
-    onVerified:()=>{diagnosticPassed=true;diagnosticCleanup=null;requestScreen();},
+    onVerified:()=>{diagnosticPassed=true;diagnosticCleanup=null;complete();},
     onExit:()=>bridgeBootstrap.close(),onAdminEntry:bindConcealedAdminEntry});
 }
 async function bindBootstrapAfterApproval(){
@@ -57,7 +57,13 @@ async function bindBootstrapAfterApproval(){
   if(!local?.initialized||local.bound)return;
   const {data,error}=await db.auth.getSession();
   if(error||!data?.session?.access_token)throw Error('Sessione non disponibile');
-  await bridgeBootstrap.claim({accessToken:data.session.access_token});
+  try{
+    await bridgeTxControl.start();
+    await bridgeBootstrap.claim({accessToken:data.session.access_token});
+  }catch{
+    diagnosticScreen(()=>void boot());
+    return false;
+  }
 }
 
 const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
@@ -372,7 +378,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){await bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user')void startProvisionedTxWhenAllowed();void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){if(await bindBootstrapAfterApproval()===false)return;if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user')void startProvisionedTxWhenAllowed();void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
