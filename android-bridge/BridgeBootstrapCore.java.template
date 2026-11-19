@@ -124,7 +124,7 @@ final class BridgeBootstrapCore {
   if(!BridgeDeviceSecretStore.configured(c))BridgeDeviceSecretStore.save(c,id,random(32));
   BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(c);
   if(!id.equals(cred.deviceId))throw new SecurityException();
-  JSONObject r=post(c,"claim",new JSONObject().put("deviceSecret",cred.deviceSecret),accessToken);
+  JSONObject r=post(c,"claim",new JSONObject().put("deviceSecret",cred.deviceSecret).put("accountProof",sha(accessToken.getBytes(StandardCharsets.UTF_8))),accessToken);
   if(!r.optBoolean("bound")||!id.equals(r.optString("deviceId")))throw new SecurityException();
   if(!c.getSharedPreferences(PREFS,0).edit().putBoolean("bound",true).commit())throw new java.io.IOException();
   return new JSONObject().put("bound",true);

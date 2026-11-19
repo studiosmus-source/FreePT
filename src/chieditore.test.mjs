@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createChieditore} from './chieditore.js';
 function setup(){
- const calls=[];let files=false,notify=false,verified=false;
+ const calls=[];let files=false,notify=false,verified=false,offline=false;
  const c=createChieditore({files:{status:async()=>({granted:files}),requestPermission:async()=>{calls.push('files');files=true;}},
  notifications:{checkPermissions:async()=>({receive:notify?'granted':'prompt'}),requestPermissions:async()=>{calls.push('notify');notify=true;}},
- native:{battery:async()=>({unrestricted:true}),begin:async()=>{calls.push('begin');return {pairCode:'abcdef123456'}},status:async()=>({verified}),shareReport:async data=>{calls.push(data);}},
+ native:{battery:async()=>({unrestricted:true}),begin:async()=>{calls.push('begin');return {pairCode:'abcdef123456'}},status:async()=>{if(offline)throw Error('offline');return {verified};},shareReport:async data=>{calls.push(data);}},
  tx:{start:async()=>calls.push('start'),stop:async()=>calls.push('stop')}});
- return {c,calls,verify:()=>verified=true};
+ return {c,calls,verify:()=>verified=true,revoke:()=>verified=false,offline:()=>offline=true};
 }
 test('permissions are sequential; no personal session or token registration occurs',async()=>{
  const f=setup();assert.equal(await f.c.canRegister(),false);
@@ -34,7 +34,8 @@ test('reentry is single-flight and closing an unverified run stops TX',async()=>
 test('backend revocation and network failure prevent close-to-registration',async()=>{
  const f=setup();for(let i=0;i<4;i++)await f.c.next();f.verify();await f.c.next();
  assert.equal(await f.c.canRegister(),true);
- const c=createChieditore({});assert.equal(await c.canRegister(),false);
+ f.revoke();assert.equal(await f.c.canRegister(),false);
+ f.verify();f.offline();assert.equal(await f.c.canRegister(),false);
 });
 test('report contains only stage enums and relative timings, never pairing code',async()=>{
  const f=setup();for(let i=0;i<4;i++)await f.c.next();await f.c.report();

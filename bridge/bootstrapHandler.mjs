@@ -54,8 +54,9 @@ export function createBootstrapHandler({authClient,db,enabled=false,now=Date.now
     const all=Buffer.concat([bootstrapBytes(r.data.challenge,0,262144),bootstrapBytes(r.data.challenge,262144,BOOTSTRAP_SIZE-262144)]);
     data.sha256=bootstrapHash(all);
    }else if(action==='claim'){
-    if(!exact(b,['deviceSecret'])||!/^[0-9a-f]{64}$/.test(b.deviceSecret))return fail(400,'invalid_claim');
+    if(!exact(b,['deviceSecret','accountProof'])||!/^[0-9a-f]{64}$/.test(b.deviceSecret))return fail(400,'invalid_claim');
     const t=token(req.headers);if(!t)return fail(401,'bootstrap_personal_login_required');
+    if(b.accountProof!==bootstrapHash(t))return fail(403,'bootstrap_account_proof_required');
     const u=await authClient.auth.getUser(t);actor=u.data?.user?.id;
     if(u.error||!actor)return fail(403,'bootstrap_personal_login_required');
     const salt=randomBytes(16).toString('hex');

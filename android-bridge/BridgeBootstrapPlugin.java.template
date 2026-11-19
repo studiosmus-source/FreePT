@@ -30,6 +30,7 @@ public class BridgeBootstrapPlugin extends Plugin {
     }
     lastError="none";call.resolve(JSObject.fromJSONObject(r));
    }catch(Exception error){
+    BridgeBootstrapCore.verified=false;
     lastError=error instanceof SecurityException?"authorization_denied":"network_or_setup_failed";
     call.reject(lastError);
    }
@@ -90,7 +91,8 @@ public class BridgeBootstrapPlugin extends Plugin {
    try(java.io.FileOutputStream out=new java.io.FileOutputStream(file)){out.write(report.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));}
    android.net.Uri uri=androidx.core.content.FileProvider.getUriForFile(getContext(),getContext().getPackageName()+".freeptupdater.fileprovider",file);
    Intent send=new Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_STREAM,uri)
-    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).setClipData(android.content.ClipData.newUri(getContext().getContentResolver(),"Rapporto diagnostico",uri));
+    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+   send.setClipData(android.content.ClipData.newUri(getContext().getContentResolver(),"Rapporto diagnostico",uri));
    getActivity().startActivity(Intent.createChooser(send,"Rapporto diagnostico"));call.resolve();}
   catch(Exception error){call.reject("report_share_unavailable");}
  }

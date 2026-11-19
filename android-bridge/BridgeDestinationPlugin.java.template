@@ -34,6 +34,7 @@ public class BridgeDestinationPlugin extends Plugin {
     private static final String SELECTED="selected_tree";
     private static final long MAX_FILE_BYTES=1099511627776L;
     private static final int MAX_CHUNK=262144;
+    private boolean choosing=false;
     private Uri destination;
     private Uri transferParent;
     private Uri staging;
@@ -111,6 +112,32 @@ public class BridgeDestinationPlugin extends Plugin {
         }
     }
 
+    /** Never write to an existing document returned by a broken provider. */
+    private Uri createFresh(Uri parent,String mime,String requested) throws Exception {
+        java.util.Set<String> ids=new java.util.HashSet<>();
+        Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(parent,DocumentsContract.getDocumentId(parent));
+        try(Cursor c=getContext().getContentResolver().query(children,
+            new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)){
+            if(c==null)throw new IllegalStateException("bridge_destination_unreadable");
+            while(c.moveToNext()){
+                ids.add(c.getString(0));
+                if(c.getString(1)!=null&&BridgeDestinationNames.folded(c.getString(1)).equals(BridgeDestinationNames.folded(requested)))
+                    throw new IllegalStateException("bridge_destination_exists");
+            }
+        }
+        Uri made=DocumentsContract.createDocument(getContext().getContentResolver(),parent,mime,requested);
+        if(made==null||ids.contains(DocumentsContract.getDocumentId(made)))
+            throw new IllegalStateException("bridge_destination_existing_document_returned");
+        try(Cursor c=getContext().getContentResolver().query(made,
+            new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE},null,null,null)){
+            if(c==null||!c.moveToFirst()||!requested.equals(c.getString(0))||!mime.equals(c.getString(1))){
+                DocumentsContract.deleteDocument(getContext().getContentResolver(),made);
+                throw new IllegalStateException("bridge_destination_provider_renamed");
+            }
+        }
+        return made;
+    }
+
     private Uri ownerDirectory(PluginCall call) throws Exception {
         String ownerId=call.getString("ownerId");
         if(ownerId==null)return destination; // Preserve the existing non-admin writer.
@@ -136,7 +163,7 @@ public class BridgeDestinationPlugin extends Plugin {
         }
         // Never adopt an existing directory merely because its name matches.
         String candidate=BridgeDestinationNames.ownerName(call.getString("ownerName","Persona"),names);
-        Uri created=DocumentsContract.createDocument(getContext().getContentResolver(),destination,
+        Uri created=createFresh(destination,
             DocumentsContract.Document.MIME_TYPE_DIR,candidate);
         if(created==null||!documentMatches(created,DocumentsContract.Document.MIME_TYPE_DIR,null))
             throw new IllegalStateException("bridge_destination_owner_failed");
@@ -170,6 +197,49 @@ public class BridgeDestinationPlugin extends Plugin {
         return builder.toString();
     }
 
+    private boolean recoveryBlocked=false;
+    private void journal(Uri uri) throws Exception {
+        org.json.JSONObject value=new org.json.JSONObject();
+        value.put("tree",getContext().getSharedPreferences(PREFS,0).getString(SELECTED,null));
+        value.put("parent",DocumentsContract.getDocumentId(parent()));
+        value.put("document",DocumentsContract.getDocumentId(uri));
+        try(Cursor c=getContext().getContentResolver().query(uri,
+            new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)){
+            if(c==null||!c.moveToFirst())throw new IllegalStateException();
+            value.put("name",c.getString(0));
+        }
+        if(!getContext().getSharedPreferences(PREFS,0).edit().putString("pending_stage",value.toString()).commit())
+            throw new IllegalStateException("bridge_destination_journal_failed");
+    }
+    private void forgetJournal() throws Exception {
+        if(!getContext().getSharedPreferences(PREFS,0).edit().remove("pending_stage").commit())
+            throw new IllegalStateException("bridge_destination_journal_failed");
+    }
+    private void recoverPending(){
+        recoveryBlocked=false;
+        if(staging!=null||singleStaging!=null)return;
+        String raw=getContext().getSharedPreferences(PREFS,0).getString("pending_stage",null);
+        if(raw==null)return;
+        try{
+            org.json.JSONObject j=new org.json.JSONObject(raw);
+            if(!j.getString("tree").equals(getContext().getSharedPreferences(PREFS,0).getString(SELECTED,null)))
+                throw new IllegalStateException();
+            Uri p=DocumentsContract.buildDocumentUriUsingTree(destination,j.getString("parent"));
+            Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(p,j.getString("parent"));
+            try(Cursor c=getContext().getContentResolver().query(children,
+                new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)){
+                if(c==null)throw new IllegalStateException();
+                while(c.moveToNext())if(j.getString("document").equals(c.getString(0))){
+                    if(!j.getString("name").equals(c.getString(1)))throw new IllegalStateException();
+                    Uri owned=DocumentsContract.buildDocumentUriUsingTree(destination,c.getString(0));
+                    if(!DocumentsContract.deleteDocument(getContext().getContentResolver(),owned))throw new IllegalStateException();
+                    break;
+                }
+            }
+            forgetJournal();
+        }catch(Exception error){recoveryBlocked=true;}
+    }
+
     private void restore(){
         destination=null;
         String saved=getContext().getSharedPreferences(PREFS,0).getString(SELECTED,null);
@@ -180,7 +250,7 @@ public class BridgeDestinationPlugin extends Plugin {
             if(permission.getUri().equals(uri)&&permission.isWritePermission()&&permission.isReadPermission()){
                 destination=DocumentsContract.buildDocumentUriUsingTree(
                     uri,DocumentsContract.getTreeDocumentId(uri));
-                try{if(documentMatches(destination,DocumentsContract.Document.MIME_TYPE_DIR,null))return;}
+                try{if(documentMatches(destination,DocumentsContract.Document.MIME_TYPE_DIR,null)){recoverPending();return;}}
                 catch(Exception ignored){}
                 destination=null;
             }
@@ -192,22 +262,27 @@ public class BridgeDestinationPlugin extends Plugin {
     public synchronized void getDestination(PluginCall call){
         restore();
         JSObject result=new JSObject();
-        result.put("selected",destination!=null);
+        result.put("selected",destination!=null&&!recoveryBlocked);
+        result.put("recoveryPending",recoveryBlocked);
         call.resolve(result);
     }
 
     @PluginMethod
     public synchronized void chooseDestination(PluginCall call){
-        if(staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
+        restore();
+        if(recoveryBlocked||choosing||staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
             Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(call,intent,"chosen");
+        choosing=true;
+        try{startActivityForResult(call,intent,"chosen");}
+        catch(Exception error){choosing=false;call.reject("bridge_destination_picker_failed");}
     }
 
     @ActivityCallback
-    private void chosen(PluginCall call,ActivityResult result){
+    private synchronized void chosen(PluginCall call,ActivityResult result){
+        choosing=false;
         if(call==null)return;
         Intent data=result.getData();
         if(result.getResultCode()!=Activity.RESULT_OK||data==null||
@@ -233,17 +308,17 @@ public class BridgeDestinationPlugin extends Plugin {
     public synchronized void beginFolder(PluginCall call){
         restore();
         String name=call.getString("name");
-        if(destination==null||staging!=null||singleStaging!=null||!validName(name)){
+        if(recoveryBlocked||choosing||destination==null||staging!=null||singleStaging!=null||!validName(name)){
             call.reject("bridge_destination_not_ready");return;
         }
         try{
             transferParent=ownerDirectory(call);
             name=availableName(name);
-            Uri temp=DocumentsContract.createDocument(
-                getContext().getContentResolver(),parent(),
+            Uri temp=createFresh(parent(),
                 DocumentsContract.Document.MIME_TYPE_DIR,
                 ".freept-partial-"+UUID.randomUUID());
             if(temp==null)throw new IllegalStateException();
+            try{journal(temp);}catch(Exception error){DocumentsContract.deleteDocument(getContext().getContentResolver(),temp);throw error;}
             staging=temp;finalName=name;
             directories.clear();directories.put("",temp);files.clear();
             JSObject result=new JSObject();result.put("started",true);
@@ -262,8 +337,7 @@ public class BridgeDestinationPlugin extends Plugin {
             }
             Uri parent=directories.get(key(names,names.length-1));
             if(parent==null)throw new IllegalArgumentException();
-            Uri created=DocumentsContract.createDocument(
-                getContext().getContentResolver(),parent,
+            Uri created=createFresh(parent,
                 DocumentsContract.Document.MIME_TYPE_DIR,names[names.length-1]);
             if(created==null)throw new IllegalStateException();
             directories.put(target,created);
@@ -285,8 +359,7 @@ public class BridgeDestinationPlugin extends Plugin {
             if(mime==null||mime.length()>160)throw new IllegalArgumentException();
             Uri parent=directories.get(key(names,names.length-1));
             if(parent==null)throw new IllegalArgumentException();
-            Uri created=DocumentsContract.createDocument(
-                getContext().getContentResolver(),parent,
+            Uri created=createFresh(parent,
                 mime.isEmpty()?"application/octet-stream":mime,
                 names[names.length-1]);
             if(created==null)throw new IllegalStateException();
@@ -369,7 +442,7 @@ public class BridgeDestinationPlugin extends Plugin {
         String name=call.getString("name");
         String mime=call.getString("mime","application/octet-stream");
         Object raw=call.getData().opt("size");
-        if(destination==null||staging!=null||singleStaging!=null||
+        if(recoveryBlocked||choosing||destination==null||staging!=null||singleStaging!=null||
             !validName(name)||mime==null||mime.length()>160||
             !(raw instanceof Number)){
             call.reject("bridge_destination_not_ready");return;
@@ -382,11 +455,11 @@ public class BridgeDestinationPlugin extends Plugin {
         try{
             transferParent=ownerDirectory(call);
             name=availableName(name);
-            Uri temp=DocumentsContract.createDocument(
-                getContext().getContentResolver(),parent(),
+            Uri temp=createFresh(parent(),
                 mime.isEmpty()?"application/octet-stream":mime,
                 ".freept-partial-"+UUID.randomUUID());
             if(temp==null)throw new IllegalStateException();
+            try{journal(temp);}catch(Exception error){DocumentsContract.deleteDocument(getContext().getContentResolver(),temp);throw error;}
             singleStaging=temp;singleName=name;
             files.clear();
             String id=UUID.randomUUID().toString();
@@ -410,6 +483,7 @@ public class BridgeDestinationPlugin extends Plugin {
                 getContext().getContentResolver(),singleStaging,singleName);
             if(renamed==null)throw new IllegalStateException();
             singleStaging=renamed;
+            journal(renamed);
             try(Cursor cursor=getContext().getContentResolver().query(renamed,
                 new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
                 null,null,null)){
@@ -419,6 +493,7 @@ public class BridgeDestinationPlugin extends Plugin {
             }
             if(!documentMatches(renamed,null,files.values().iterator().next().expected))
                 throw new IllegalStateException("bridge_destination_size_mismatch");
+            forgetJournal();
             singleStaging=null;singleName=null;transferParent=null;files.clear();
             call.resolve();
         }catch(Exception error){call.reject("bridge_destination_commit_failed");}
@@ -431,6 +506,7 @@ public class BridgeDestinationPlugin extends Plugin {
             if(!DocumentsContract.deleteDocument(
                 getContext().getContentResolver(),singleStaging))
                 throw new IllegalStateException();
+            forgetJournal();
             singleStaging=null;singleName=null;transferParent=null;files.clear();
             call.resolve();
         }catch(Exception error){call.reject("bridge_destination_cleanup_failed");}
@@ -448,6 +524,7 @@ public class BridgeDestinationPlugin extends Plugin {
                 getContext().getContentResolver(),staging,finalName);
             if(renamed==null)throw new IllegalStateException();
             staging=renamed;
+            journal(renamed);
             // SAF providers may rewrite the requested name: fail rather than
             // claiming that an arbitrary destination was correctly named.
             try(Cursor c=getContext().getContentResolver().query(renamed,
@@ -456,6 +533,7 @@ public class BridgeDestinationPlugin extends Plugin {
                 if(c==null||!c.moveToFirst()||!finalName.equals(c.getString(0)))
                     throw new IllegalStateException();
             }
+            forgetJournal();
             staging=null;finalName=null;transferParent=null;
             directories.clear();files.clear();
             call.resolve();
@@ -468,6 +546,7 @@ public class BridgeDestinationPlugin extends Plugin {
         try{
             if(!DocumentsContract.deleteDocument(getContext().getContentResolver(),staging))
                 throw new IllegalStateException();
+            forgetJournal();
             staging=null;finalName=null;transferParent=null;
             directories.clear();files.clear();
             call.resolve();
@@ -476,7 +555,8 @@ public class BridgeDestinationPlugin extends Plugin {
 
     @PluginMethod
     public synchronized void clearDestination(PluginCall call){
-        if(staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
+        restore();
+        if(recoveryBlocked||choosing||staging!=null||singleStaging!=null){call.reject("bridge_destination_busy");return;}
         destination=null;
         if(!getContext().getSharedPreferences(PREFS,0).edit()
             .remove(SELECTED).commit()){

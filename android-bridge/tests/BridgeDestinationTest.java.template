@@ -131,4 +131,18 @@ public class BridgeDestinationTest {
   c=call(Map.of());plugin.discardSingleFile(c.call);assertNull(c.error);
   assertFalse(docs.values().stream().anyMatch(d->d.name.contains("renamed")));
  }
+ @Test public void processRecreationCleansOnlyItsJournaledStaging()throws Exception{
+  begin(A,"interrupted.bin",300000);
+  String partial=docs.values().stream().filter(d->d.name.startsWith(".freept-partial-")).findFirst().orElseThrow().id;
+  Doc unrelated=add("root","keep.bin","application/octet-stream");
+  plugin=freshPlugin();finish(begin(A,"retry.bin",0),new byte[0]);
+  assertFalse(docs.containsKey(partial));assertTrue(docs.containsKey(unrelated.id));
+ }
+ @Test public void nativeOverlappingDownloadsFailWithoutChangingOwner()throws Exception{
+  String id=begin(A,"one.bin",0);
+  Call second=call(Map.of("ownerId",B,"ownerName","Cristina","name","two.bin","size",0,"mime","application/octet-stream"));
+  plugin.beginSingleFile(second.call);assertNotNull(second.error);finish(id,new byte[0]);
+  assertEquals(1,docs.values().stream().filter(d->"root".equals(d.parent)).count());
+ }
+
 }

@@ -53,7 +53,7 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
    if(pending)return pending;
    pending=advance().catch(error=>{record(step,'error');if(step==='bridge')started=false;throw error;}).finally(()=>{pending=null;});return pending;
   },
-  async canRegister(){if(!verified||disposed)return false;try{const r=await native.status();return r?.verified===true;}catch{return false;}},
+  async canRegister(){if(!verified||disposed)return false;try{const r=await native.status();verified=r?.verified===true;return !disposed&&verified;}catch{verified=false;return false;}},
   async report(){return native.shareReport({stages:stages.map(x=>({...x}))});},
   async dispose(){disposed=true;if(!verified){try{await tx.stop();}catch{}}}
  });
@@ -81,8 +81,9 @@ export function mountChieditore({host,heading='',controller,onVerified,onExit,on
  next.onclick=run;
  report.onclick=()=>void controller.report().catch(()=>{status.textContent='Rapporto non disponibile';});
  host.querySelector('#diagnosticClose').onclick=async()=>{
-  if(busy)return;
-  if(await controller.canRegister()){
+  if(busy||!active)return;busy=true;next.disabled=true;
+  const ready=await controller.canRegister();if(!active)return;
+  if(ready){
    active=false;clearTimeout(timer);await controller.dispose();onVerified();
   }else{active=false;clearTimeout(timer);await controller.dispose();await onExit();}
  };

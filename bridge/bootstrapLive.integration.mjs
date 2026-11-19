@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {generateKeyPairSync,sign,randomBytes,randomUUID} from 'node:crypto';
 import {createBootstrapHandler} from './bootstrapHandler.mjs';
 import {createBridgeHttpsGateway} from './httpsGateway.mjs';
-import {bootstrapBytes,bootstrapMessage} from './bootstrapProtocol.mjs';
+import {bootstrapBytes,bootstrapMessage,bootstrapHash} from './bootstrapProtocol.mjs';
 if(process.env.PGDATABASE!=='bridge_test')throw Error('disposable_database_required');
 const ADMIN='abbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',OWNER='accccccc-cccc-4ccc-8ccc-cccccccccccc';
 const TOKEN='ci_admin_authenticated_token_only',USER='ci_personal_authenticated_token_only';
@@ -72,12 +72,13 @@ test('pre-profile signed TX transfers 300000 synthetic bytes only after admin ap
   }
   assert.equal((await post('status',d.envelope('status'))).body.state,'verified');
   const secret=randomBytes(32).toString('hex');
-  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret}),USER)).status,403,'no personal profile yet');
+  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret,accountProof:bootstrapHash(USER)}),USER)).status,403,'no personal profile yet');
   sql(`insert into public.profiles(id,role,status) values('${OWNER}','user','pending') on conflict(id) do update set status='pending';`);
-  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret}),USER)).status,403,'pending profile cannot receive private-file grant');
+  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret,accountProof:bootstrapHash(USER)}),USER)).status,403,'pending profile cannot receive private-file grant');
   sql(`update public.profiles set status='approved' where id='${OWNER}'`);
-  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret}),USER)).body.bound,true);
-  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret}),USER)).body.bound,true,'lost response can safely retry');
+  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret,accountProof:bootstrapHash('other-account')}),USER)).status,403,'signed proof cannot swap personal login tokens');
+  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret,accountProof:bootstrapHash(USER)}),USER)).body.bound,true);
+  assert.equal((await post('claim',d.envelope('claim',{deviceSecret:secret,accountProof:bootstrapHash(USER)}),USER)).body.bound,true,'lost response can safely retry');
   assert.equal(sql(`select receiver_id from public.bridge_grants where device_id='${d.id}'`),ADMIN);
   assert.equal((await post('revoke',{deviceId:d.id},TOKEN)).body.revoked,true);
   assert.equal((await post('status',d.envelope('status'))).status,403);
