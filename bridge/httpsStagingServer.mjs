@@ -6,6 +6,7 @@
  * Both explicit gates are required: staging Supabase and public HTTPS proxy.
  * In particular, FreePT production Supabase is rejected by shared validator.
  */
+import {createBootstrapHandler} from './bootstrapHandler.mjs';
 import {createClient} from '@supabase/supabase-js';
 import {createBridgeOwnerEnrollmentHandler} from './ownerEnrollment.mjs';
 import {createTrustedBridgeBackend} from './trustedBackend.mjs';
@@ -32,7 +33,9 @@ export function createBridgeStagingHttpsService({
   const owner=createBridgeOwnerEnrollmentHandler({
     authClient,profilesClient:serviceClient,rpcClient:serviceClient
   });
-  const gateway=createBridgeHttpsGateway({admin,tx,owner,config:httpConfig});
+  const bootstrap=env.FREEPT_BRIDGE_BOOTSTRAP==='STAGING_DEVICE_KEY_V1'
+    ?createBootstrapHandler({authClient,db:serviceClient,enabled:true}):null;
+  const gateway=createBridgeHttpsGateway({admin,tx,owner,bootstrap,config:httpConfig});
   return Object.freeze({
     async start(){
       // Bound only to an ISOLATED managed proxy service that supplies HTTPS.

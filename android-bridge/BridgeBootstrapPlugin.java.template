@@ -1,0 +1,97 @@
+package __PACKAGE__;
+
+import android.content.Intent;
+import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import org.json.JSONObject;
+
+/** Narrow onboarding API: no arbitrary URL, private key, file or SQL access. */
+@CapacitorPlugin(name="BridgeBootstrap")
+public class BridgeBootstrapPlugin extends Plugin {
+ private volatile String lastError="none";
+ private void work(PluginCall call,String action){
+  getBridge().execute(()->{
+   try{
+    JSONObject r;
+    switch(action){
+     case "begin": r=BridgeBootstrapCore.begin(getContext());break;
+     case "status": r=BridgeBootstrapCore.status(getContext());break;
+     case "claim": r=BridgeBootstrapCore.claim(getContext(),call.getString("accessToken"));break;
+     case "cancel": BridgeBootstrapCore.cancel(getContext());r=new JSONObject().put("cancelled",true);break;
+     default:throw new SecurityException();
+    }
+    lastError="none";call.resolve(JSObject.fromJSONObject(r));
+   }catch(Exception error){
+    lastError=error instanceof SecurityException?"authorization_denied":"network_or_setup_failed";
+    call.reject(lastError);
+   }
+  });
+ }
+ @PluginMethod public void begin(PluginCall call){work(call,"begin");}
+ @PluginMethod public void status(PluginCall call){work(call,"status");}
+ @PluginMethod public void claim(PluginCall call){work(call,"claim");}
+ @PluginMethod public void cancel(PluginCall call){work(call,"cancel");}
+ @PluginMethod public void close(PluginCall call){
+  if(!BridgeBootstrapCore.verified)getContext().stopService(new Intent(getContext(),BridgeTxService.class));
+  call.resolve();getActivity().finish();
+ }
+ @PluginMethod public void localStatus(PluginCall call){
+  JSObject r=new JSObject();r.put("enabled",BridgeBootstrapCore.enabled(getContext()));
+  r.put("initialized",BridgeBootstrapCore.configured(getContext())||BridgeBootstrapCore.bound(getContext()));
+  r.put("bound",BridgeBootstrapCore.bound(getContext()));call.resolve(r);
+ }
+ private JSObject batteryStatus(){
+  PowerManager p=(PowerManager)getContext().getSystemService(android.content.Context.POWER_SERVICE);
+  JSObject r=new JSObject();r.put("unrestricted",Build.VERSION.SDK_INT<23||p!=null&&p.isIgnoringBatteryOptimizations(getContext().getPackageName()));
+  r.put("colorOs","non verificabile");return r;
+ }
+ @PluginMethod public void battery(PluginCall call){call.resolve(batteryStatus());}
+ @PluginMethod public void notificationSettings(PluginCall call){
+  try{
+   Intent settings=new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getContext().getPackageName());
+   startActivityForResult(call,settings,"notificationReturned");
+  }catch(Exception error){call.reject("settings_unavailable");}
+ }
+ @ActivityCallback private void notificationReturned(PluginCall call,ActivityResult result){if(call!=null)call.resolve();}
+ @PluginMethod public void batterySettings(PluginCall call){
+  try{startActivityForResult(call,new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),"batteryReturned");}
+  catch(Exception error){call.reject("settings_unavailable");}
+ }
+ @ActivityCallback private void batteryReturned(PluginCall call,ActivityResult result){if(call!=null)call.resolve(batteryStatus());}
+ @PluginMethod public void shareReport(PluginCall call){
+  // Build report natively from an allowlist. Never export raw JS errors/body,
+  // pairing code, keys, account, phone, document paths or backend addresses.
+  JSObject report=new JSObject();report.put("schema",1);report.put("sdk",Build.VERSION.SDK_INT);
+  report.put("manufacturer",Build.MANUFACTURER);report.put("model",Build.MODEL);
+  report.put("colorOs","non verificabile");report.put("error",lastError);
+  report.put("serviceActive",BridgeTxService.active);report.put("allFiles",BridgeAllFilesCore.granted());
+  report.put("battery",batteryStatus());
+  report.put("bridgeVerifiedInProcess",BridgeBootstrapCore.verified);
+  org.json.JSONArray stages=call.getArray("stages");org.json.JSONArray safe=new org.json.JSONArray();
+  if(stages!=null)for(int i=0;i<Math.min(stages.length(),32);i++){
+   JSONObject row=stages.optJSONObject(i);if(row==null)continue;
+   String stage=row.optString("stage"),state=row.optString("state");long ms=row.optLong("elapsedMs",-1);
+   if(stage.matches("files|notifications|battery|bridge|close")&&state.matches("granted|denied|verified|pending|error|unverifiable|restricted|closed")&&ms>=0&&ms<=86400000)
+    safe.put(new JSONObject().put("stage",stage).put("state",state).put("elapsedMs",ms));
+  }
+  report.put("stages",safe);
+  try{
+   java.io.File folder=new java.io.File(getContext().getCacheDir(),"freept-diagnostics");
+   if(!folder.isDirectory()&&!folder.mkdirs())throw new java.io.IOException();
+   java.io.File file=new java.io.File(folder,"FreePT-diagnostica.json");
+   try(java.io.FileOutputStream out=new java.io.FileOutputStream(file)){out.write(report.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+   android.net.Uri uri=androidx.core.content.FileProvider.getUriForFile(getContext(),getContext().getPackageName()+".freeptupdater.fileprovider",file);
+   Intent send=new Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_STREAM,uri)
+    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).setClipData(android.content.ClipData.newUri(getContext().getContentResolver(),"Rapporto diagnostico",uri));
+   getActivity().startActivity(Intent.createChooser(send,"Rapporto diagnostico"));call.resolve();}
+  catch(Exception error){call.reject("report_share_unavailable");}
+ }
+}

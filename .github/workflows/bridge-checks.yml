@@ -151,6 +151,11 @@ jobs:
       - name: Verify owner-only consent, unique approved admin and failure isolation
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-family-activation.sql
 
+      - name: Install isolated device-key bootstrap schema
+        run: psql -v ON_ERROR_STOP=1 -f supabase/bootstrap/INSTALL_STAGING_ONLY.sql
+      - name: Real HTTP ECDSA synthetic transfer before any personal profile
+        run: node --test bridge/bootstrapLive.integration.mjs
+
   bridge-bundle-postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 12

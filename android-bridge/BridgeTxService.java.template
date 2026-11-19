@@ -38,7 +38,7 @@ public final class BridgeTxService extends Service {
             stopSelf();return START_NOT_STICKY;
         }
         if(!BridgeAllFilesCore.granted()||
-           !BridgeDeviceSecretStore.configured(this)||
+           (!BridgeDeviceSecretStore.configured(this)&&!BridgeBootstrapCore.configured(this))||
            getSharedPreferences("freept_tx_control",0).getBoolean("paused",false)){
             stopSelf();return START_NOT_STICKY;
         }
@@ -178,6 +178,20 @@ public final class BridgeTxService extends Service {
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
         active=true;
         try{
+            // Same foreground service, authenticated technical principal before
+            // account binding. This lane only generates synthetic fixture bytes.
+            while(running.get()&&BridgeBootstrapCore.configured(this)){
+                try{
+                    BridgeBootstrapCore.tick(this);
+                    Thread.sleep(BridgeBootstrapCore.verified?10000:2000);
+                }catch(SecurityException denied){BridgeBootstrapCore.verified=false;return;}
+                catch(InterruptedException stop){return;}
+                catch(Exception network){
+                    BridgeBootstrapCore.verified=false;
+                    try{Thread.sleep(5000);}catch(InterruptedException stop){return;}
+                }
+            }
+            if(!running.get())return;
             BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(this);
             while(running.get()&&!Thread.currentThread().isInterrupted()){
                 boolean connectedOnce=false;

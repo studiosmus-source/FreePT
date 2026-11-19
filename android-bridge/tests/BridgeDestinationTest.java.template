@@ -1,0 +1,134 @@
+package __PACKAGE__;
+
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import android.content.*;
+import android.database.MatrixCursor;
+import android.net.Uri;
+import android.os.*;
+import android.provider.DocumentsContract;
+import com.getcapacitor.*;
+import java.io.*;
+import java.nio.file.Files;
+import java.util.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+
+/** Actual native plugin under Robolectric, fake SAF transport/provider. Not an Oppo test. */
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk=28,manifest=Config.NONE)
+public class BridgeDestinationTest {
+ private static final String DIR=DocumentsContract.Document.MIME_TYPE_DIR;
+ private final Map<String,Doc> docs=new LinkedHashMap<>();
+ private Context context;private ContentResolver resolver;private BridgeDestinationPlugin plugin;
+ private boolean permission=true,renameWrong=false;
+ private int serial=0;
+ static class Doc {String id,parent,name,mime;File bytes;Doc(String id,String p,String n,String m,File f){this.id=id;parent=p;name=n;mime=m;bytes=f;}}
+ private Uri uri(String id){return DocumentsContract.buildDocumentUriUsingTree(Uri.parse("content://freept.test/tree/root"),id);}
+ private Doc doc(Uri uri){return docs.get(DocumentsContract.getDocumentId(uri));}
+ private Doc add(String parent,String name,String mime)throws Exception{
+  String id="d"+(++serial);File f=File.createTempFile("saf-",".bin",context.getCacheDir());
+  Doc d=new Doc(id,parent,name,mime,f);docs.put(id,d);return d;
+ }
+ @Before public void setup()throws Exception{
+  Context app=RuntimeEnvironment.getApplication();
+  app.getSharedPreferences("freept_bridge_destination",0).edit().clear().commit();
+  resolver=mock(ContentResolver.class);context=new ContextWrapper(app){@Override public ContentResolver getContentResolver(){return resolver;}};
+  Uri tree=Uri.parse("content://freept.test/tree/root");
+  app.getSharedPreferences("freept_bridge_destination",0).edit().putString("selected_tree",tree.toString()).commit();
+  docs.put("root",new Doc("root",null,"Root",DIR,null));
+  UriPermission grant=mock(UriPermission.class);when(grant.getUri()).thenReturn(tree);when(grant.isReadPermission()).thenReturn(true);when(grant.isWritePermission()).thenReturn(true);
+  when(resolver.getPersistedUriPermissions()).thenAnswer(a->permission?List.of(grant):List.of());
+  when(resolver.query(any(Uri.class),any(String[].class),isNull(),isNull(),isNull())).thenAnswer(a->{
+   Uri u=a.getArgument(0);String[] columns=a.getArgument(1);MatrixCursor c=new MatrixCursor(columns);
+   if(u.getPath().endsWith("/children")){
+    String parent=DocumentsContract.getDocumentId(u);
+    for(Doc d:docs.values())if(parent.equals(d.parent))row(c,columns,d);
+   }else{Doc d=doc(u);if(d!=null)row(c,columns,d);}
+   return c;
+  });
+  when(resolver.openFileDescriptor(any(Uri.class),eq("rw"))).thenAnswer(a->ParcelFileDescriptor.open(doc(a.getArgument(0)).bytes,ParcelFileDescriptor.MODE_READ_WRITE));
+  ContentProviderClient client=mock(ContentProviderClient.class);
+  when(resolver.acquireUnstableContentProviderClient(anyString())).thenReturn(client);
+  when(client.call(anyString(),nullable(String.class),any(Bundle.class))).thenAnswer(a->providerCall(a.getArgument(0),a.getArgument(2)));
+  when(resolver.call(any(Uri.class),anyString(),nullable(String.class),any(Bundle.class))).thenAnswer(a->providerCall(a.getArgument(1),a.getArgument(3)));
+  plugin=freshPlugin();
+ }
+ private BridgeDestinationPlugin freshPlugin(){return new BridgeDestinationPlugin(){@Override public Context getContext(){return context;}};}
+ private void row(MatrixCursor c,String[] columns,Doc d){
+  Object[] values=new Object[columns.length];
+  for(int i=0;i<columns.length;i++)switch(columns[i]){
+   case "document_id":values[i]=d.id;break;case "_display_name":values[i]=d.name;break;
+   case "mime_type":values[i]=d.mime;break;case "_size":values[i]=d.bytes==null?0L:d.bytes.length();break;
+  }c.addRow(values);
+ }
+ private Bundle providerCall(String method,Bundle in)throws Exception{
+  Uri u=in.getParcelable("uri");Doc d=doc(u);Bundle out=new Bundle();
+  if(method.equals("android:createDocument")){
+   Doc n=add(d.id,in.getString("_display_name"),in.getString("mime_type"));out.putParcelable("uri",uri(n.id));
+  }else if(method.equals("android:renameDocument")){
+   d.name=renameWrong?"provider-renamed.bin":in.getString("_display_name");out.putParcelable("uri",uri(d.id));
+  }else if(method.equals("android:deleteDocument")){
+   Set<String> remove=new HashSet<>();remove.add(d.id);
+   boolean changed=true;while(changed){changed=false;for(Doc n:docs.values())if(remove.contains(n.parent)&&remove.add(n.id))changed=true;}
+   for(String id:remove){Doc n=docs.remove(id);if(n.bytes!=null)n.bytes.delete();}
+  }else throw new IllegalArgumentException(method);
+  return out;
+ }
+ static class Call {PluginCall call;JSObject result;String error;}
+ private Call call(Map<String,Object> args){
+  Call c=new Call();c.call=mock(PluginCall.class);JSObject data=new JSObject();for(var e:args.entrySet())data.put(e.getKey(),e.getValue());
+  when(c.call.getData()).thenReturn(data);
+  when(c.call.getString(anyString())).thenAnswer(a->(String)args.get(a.getArgument(0)));
+  when(c.call.getString(anyString(),nullable(String.class))).thenAnswer(a->args.getOrDefault(a.getArgument(0),a.getArgument(1)));
+  when(c.call.getArray(anyString())).thenAnswer(a->{Object v=args.get(a.getArgument(0));return v instanceof List?new JSArray((List<?>)v):null;});
+  doAnswer(a->{c.result=a.getArgument(0);return null;}).when(c.call).resolve(any(JSObject.class));
+  doAnswer(a->{c.error=a.getArgument(0);return null;}).when(c.call).reject(anyString());return c;
+ }
+ private String begin(String owner,String name,int size)throws Exception{
+  Map<String,Object> a=new HashMap<>(Map.of("name",name,"size",size,"mime","application/octet-stream"));
+  if(owner!=null){a.put("ownerId",owner);a.put("ownerName","Cristina");}
+  Call c=call(a);plugin.beginSingleFile(c.call);assertNull(c.error);assertNotNull(c.result);return c.result.getString("fileId");
+ }
+ private void finish(String fileId,byte[] bytes)throws Exception{
+  for(int offset=0;offset<bytes.length;offset+=262144){int end=Math.min(bytes.length,offset+262144);
+   Call w=call(Map.of("fileId",fileId,"offset",offset,"base64",android.util.Base64.encodeToString(Arrays.copyOfRange(bytes,offset,end),android.util.Base64.NO_WRAP)));
+   plugin.writeChunk(w.call);assertNull(w.error);
+  }
+  Call f=call(Map.of("fileId",fileId));plugin.commitFile(f.call);assertNull(f.error);
+  Call c=call(Map.of());plugin.commitSingleFile(c.call);assertNull(c.error);
+ }
+ private static final String A="11111111-1111-4111-8111-111111111111",B="22222222-2222-4222-8222-222222222222";
+ @Test public void persistentOwnerMappingAndDuplicateFilenames()throws Exception{
+  finish(begin(A,"foto.bin",3),new byte[]{1,2,3});plugin=freshPlugin();
+  finish(begin(A,"foto.bin",1),new byte[]{4});
+  List<Doc> people=docs.values().stream().filter(d->"root".equals(d.parent)).toList();assertEquals(1,people.size());
+  assertEquals("Cristina",people.get(0).name);
+  assertTrue(docs.values().stream().anyMatch(d->"foto (1).bin".equals(d.name)));
+ }
+ @Test public void homonymsNeverShareADirectory()throws Exception{
+  finish(begin(A,"one.bin",0),new byte[0]);finish(begin(B,"two.bin",0),new byte[0]);
+  assertEquals(Set.of("Cristina","Cristina (2)"),new HashSet<>(docs.values().stream().filter(d->"root".equals(d.parent)).map(d->d.name).toList()));
+ }
+ @Test public void largeFileIsVerifiedByteForByte()throws Exception{
+  byte[] b=new byte[300000];new Random(42).nextBytes(b);finish(begin(A,"large.bin",b.length),b);
+  Doc d=docs.values().stream().filter(x->"large.bin".equals(x.name)).findFirst().orElseThrow();assertArrayEquals(b,Files.readAllBytes(d.bytes.toPath()));
+ }
+ @Test public void revocationAndTraversalDoNotStartATransfer()throws Exception{
+  permission=false;Call c=call(Map.of("name","x.bin","size",0,"mime","application/octet-stream","ownerId",A,"ownerName","Cristina"));plugin.beginSingleFile(c.call);assertNotNull(c.error);
+  permission=true;c=call(Map.of("name","../x","size",0,"mime","application/octet-stream"));plugin.beginSingleFile(c.call);assertNotNull(c.error);
+  assertEquals(1,docs.size());
+ }
+ @Test public void incompleteAndWrongProviderRenameAreNotReportedSaved()throws Exception{
+  String id=begin(A,"x.bin",3);Call c=call(Map.of("fileId",id));plugin.commitFile(c.call);assertNotNull(c.error);
+  c=call(Map.of());plugin.discardSingleFile(c.call);assertNull(c.error);
+  id=begin(A,"x.bin",0);c=call(Map.of("fileId",id));plugin.commitFile(c.call);assertNull(c.error);
+  renameWrong=true;c=call(Map.of());plugin.commitSingleFile(c.call);assertNotNull(c.error);
+  c=call(Map.of());plugin.discardSingleFile(c.call);assertNull(c.error);
+  assertFalse(docs.values().stream().anyMatch(d->d.name.contains("renamed")));
+ }
+}

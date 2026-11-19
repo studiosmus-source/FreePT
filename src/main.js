@@ -1,3 +1,5 @@
+import {createChieditore,mountChieditore} from './chieditore.js';
+import {mountBootstrapAdmin} from './bootstrapAdminUi.js';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -38,6 +40,26 @@ const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
+const bootstrapEnabled=import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'&&import.meta.env.VITE_BRIDGE_BOOTSTRAP_ENABLED==='true';
+const bridgeBootstrap=bootstrapEnabled&&bridgeFiles?registerPlugin('BridgeBootstrap'):null;
+let diagnosticCleanup=null;
+let diagnosticPassed=false;
+function diagnosticScreen(){
+  if(diagnosticCleanup)diagnosticCleanup();
+  const controller=createChieditore({files:bridgeAllFiles,notifications:PushNotifications,native:bridgeBootstrap,tx:bridgeTxControl});
+  diagnosticCleanup=mountChieditore({host:el,heading:heading('FreePT'),controller,
+    onVerified:()=>{diagnosticPassed=true;diagnosticCleanup=null;requestScreen();},
+    onExit:()=>bridgeBootstrap.close(),onAdminEntry:bindConcealedAdminEntry});
+}
+async function bindBootstrapAfterApproval(){
+  if(!bridgeBootstrap||profile?.role!=='user'||profile?.status!=='approved')return;
+  const local=await bridgeBootstrap.localStatus();
+  if(!local?.initialized||local.bound)return;
+  const {data,error}=await db.auth.getSession();
+  if(error||!data?.session?.access_token)throw Error('Sessione non disponibile');
+  await bridgeBootstrap.claim({accessToken:data.session.access_token});
+}
+
 const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
 // Full-APK self-updater (native). Endpoint is locked in the APK; JS cannot set it.
 const freeptUpdater = Capacitor.isNativePlatform() ? registerPlugin('FreePTUpdater') : null;
@@ -154,6 +176,7 @@ function bindConcealedAdminEntry(){
 
 
 function requestScreen(denied=false){
+  if(bridgeBootstrap&&!denied&&!diagnosticPassed){diagnosticScreen();return;}
   closeAdminOverlays();
   selected=null; messageRequest++;
   el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
@@ -172,6 +195,10 @@ function requestScreen(denied=false){
     if(!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso, ad esempio +39...',true);return}
     const button=form.querySelector('button');button.disabled=true;status('Invio richiesta in corso...');
     try {
+      if(bridgeBootstrap){
+        const verified=await bridgeBootstrap.status();
+        if(!verified?.verified){diagnosticPassed=false;diagnosticScreen();return;}
+      }
       const {data:sessionData}=await db.auth.getSession();
       let user=sessionData?.session?.user;
       if(!user){
@@ -205,6 +232,7 @@ async function completeAdminLogin(user){
 }
 
 function adminScreen(){
+  if(diagnosticCleanup){diagnosticCleanup();diagnosticCleanup=null;}
   closeAdminOverlays();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
     '<p class="small">Accedi con email e password del tuo account amministratore FreePT. La sessione resta attiva finché è valida.</p>'+
@@ -344,7 +372,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user')void startProvisionedTxWhenAllowed();void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){await bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user')void startProvisionedTxWhenAllowed();void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -563,6 +591,8 @@ function showAdminBridge(){
     '<button type="button" id="bridgeKeyRemove">Cancella chiavi salvate</button>'+
     '</section>';
   document.body.appendChild(panel);
+  if(bridgeBootstrap)mountBootstrapAdmin({host:panel.querySelector('section'),db,baseUrl:bridgeRuntime.baseUrl,
+    isAuthorized:()=>panel.isConnected&&profile?.role==='admin'&&profile?.status==='approved'&&adminUnlocked&&!!me?.id});
   const message=panel.querySelector('#bridgeKeyStatus');
   const provider=bridgeRxKeys;
   const alive=()=>panel.isConnected&&me?.id&&profile?.role==='admin'&&adminUnlocked;

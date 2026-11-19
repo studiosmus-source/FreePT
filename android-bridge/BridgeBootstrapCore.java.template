@@ -1,0 +1,135 @@
+package __PACKAGE__;
+
+import android.content.Context;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
+import org.json.JSONObject;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPairGenerator;
+import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.security.Signature;
+import java.security.spec.ECGenParameterSpec;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+/** Native-only device identity. Before profile binding, only synthetic jobs exist. */
+final class BridgeBootstrapCore {
+ private static final String PREFS="freept_bootstrap_v1",ALIAS="it.freept.bootstrap.key.v1";
+ private static final int SIZE=300000;
+ static volatile boolean verified=false;
+ private BridgeBootstrapCore(){}
+ static boolean enabled(Context c){
+  int id=c.getResources().getIdentifier("bridge_bootstrap_enabled","bool",c.getPackageName());
+  return id!=0&&c.getResources().getBoolean(id);
+ }
+ static boolean configured(Context c){return enabled(c)&&c.getSharedPreferences(PREFS,0).contains("id")&&!bound(c);}
+ static boolean bound(Context c){return c.getSharedPreferences(PREFS,0).getBoolean("bound",false);}
+ private static KeyStore store()throws Exception{KeyStore k=KeyStore.getInstance("AndroidKeyStore");k.load(null);return k;}
+ private static String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte v:b)s.append(String.format(java.util.Locale.ROOT,"%02x",v&255));return s.toString();}
+ private static String random(int n){byte[] b=new byte[n];new SecureRandom().nextBytes(b);return hex(b);}
+ private static String sha(byte[] b)throws Exception{return hex(MessageDigest.getInstance("SHA-256").digest(b));}
+ static synchronized JSONObject begin(Context c)throws Exception{
+  if(!enabled(c)||!BridgeAllFilesCore.granted()||(BridgeDeviceSecretStore.configured(c)&&!configured(c)))throw new SecurityException("bootstrap_unavailable");
+  android.content.SharedPreferences p=c.getSharedPreferences(PREFS,0);
+  if(!p.contains("id")){
+   KeyPairGenerator g=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC,"AndroidKeyStore");
+   g.initialize(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY)
+    .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1")).setDigests(KeyProperties.DIGEST_SHA256).build());
+   g.generateKeyPair();
+   if(!p.edit().putString("id",java.util.UUID.randomUUID().toString()).putString("pairCode",random(6)).putBoolean("bound",false).commit())throw new java.io.IOException();
+  }
+  String publicKey=Base64.encodeToString(store().getCertificate(ALIAS).getPublicKey().getEncoded(),Base64.NO_WRAP);
+  JSONObject r=post(c,"start",new JSONObject().put("publicKey",publicKey).put("pairCode",p.getString("pairCode","")).put("consent",true),null);
+  return new JSONObject().put("state",r.getString("state")).put("pairCode",p.getString("pairCode",""));
+ }
+ private static String endpoint(Context c)throws Exception{
+  String raw=c.getString(c.getResources().getIdentifier("bridge_endpoint","string",c.getPackageName()));
+  URL u=new URL(raw);
+  if(!enabled(c)||!"https".equals(u.getProtocol())||u.getPort()!=-1||u.getUserInfo()!=null||u.getQuery()!=null||u.getRef()!=null||
+    !(u.getPath().isEmpty()||u.getPath().equals("/"))||u.getHost().equals("cpopqsvzzxfjgnlawlvc.supabase.co"))throw new SecurityException();
+  return "https://"+u.getHost();
+ }
+ private static JSONObject post(Context c,String action,JSONObject payload,String accessToken)throws Exception{
+  String id=c.getSharedPreferences(PREFS,0).getString("id",null),nonce=random(16),body=payload.toString();
+  long timestamp=System.currentTimeMillis();
+  String proof="freept-bootstrap-v1\n"+action+"\n"+id+"\n"+timestamp+"\n"+nonce+"\n"+body;
+  Signature signer=Signature.getInstance("SHA256withECDSA");
+  signer.initSign((java.security.PrivateKey)store().getKey(ALIAS,null));signer.update(proof.getBytes(StandardCharsets.UTF_8));
+  JSONObject envelope=new JSONObject().put("deviceId",id).put("timestamp",timestamp).put("nonce",nonce)
+    .put("payload",body).put("signature",Base64.encodeToString(signer.sign(),Base64.NO_WRAP));
+  HttpURLConnection conn=(HttpURLConnection)new URL(endpoint(c)+"/bridge/bootstrap/"+action).openConnection();
+  try{
+   conn.setRequestMethod("POST");conn.setInstanceFollowRedirects(false);conn.setConnectTimeout(10000);conn.setReadTimeout(15000);
+   conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");
+   if(accessToken!=null){if(!accessToken.matches("[^\\s]{20,8192}"))throw new SecurityException();conn.setRequestProperty("Authorization","Bearer "+accessToken);}
+   byte[] bytes=envelope.toString().getBytes(StandardCharsets.UTF_8);
+   if(bytes.length>360000)throw new SecurityException();
+   try(OutputStream out=conn.getOutputStream()){out.write(bytes);}
+   int code=conn.getResponseCode();
+   if(code==401||code==403)throw new SecurityException("bootstrap_denied");
+   if(code<200||code>=300)throw new java.io.IOException("bootstrap_http_"+code);
+   try(InputStream in=conn.getInputStream()){
+    java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();byte[] b=new byte[2048];int n;
+    while((n=in.read(b))!=-1){if(out.size()+n>10000)throw new java.io.IOException();out.write(b,0,n);}
+    return new JSONObject(out.toString("UTF-8"));
+   }
+  }finally{conn.disconnect();}
+ }
+ private static byte[] fixture(String challenge){
+  if(!challenge.matches("[0-9a-f]{64}"))throw new SecurityException();
+  byte[] seed=new byte[32],all=new byte[SIZE];
+  for(int i=0;i<32;i++)seed[i]=(byte)Integer.parseInt(challenge.substring(i*2,i*2+2),16);
+  for(int i=0;i<SIZE;i++)all[i]=(byte)(seed[i%32]^(i&255));return all;
+ }
+ static JSONObject tick(Context c)throws Exception{
+  JSONObject r=post(c,"poll",new JSONObject(),null);
+  String state=r.getString("state");
+  if("verified".equals(state)){
+   String expected=c.getSharedPreferences(PREFS,0).getString("fixtureHash","");
+   if(!expected.equals(r.optString("sha256"))||expected.length()!=64)throw new SecurityException("bootstrap_integrity_failed");
+   verified=true;return new JSONObject().put("state","verified");
+  }
+  JSONObject job=r.optJSONObject("job");
+  if(job!=null){
+   if(!"diagnostic".equals(job.getString("operation"))||job.getInt("size")!=SIZE)throw new SecurityException();
+   int offset=job.getInt("offset"),length=job.getInt("length");
+   if(offset<0||offset>=SIZE||length!=Math.min(262144,SIZE-offset))throw new SecurityException();
+   byte[] all=fixture(job.getString("challenge"));String hash=sha(all);
+   if(!c.getSharedPreferences(PREFS,0).edit().putString("fixtureHash",hash).commit())throw new java.io.IOException();
+   // Generated bytes only: no filesystem catalogue, handle or user file accepted.
+   JSONObject ack=post(c,"chunk",new JSONObject().put("offset",offset)
+    .put("base64",Base64.encodeToString(java.util.Arrays.copyOfRange(all,offset,offset+length),Base64.NO_WRAP)),null);
+   if(ack.getInt("received")!=offset+length||!hash.equals(ack.getString("sha256")))throw new SecurityException("bootstrap_integrity_failed");
+   return new JSONObject().put("state","transferring");
+  }
+  return new JSONObject().put("state",state);
+ }
+ static JSONObject status(Context c)throws Exception{
+  JSONObject r=post(c,"status",new JSONObject(),null);
+  String hash=c.getSharedPreferences(PREFS,0).getString("fixtureHash","");
+  boolean ready=BridgeTxService.active&&BridgeAllFilesCore.granted()&&("verified".equals(r.optString("state"))||"bound".equals(r.optString("state")))&&hash.length()==64&&hash.equals(r.optString("sha256"));
+  verified=ready;
+  return new JSONObject().put("verified",ready).put("state",r.getString("state"));
+ }
+ static synchronized JSONObject claim(Context c,String accessToken)throws Exception{
+  if(!status(c).getBoolean("verified"))throw new SecurityException();
+  String id=c.getSharedPreferences(PREFS,0).getString("id",null);
+  // Persist the exact secret before the transaction; retry uses the same secret.
+  // No rollback/overwrite of an existing owner's credentials on a failed request.
+  if(!BridgeDeviceSecretStore.configured(c))BridgeDeviceSecretStore.save(c,id,random(32));
+  BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(c);
+  if(!id.equals(cred.deviceId))throw new SecurityException();
+  JSONObject r=post(c,"claim",new JSONObject().put("deviceSecret",cred.deviceSecret),accessToken);
+  if(!r.optBoolean("bound")||!id.equals(r.optString("deviceId")))throw new SecurityException();
+  if(!c.getSharedPreferences(PREFS,0).edit().putBoolean("bound",true).commit())throw new java.io.IOException();
+  return new JSONObject().put("bound",true);
+ }
+ static void cancel(Context c)throws Exception{
+  if(configured(c)){post(c,"cancel",new JSONObject(),null);verified=false;}
+ }
+}

@@ -28,6 +28,10 @@ elif target == "production":
 else:
     raise SystemExit("Unknown Bridge installation target")
 
+bootstrap_enabled = os.environ.get("FREEPT_BRIDGE_BOOTSTRAP") == "STAGING_DEVICE_KEY_V1"
+if bootstrap_enabled and target != "staging":
+    raise SystemExit("Bootstrap requires the isolated staging installation target")
+
 # The runtime endpoint is injected at APK build time, never committed or guessed.
 from urllib.parse import urlparse
 from xml.sax.saxutils import escape
@@ -76,6 +80,7 @@ source = source.replace(
     registerPlugin(BridgeTxControlPlugin.class);
     registerPlugin(FreePTUpdaterPlugin.class);
     registerPlugin(FreePTAdminSharePlugin.class);
+    registerPlugin(BridgeBootstrapPlugin.class);
     super.onCreate(savedInstanceState);
   }
 """,
@@ -85,7 +90,7 @@ required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin", "BridgeDestinationNames",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
-    "FreePTUpdaterPlugin", "FreePTAdminSharePlugin"
+    "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore"
 ]
 for name in required_templates:
     path = Path("android-bridge") / (name + ".java.template")
@@ -101,6 +106,15 @@ if (manifest_preflight.count("<application") != 1 or
         "BridgeTxService" in manifest_preflight):
     raise SystemExit("Unexpected AndroidManifest.xml; refusing Bridge patch")
 main.write_text(source)
+# Bootstrap is compile-time isolated; never enable it in a production build.
+for helper_name in ("BridgeBootstrapPlugin", "BridgeBootstrapCore"):
+    main.with_name(helper_name + ".java").write_text(
+        (Path("android-bridge") / (helper_name + ".java.template")).read_text().replace("__PACKAGE__", package)
+    )
+bootstrap_values = Path("android/app/src/main/res/values/freept_bootstrap.xml")
+bootstrap_values.parent.mkdir(parents=True, exist_ok=True)
+bootstrap_values.write_text('<resources><bool name="bridge_bootstrap_enabled">' +
+    ("true" if bootstrap_enabled else "false") + '</bool></resources>\n')
 main.with_name("BridgeDestinationNames.java").write_text(
     Path("android-bridge/BridgeDestinationNames.java.template").read_text().replace("__PACKAGE__", package)
 )
@@ -222,7 +236,7 @@ xml_dir.mkdir(parents=True, exist_ok=True)
 (xml_dir / "freept_updater_paths.xml").write_text(
     '<?xml version="1.0" encoding="utf-8"?>\n'
     '<paths><external-files-path name="freept_updates" path="updates/" />'
-    '</paths>\n'
+    '<cache-path name="freept_diagnostics" path="freept-diagnostics/" /></paths>\n'
 )
 (values / "freept_updater.xml").write_text(
     '<resources><string name="ota_apk_endpoint">' +

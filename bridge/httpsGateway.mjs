@@ -10,6 +10,14 @@
 import {createServer} from 'node:http';
 
 const ROUTES=Object.freeze({
+  '/bridge/bootstrap/start':'bootstrap',
+  '/bridge/bootstrap/poll':'bootstrap',
+  '/bridge/bootstrap/chunk':'bootstrap',
+  '/bridge/bootstrap/status':'bootstrap',
+  '/bridge/bootstrap/claim':'bootstrap',
+  '/bridge/bootstrap/cancel':'bootstrap',
+  '/bridge/bootstrap/approve':'bootstrap',
+  '/bridge/bootstrap/revoke':'bootstrap',
   '/bridge/admin/list':'admin',
   '/bridge/admin/read':'admin',
   '/bridge/admin/browse':'admin',
@@ -90,7 +98,7 @@ async function readJson(req,limit){
   }catch{return {error:fail(400,'invalid_json')};}
 }
 export function createBridgeHttpsGateway({
-  admin,owner,tx,config,
+  admin,owner,tx,bootstrap=null,config,
   allowHttpInUnitTests=false,now=()=>Date.now()
 }={}){
   if(typeof admin!=='function'||typeof owner!=='function'||typeof tx!=='function'||
@@ -113,6 +121,7 @@ export function createBridgeHttpsGateway({
       write(res,200,{status:'ok'},origin);return;
     }
     const route=ROUTES[req.url];
+    if(route==='bootstrap'&&typeof bootstrap!=='function'){write(res,404,{error:'not_found'},origin);return;}
     if(!route){write(res,404,{error:'not_found'},origin);return;}
     if(req.method==='OPTIONS'){
       // Never permit arbitrary origins or credential-bearing wildcard CORS.
@@ -130,10 +139,10 @@ export function createBridgeHttpsGateway({
     const time=now();
     if(time-windowStart>=60000){windowStart=time;globalCount=0;}
     if(++globalCount>180){write(res,429,{error:'rate_limited'},origin);return;}
-    const parsed=await readJson(req,req.url==='/bridge/tx/chunk'?MAX_CHUNK_BODY:(req.url==='/bridge/tx/folder'||req.url==='/bridge/tx/browse')?MAX_CATALOGUE:MAX_SMALL);
+    const parsed=await readJson(req,(req.url==='/bridge/tx/chunk'||req.url==='/bridge/bootstrap/chunk')?MAX_CHUNK_BODY:(req.url==='/bridge/tx/folder'||req.url==='/bridge/tx/browse')?MAX_CATALOGUE:MAX_SMALL);
     if(parsed.error){write(res,parsed.error.status,parsed.error.body,origin);return;}
     try{
-      const handler=route==='admin'?admin:route==='tx'?tx:owner;
+      const handler=route==='bootstrap'?bootstrap:route==='admin'?admin:route==='tx'?tx:owner;
       const response=await handler({
         method:'POST',path:req.url,
         headers:{authorization:req.headers.authorization},

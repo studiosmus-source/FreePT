@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/bridge-chunk-receiver-20261108
+      - work/unified-verified-20261119
     paths:
       - 'android-bridge/**'
       - 'src/**'
@@ -30,7 +31,8 @@ jobs:
           VITE_SUPABASE_URL: https://bridge-build-only.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_aaaaaaaaaaaaaaaaaaaaaaaa
           VITE_BRIDGE_ISOLATED_BUILD: 'true'
-          VITE_BRIDGE_TEST_API_URL: ''
+          VITE_BRIDGE_TEST_API_URL: https://bridge-bootstrap-ci.invalid
+          VITE_BRIDGE_BOOTSTRAP_ENABLED: 'true'
         run: |
           npm install --no-audit --no-fund
           npm run build
@@ -50,8 +52,10 @@ jobs:
           PY
           npx cap add android
           npx cap sync android
-          python3 android-bridge/install.py
+          FREEPT_BRIDGE_BOOTSTRAP=STAGING_DEVICE_KEY_V1 VITE_BRIDGE_TEST_API_URL=https://bridge-bootstrap-ci.invalid python3 android-bridge/install.py
           grep -Fq 'BridgeDestinationPlugin.class' android/app/src/main/java/it/freept/bridge/next/MainActivity.java
+      - name: Install native SAF simulation tests (isolated only)
+        run: python3 android-bridge/install_destination_tests.py
       - name: Prefer direct Gradle distribution mirror on generated Android project
         shell: bash
         run: |
@@ -71,7 +75,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon
           test -s app/build/outputs/apk/debug/app-debug.apk
       - name: Verify this is not the production app
         run: |
@@ -81,3 +85,10 @@ jobs:
           unzip -t "$APK" > /dev/null
           sha256sum "$APK"
       # Compile-only: never publish an unconfigured or ephemeral-signed APK.
+      - name: Preserve native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-native-SAF-tests
+          path: android/app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
