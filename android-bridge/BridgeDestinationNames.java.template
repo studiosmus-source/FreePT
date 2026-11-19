@@ -1,0 +1,31 @@
+package __PACKAGE__;
+
+import java.text.Normalizer;
+import java.util.Locale;
+import java.util.Set;
+
+/** Pure naming policy shared by the SAF implementation and JVM regression tests. */
+public final class BridgeDestinationNames {
+    private BridgeDestinationNames(){}
+    public static String folded(String value){
+        return Normalizer.normalize(value,Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
+    }
+    public static String ownerLabel(String value){
+        String label=Normalizer.normalize(value==null?"Persona":value,Normalizer.Form.NFC)
+            .replaceAll("[\\\\/<>:\"|?*\\p{Cntrl}\\p{Cf}]","_").trim().replaceAll("[. ]+$","");
+        if(label.isEmpty()||label.equals(".")||label.equals(".."))label="Persona";
+        label=label.substring(0,label.offsetByCodePoints(0,Math.min(80,label.codePointCount(0,label.length()))));
+        if(label.matches("(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?$"))label="_"+label;
+        return label;
+    }
+    public static String ownerName(String value,Set<String> existing){
+        String label=ownerLabel(value),candidate=label;
+        Set<String> folded=new java.util.HashSet<>();
+        for(String name:existing)folded.add(folded(name));
+        for(int i=2;folded.contains(folded(candidate));i++){
+            if(i>10000)throw new IllegalStateException("bridge_destination_no_free_name");
+            candidate=label+" ("+i+")";
+        }
+        return candidate;
+    }
+}

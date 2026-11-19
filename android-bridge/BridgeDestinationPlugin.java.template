@@ -135,17 +135,7 @@ public class BridgeDestinationPlugin extends Plugin {
             }
         }
         // Never adopt an existing directory merely because its name matches.
-        String label=call.getString("ownerName","Persona");
-        label=java.text.Normalizer.normalize(label,java.text.Normalizer.Form.NFC)
-            .replaceAll("[\\/\\\\<>:\"|?*\\p{Cntrl}\\p{Cf}]","_").trim()
-            .replaceAll("[. ]+$","");
-        if(label.isEmpty()||label.equals(".")||label.equals(".."))label="Persona";
-        label=label.substring(0,label.offsetByCodePoints(0,Math.min(80,label.codePointCount(0,label.length()))));
-        String candidate=label;
-        for(int i=2;names.contains(candidate.toLowerCase(java.util.Locale.ROOT));i++){
-            if(i>10000)throw new IllegalStateException("bridge_destination_no_free_name");
-            candidate=label+" ("+i+")";
-        }
+        String candidate=BridgeDestinationNames.ownerName(call.getString("ownerName","Persona"),names);
         Uri created=DocumentsContract.createDocument(getContext().getContentResolver(),destination,
             DocumentsContract.Document.MIME_TYPE_DIR,candidate);
         if(created==null||!documentMatches(created,DocumentsContract.Document.MIME_TYPE_DIR,null))

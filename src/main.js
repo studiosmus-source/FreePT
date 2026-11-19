@@ -1050,14 +1050,14 @@ async function deleteConversationFiles(userId){
 }
 
 async function copyAdminChatText(value){
-  if(profile?.role!=='admin'||!adminUnlocked||!me?.id) return;
+  if(profile?.role!=='admin'||profile?.status!=='approved'||!adminUnlocked||!me?.id) return;
   if(freeptAdminShare)await freeptAdminShare.copyText({text:value});
   else if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(value);
   else throw Error('Copia non disponibile');
   status('Testo copiato.');
 }
 function mountAdminChatShareActions(feed){
-  if(profile?.role!=='admin'||!adminUnlocked||!me?.id)return;
+  if(profile?.role!=='admin'||profile?.status!=='approved'||!adminUnlocked||!me?.id)return;
   feed.querySelectorAll('article.bubble').forEach((bubble,index)=>{
     const message=messages[index];
     if(!message||(!message.body&&!message.file_path))return;

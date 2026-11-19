@@ -82,7 +82,7 @@ source = source.replace(
 )
 # Preflight every required input before touching generated Android files.
 required_templates = [
-    "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin",
+    "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin", "BridgeDestinationNames",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
     "FreePTUpdaterPlugin", "FreePTAdminSharePlugin"
@@ -101,6 +101,9 @@ if (manifest_preflight.count("<application") != 1 or
         "BridgeTxService" in manifest_preflight):
     raise SystemExit("Unexpected AndroidManifest.xml; refusing Bridge patch")
 main.write_text(source)
+main.with_name("BridgeDestinationNames.java").write_text(
+    Path("android-bridge/BridgeDestinationNames.java.template").read_text().replace("__PACKAGE__", package)
+)
 template = Path("android-bridge/BridgeFilesPlugin.java.template").read_text()
 if template.count("__PACKAGE__") != 1:
     raise SystemExit("Unexpected Java template")

@@ -58,7 +58,7 @@ test('admin writer rechecks authorization after Android picker returns',async()=
  await assert.rejects(f.make(OWNER)(meta),/non autorizzato/);assert.equal(f.calls.length,0);
 });
 test('administrator copies exact whitespace and Unicode; user cannot copy via admin function',async()=>{
- const calls=[],context=vm.createContext({profile:{role:'admin'},adminUnlocked:true,me:{id:'admin'},
+ const calls=[],context=vm.createContext({profile:{role:'admin',status:'approved'},adminUnlocked:true,me:{id:'admin'},
   freeptAdminShare:{copyText:async value=>calls.push(value)},status:()=>{}});
  vm.runInContext(main.slice(main.indexOf('async function copyAdminChatText('),main.indexOf('function mountAdminChatShareActions(')),context);
  const text='  è\n\t👋  ';

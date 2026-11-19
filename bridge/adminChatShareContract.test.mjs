@@ -7,7 +7,7 @@ test('admin session unlock does not depend on biometric hardware',()=>{
  assert.doesNotMatch(main,/NativeBiometric|verifyIdentity|Sblocca con impronta/);
  assert.match(main,/profile\?\.role==='admin'&&profile\?\.status==='approved'/);
  assert.match(main,/mountAdminChatShareActions\(feed\)/);
- assert.match(main,/if\(profile\?\.role!=='admin'\|\|!adminUnlocked/);
+ assert.match(main,/if\(profile\?\.role!=='admin'\|\|profile\?\.status!=='approved'\|\|!adminUnlocked/);
 });
 test('admin-only message copy has no sharing endpoint or biometric promise',()=>{
  const main=read('src/main.js');
