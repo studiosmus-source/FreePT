@@ -54,7 +54,8 @@ if any(name in source for name in ("BridgeFilesPlugin.class",
                                       "BridgeRxKeysPlugin.class",
                                       "BridgeAllFilesPlugin.class",
                                       "BridgeTxControlPlugin.class",
-                                      "FreePTUpdaterPlugin.class")):
+                                      "FreePTUpdaterPlugin.class",
+                                      "FreePTAdminSharePlugin.class")):
     raise SystemExit("Plugin already registered: refuse stacking patches")
 anchor = "public class MainActivity extends BridgeActivity {"
 if source.count(anchor) != 1:
@@ -74,6 +75,7 @@ source = source.replace(
     registerPlugin(BridgeAllFilesPlugin.class);
     registerPlugin(BridgeTxControlPlugin.class);
     registerPlugin(FreePTUpdaterPlugin.class);
+    registerPlugin(FreePTAdminSharePlugin.class);
     super.onCreate(savedInstanceState);
   }
 """,
@@ -83,7 +85,7 @@ required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
-    "FreePTUpdaterPlugin"
+    "FreePTUpdaterPlugin", "FreePTAdminSharePlugin"
 ]
 for name in required_templates:
     path = Path("android-bridge") / (name + ".java.template")
@@ -139,7 +141,8 @@ if xml.count("<application") != 1:
     raise SystemExit("Unexpected AndroidManifest.xml layout")
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
-             "BridgeTxControlPlugin", "BridgeTxBootReceiver", "FreePTUpdaterPlugin"):
+             "BridgeTxControlPlugin", "BridgeTxBootReceiver", "FreePTUpdaterPlugin",
+             "FreePTAdminSharePlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
     template = template_path.read_text()
     if template.count("__PACKAGE__") != 1:
@@ -215,7 +218,8 @@ xml_dir = Path("android/app/src/main/res/xml")
 xml_dir.mkdir(parents=True, exist_ok=True)
 (xml_dir / "freept_updater_paths.xml").write_text(
     '<?xml version="1.0" encoding="utf-8"?>\n'
-    '<paths><external-files-path name="freept_updates" path="updates/" /></paths>\n'
+    '<paths><external-files-path name="freept_updates" path="updates/" />'
+    '<cache-path name="freept_chat_share" path="freept-share/" /></paths>\n'
 )
 (values / "freept_updater.xml").write_text(
     '<resources><string name="ota_apk_endpoint">' +

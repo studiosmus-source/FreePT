@@ -1,13 +1,14 @@
 name: Build unified FreePT Android APK (manual)
 on:
   push:
-    branches: [fix/bridge-installable-20261118, build/bridge-256kb-20261118, feature/bridge-adaptive-poll-20261118, feature/bridge-fast-save-20261118, feature/oppo-install-clean-20261118]
+    branches: [fix/bridge-installable-20261118, build/bridge-256kb-20261118, feature/bridge-adaptive-poll-20261118, feature/bridge-fast-save-20261118, feature/oppo-install-clean-20261118, feature/admin-share-no-biometric-20261119]
     paths:
       - '.github/workflows/freept-unified-apk.yml'
       - 'src/bridge*.js'
       - 'android-bridge/Bridge*.java.template'
       - 'bridge/*test.mjs'
       - 'android-bridge/install.py'
+      - 'android-bridge/FreePTAdminSharePlugin.java.template'
       - 'android-bridge/install_firebase.py'
       - 'android-bridge/test_install_firebase.py'
       - 'src/main.js'
@@ -27,7 +28,7 @@ jobs:
       - name: Refuse other branches
         run: |
           case "$GITHUB_REF" in
-            refs/heads/fix/bridge-installable-20261118|refs/heads/feature/freept-updater-20261118|refs/heads/build/bridge-256kb-20261118|refs/heads/feature/bridge-adaptive-poll-20261118|refs/heads/feature/bridge-fast-save-20261118|refs/heads/feature/oppo-install-clean-20261118) ;;
+            refs/heads/fix/bridge-installable-20261118|refs/heads/feature/freept-updater-20261118|refs/heads/build/bridge-256kb-20261118|refs/heads/feature/bridge-adaptive-poll-20261118|refs/heads/feature/bridge-fast-save-20261118|refs/heads/feature/oppo-install-clean-20261118|refs/heads/feature/admin-share-no-biometric-20261119) ;;
             *) echo "Refusing build from $GITHUB_REF"; exit 1;;
           esac
       - uses: actions/setup-node@v4
@@ -82,8 +83,6 @@ jobs:
         env:
           FREEPT_FIREBASE_ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.FREEPT_BRIDGE_GOOGLE_SERVICES_B64 }}
         run: python3 android-bridge/install_firebase.py
-      - name: Ensure biometric permission
-        run: python3 android-bridge/ensure_biometric.py
       - name: Stabilize Gradle wrapper download
         shell: bash
         run: |
@@ -110,7 +109,7 @@ jobs:
           grep -Fq "BridgeTxService" android/app/src/main/AndroidManifest.xml
           ! grep -Fq "android.permission.REQUEST_INSTALL_PACKAGES" android/app/src/main/AndroidManifest.xml
           grep -Fq "android.permission.POST_NOTIFICATIONS" android/app/src/main/AndroidManifest.xml
-          grep -Fq "android.permission.USE_BIOMETRIC" android/app/src/main/AndroidManifest.xml
+          grep -Fq "FreePTAdminSharePlugin.class" "$(find android/app/src/main/java -name MainActivity.java -print -quit)"
           grep -Fq "BridgeFilesPlugin.class" "$(find android/app/src/main/java -name MainActivity.java -print -quit)"
           grep -Fq "BridgeTxControlPlugin.class" "$(find android/app/src/main/java -name MainActivity.java -print -quit)"
           test -f android/capacitor-cordova-android-plugins/build.gradle

@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import { PushNotifications } from '@capacitor/push-notifications';
 import {createPushRegistration} from './pushRegistration.js';
 import * as tus from 'tus-js-client';
@@ -39,6 +38,7 @@ const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
+const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
 // Full-APK self-updater (native). Endpoint is locked in the APK; JS cannot set it.
 const freeptUpdater = Capacitor.isNativePlatform() ? registerPlugin('FreePTUpdater') : null;
 const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
@@ -125,26 +125,11 @@ function configureFileInput(input){
 }
 
 async function unlockAdmin(){
-  if(adminUnlocked)return true;
-  if(adminUnlocking)return false;
-  if(!Capacitor.isNativePlatform()){
-    // Browser admin login was verified by Supabase; no native biometrics here.
-    // Keep the UI lock state consistent with the successful authentication.
-    adminUnlocked=true;
-    return true;
-  }
-  adminUnlocking=true;
-  try{
-    const available=await NativeBiometric.isAvailable();
-    if(!available.isAvailable)throw Error('Impronta non disponibile: usa l’accesso amministratore.');
-    await NativeBiometric.verifyIdentity({reason:'Sblocca FreePT amministratore',title:'FreePT',subtitle:'Accesso amministratore'});
-    adminUnlocked=true;return true;
-  }catch(e){
-    el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Area amministratore bloccata</h2><p>Per accedere conferma l’impronta sul telefono.</p><button id="unlock">Sblocca con impronta</button><p id="status" class="small"></p></main></div>';
-    document.getElementById('unlock').onclick=async()=>{if(await unlockAdmin())await renderWorkspace()};
-    status(friendly(e),true);
-    return false;
-  }finally{adminUnlocking=false}
+  // Supabase auth + an approved admin profile are the only login gates.
+  // Do not impose a device-specific biometric prompt on an authorized admin.
+  adminUnlocked=!!me?.id&&!me.is_anonymous&&
+    profile?.role==='admin'&&profile?.status==='approved';
+  return adminUnlocked;
 }
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1064,6 +1049,51 @@ async function deleteConversationFiles(userId){
   }
 }
 
+async function copyAdminChatText(value){
+  if(profile?.role!=='admin'||!adminUnlocked||!me?.id) return;
+  if(freeptAdminShare)await freeptAdminShare.copyText({text:value});
+  else if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(value);
+  else throw Error('Copia non disponibile');
+  status('Testo copiato.');
+}
+async function shareAdminChatText(value){
+  if(profile?.role!=='admin'||!adminUnlocked||!me?.id)return;
+  if(freeptAdminShare)await freeptAdminShare.shareText({text:value});
+  else if(navigator.share)await navigator.share({text:value});
+  else throw Error('Condivisione non disponibile');
+}
+async function shareAdminChatAttachment(message){
+  if(profile?.role!=='admin'||!adminUnlocked||!me?.id||!message.file_path)return;
+  if(!freeptAdminShare)throw Error('Condivisione file disponibile su Android');
+  const url=await signAttachmentUrl(message.file_path);
+  await freeptAdminShare.shareFile({url,name:message.file_name||'allegato'});
+}
+function mountAdminChatShareActions(feed){
+  if(profile?.role!=='admin'||!adminUnlocked||!me?.id)return;
+  feed.querySelectorAll('article.bubble').forEach((bubble,index)=>{
+    const message=messages[index];
+    if(!message||(!message.body&&!message.file_path))return;
+    const actions=document.createElement('div');
+    actions.className='admin-chat-share-actions';
+    actions.style.cssText='display:flex;gap:5px;flex-wrap:wrap;margin-top:7px';
+    const button=(label,action)=>{
+      const b=document.createElement('button');b.type='button';
+      b.textContent=label;b.style.cssText='padding:5px 9px;font-size:12px';
+      b.onclick=async()=>{
+        b.disabled=true;
+        try{await action()}catch(error){
+          status('Operazione non riuscita: '+(error?.message||'errore'),true);
+        }finally{b.disabled=false}
+      };actions.appendChild(b);
+    };
+    if(message.body){
+      button('Copia testo',()=>copyAdminChatText(message.body));
+      button('Condividi testo',()=>shareAdminChatText(message.body));
+    }
+    if(message.file_path)button('Condividi file',()=>shareAdminChatAttachment(message));
+    bubble.appendChild(actions);
+  });
+}
 async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<div class="attach-host" data-file="'+esc(m.file_path)+'" data-name="'+esc(m.file_name||'Allegato')+'"></div>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
   const queue=document.getElementById('queued');
   if(queue){
@@ -1072,7 +1102,7 @@ async function showMessages(scroll=true){if(!selected)return;const requestedUser
     queue.textContent=awaiting?'Richiesta in elaborazione… Attendere.':'';
     queue.classList.toggle('processing',!!awaiting);
   }
-} feed.querySelectorAll('.attach-host').forEach(host=>{try{renderChatAttachment({container:host,fileName:host.dataset.name,filePath:host.dataset.file,signUrl:signAttachmentUrl,makeWriter:bridgeDestination?makeChatWriter:null,escape:esc,setStatus:msg=>status(msg)});}catch{host.textContent='📎 '+esc(host.dataset.name||'Allegato');}});if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
+} feed.querySelectorAll('.attach-host').forEach(host=>{try{renderChatAttachment({container:host,fileName:host.dataset.name,filePath:host.dataset.file,signUrl:signAttachmentUrl,makeWriter:bridgeDestination?makeChatWriter:null,escape:esc,setStatus:msg=>status(msg)});}catch{host.textContent='📎 '+esc(host.dataset.name||'Allegato');}});mountAdminChatShareActions(feed);if(scroll||nearEnd)feed.scrollTop=feed.scrollHeight}
 async function signAttachmentUrl(path){const {data,error}=await db.storage.from('attachments').createSignedUrl(path,3600);if(error||!data?.signedUrl)throw Error('Indirizzo allegato non disponibile.');return data.signedUrl;}
 async function makeChatWriter(meta){if(!bridgeDestination)return null;let dest=null;try{dest=await bridgeDestination.getDestination();}catch{}if(!dest?.selected)await bridgeDestination.chooseDestination();return createBridgeAndroidSingleFileWriter({plugin:bridgeDestination,name:meta.name,size:meta.size,mime:meta.mime});}
 // Small files keep the proven Storage SDK path. Larger files use resumable
