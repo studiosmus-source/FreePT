@@ -77,6 +77,18 @@ jobs:
           chmod +x gradlew
           ./gradlew testDebugUnitTest assembleDebug --no-daemon
           test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Require execution of every native SAF simulation test
+        run: |
+          python3 - <<'PY_VERIFY_NATIVE'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          suites=[ET.parse(p).getroot() for p in Path('android/app/build/test-results/testDebugUnitTest').glob('TEST-*.xml')]
+          selected=[s for s in suites if s.get('name','').endswith('BridgeDestinationTest')]
+          assert len(selected)==1, 'Actual native SAF test report missing'
+          s=selected[0]
+          assert int(s.get('tests','0'))>=7 and all(int(s.get(k,'0'))==0 for k in ('failures','errors','skipped')), s.attrib
+          print('NATIVE_SAF_SIMULATION:',s.attrib)
+          PY_VERIFY_NATIVE
       - name: Verify this is not the production app
         run: |
           APK=android/app/build/outputs/apk/debug/app-debug.apk
@@ -90,5 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FreePT-native-SAF-tests
-          path: android/app/build/reports/tests/testDebugUnitTest/
+          path: |
+            android/app/build/reports/tests/testDebugUnitTest/
+            android/app/build/test-results/testDebugUnitTest/
           if-no-files-found: warn

@@ -82,6 +82,12 @@ class InstallerGuardTests(unittest.TestCase):
         self.run_guard("it.freept.bridge.next", {
             "VITE_BRIDGE_API_URL": "https://bridge.example.org"})
 
+    def test_production_rejects_bootstrap_before_modification(self):
+        result=self.run_guard("it.freept.app", {
+            "VITE_BRIDGE_API_URL": "https://bridge.example.org",
+            "FREEPT_BRIDGE_BOOTSTRAP": "STAGING_DEVICE_KEY_V1"})
+        self.assertIn("Bootstrap requires the isolated", result.stderr)
+
     def test_production_rejects_http_endpoint(self):
         self.run_guard("it.freept.app", {
             "VITE_BRIDGE_API_URL": "http://bridge.example.org"})

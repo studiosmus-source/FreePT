@@ -93,6 +93,12 @@ test('pre-profile signed TX transfers 300000 synthetic bytes only after admin ap
   sql(`update public.profiles set status='approved' where id='${ADMIN}'`);
   sql(`update public.bridge_bootstrap_devices set expires_at=now()-interval '1 second' where id='${other.id}'`);
   assert.equal((await post('status',other.envelope('status'))).status,403,'expired approval cannot open registration');
+  sql(`delete from public.profiles where id='${OWNER}'`);
+  assert.equal(sql(`select count(*) from public.bridge_bootstrap_devices where id='${d.id}'`),'0','existing user deletion is not blocked');
+  assert.equal(sql(`select count(*) from public.bridge_devices where id='${d.id}'`),'0','legacy device cascade remains effective');
+  sql(`delete from public.profiles where id='${ADMIN}'`);
+  assert.equal(sql(`select count(*) from public.bridge_bootstrap_devices where id='${other.id}'`),'0','deleted admin cannot leave an authorized technical identity');
+
 
  }finally{await gateway.stop();}
 });

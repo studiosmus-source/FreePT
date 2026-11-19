@@ -42,3 +42,12 @@ test('report contains only stage enums and relative timings, never pairing code'
  const report=f.calls.at(-1);assert.equal(JSON.stringify(report).includes('abcdef123456'),false);
  assert.ok(report.stages.every(x=>Object.keys(x).sort().join(',')==='elapsedMs,stage,state'));
 });
+test('closing while enrollment is in flight cannot start a late background service',async()=>{
+ let release,starts=0;
+ const waiting=new Promise(resolve=>release=resolve);
+ const c=createChieditore({files:{status:async()=>({granted:true})},notifications:{checkPermissions:async()=>({receive:'granted'})},
+ native:{battery:async()=>({unrestricted:true}),begin:async()=>{await waiting;return {pairCode:'abcdef123456'}}},
+ tx:{start:async()=>starts++,stop:async()=>{}}});
+ await c.next();await c.next();await c.next();
+ const pending=c.next();await c.dispose();release();await assert.rejects(pending,/closed/);assert.equal(starts,0);
+});
