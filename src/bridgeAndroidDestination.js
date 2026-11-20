@@ -84,10 +84,12 @@ export function createBridgeAndroidFolderDestination({plugin,name,ownerId,ownerN
         }
       };
     },
-    async commit(){
+    async commit({partial=false}={}){
       if(!active)throw Error('bridge_destination_not_started');
-      await plugin.commitFolder();
+      if(typeof partial!=='boolean')throw Error('bridge_destination_invalid_options');
+      const result=await plugin.commitFolder({partial});
       active=false;
+      return result;
     },
     async discard(){
       if(!active)return;
