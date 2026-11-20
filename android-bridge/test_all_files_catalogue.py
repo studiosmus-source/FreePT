@@ -54,6 +54,8 @@ public class Harness {
   Files.createDirectories(root.resolve("Android/data"));
   Files.createDirectories(root.resolve("Android/obb"));
   Files.createDirectories(root.resolve("Android/media"));
+  // This directory sorts after 'file-*' by name, but MUST appear before files.
+  Files.createDirectories(root.resolve("zz-last-folder"));
   Files.createSymbolicLink(root.resolve("escape"),root.getParent());
   for(int i=0;i<145;i++)Files.write(root.resolve(String.format("file-%03d.txt",i)),new byte[]{1});
   JSArray page=(JSArray)BridgeAllFilesCore.list("root",0).get("entries");
@@ -65,17 +67,45 @@ public class Harness {
   Files.write(root.resolve("new-after-first-page.txt"),new byte[]{1});
   JSObject follow=BridgeAllFilesCore.list("root",next);
   JSArray second=(JSArray)follow.get("entries");
-  if((Integer)follow.get("nextOffset")!=-1||second.size()!=50)
+  if((Integer)follow.get("nextOffset")!=-1||second.size()!=51)
    throw new AssertionError("last page missing entries");
   java.util.HashSet<String> unique=new java.util.HashSet<>();
   for(Object entry:page)unique.add((String)((JSObject)entry).get("handle"));
   for(Object entry:second)unique.add((String)((JSObject)entry).get("handle"));
-  if(unique.size()!=150)throw new AssertionError("duplicate or missing catalogue handles");
+  if(unique.size()!=151)throw new AssertionError("duplicate or missing catalogue handles");
+  // Native, global ordering (not per page): folders always precede files.
+  // Mounted volumes are pinned first; shared folders and files follow
+  // alphabetically, case-insensitively with a deterministic tie break.
+  java.util.List<JSObject> ordered=new java.util.ArrayList<>();
+  for(Object e:page)ordered.add((JSObject)e);
+  for(Object e:second)ordered.add((JSObject)e);
+  boolean seenFile=false,seenTrailingFolder=false;
+  String previousFolder=null,previousFile=null;
+  for(JSObject entry:ordered){
+   String name=(String)entry.get("name");
+   boolean folder=(Boolean)entry.get("directory");
+   if(folder){
+    if(seenFile)throw new AssertionError("folder appeared after a file");
+    if("zz-last-folder".equals(name))seenTrailingFolder=true;
+    if(!name.startsWith("Memoria aggiuntiva")){
+     if(previousFolder!=null && name.compareToIgnoreCase(previousFolder)<0)
+      throw new AssertionError("directories not alphabetical");
+     previousFolder=name;
+    }
+   }else{
+    seenFile=true;
+    if(previousFile!=null && name.compareToIgnoreCase(previousFile)<0)
+      throw new AssertionError("files not alphabetical across pages");
+    previousFile=name;
+   }
+  }
+  if(!seenTrailingFolder||!seenFile)
+   throw new AssertionError("ordering fixture missing folder or file");
   // Explicit refresh reconstructs a new view, including additions that
   // were intentionally not allowed to destabilize the first pagination.
   BridgeAllFilesCore.list("root",0);
   JSArray refreshed=(JSArray)BridgeAllFilesCore.list("root",100).get("entries");
-  if(refreshed.size()!=51)throw new AssertionError("refresh did not discover new file");
+  if(refreshed.size()!=52)throw new AssertionError("refresh did not discover new file");
   String hidden=null,android=null,extraHandle=null,privateFolder=null,nomedia=null;
   for(Object x:page){JSObject e=(JSObject)x;String n=(String)e.get("name");
    if(n.equals("escape"))throw new AssertionError("symlink escaped");
