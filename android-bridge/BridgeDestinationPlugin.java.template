@@ -570,7 +570,7 @@ public class BridgeDestinationPlugin extends Plugin {
             if(!file.completed){call.reject("bridge_destination_files_incomplete");return;}
         }
         try{
-            boolean partial=Boolean.TRUE.equals(call.getBoolean("partial",false));
+            boolean partial=call.getData().optBoolean("partial",false);
             // A partial download must not masquerade as a complete folder.
             String publishName=finalName;
             if(partial){
