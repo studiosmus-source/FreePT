@@ -64,10 +64,14 @@ export function renderBridgeRemoteFiles({
   };
   // Explicit, bounded previews use the same authorized Bridge read path as downloads.
   // Never fetch arbitrary remote URLs or read an entire large file for a thumbnail.
-  const PREVIEW_LIMIT=2*1024*1024;
-  const previewable=item=>!item.directory&&item.size>0&&item.size<=PREVIEW_LIMIT&&
-    (item.mime.startsWith('image/')&&['image/png','image/jpeg','image/gif','image/webp'].includes(item.mime)||
-     item.mime==='application/pdf');
+  // Only explicit user-triggered previews read remote image bytes.
+  // Large image previews are bounded; automatic thumbnails are not fetched.
+  const IMAGE_PREVIEW_LIMIT=8*1024*1024;
+  const PDF_PREVIEW_LIMIT=2*1024*1024;
+  const previewable=item=>!item.directory&&item.size>0&&
+    (['image/png','image/jpeg','image/gif','image/webp'].includes(item.mime)
+      ?item.size<=IMAGE_PREVIEW_LIMIT
+      :item.mime==='application/pdf'&&item.size<=PDF_PREVIEW_LIMIT);
   const showPreview=async(item,deviceId)=>{
     if(activeDownload||!alive())return;
     const panel=create('section',undefined,browser);
@@ -89,7 +93,8 @@ export function renderBridgeRemoteFiles({
     let position=0;
     const destination={
       write:async(bytes,offset)=>{
-        if(offset!==position||position+bytes.length>PREVIEW_LIMIT)throw Error('bridge_preview_limit');
+        if(offset!==position||position+bytes.length>(item.mime==='application/pdf'?PDF_PREVIEW_LIMIT:IMAGE_PREVIEW_LIMIT))
+          throw Error('bridge_preview_limit');
         parts.push(new Uint8Array(bytes));position+=bytes.length;
       },
       commit:async()=>{},
@@ -98,7 +103,11 @@ export function renderBridgeRemoteFiles({
     try{
       await downloadBridgeFile({
         api:bridgeClient,deviceId,handle:item.handle,size:item.size,
-        destination,signal:abort.signal
+        destination,signal:abort.signal,
+        onProgress:p=>{
+          if(!abort.signal.aborted&&alive())
+            message.textContent='Anteprima: '+p.receivedBytes+' / '+p.totalBytes+' byte';
+        }
       });
       if(abort.signal.aborted||!alive()){dismiss();return;}
       url=URL.createObjectURL(new Blob(parts,{type:item.mime}));
