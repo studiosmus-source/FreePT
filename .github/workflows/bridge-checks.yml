@@ -56,6 +56,18 @@ jobs:
             node --check "$file"
           done
 
+  android-catalogue-jvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Execute real Android catalogue Java with JVM test stubs
+        run: python3 -m unittest discover -s android-bridge -p 'test_all_files_catalogue.py'
+
   freept-web-build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
