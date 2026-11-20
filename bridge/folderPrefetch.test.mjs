@@ -67,17 +67,20 @@ test('a complete first page and an empty folder do not request more work',()=>{
   {complete:true,pages:1});
 });
 
-test('at the existing wire limit do not claim folder completeness',()=>{
+test('the last legal page at offset 10000 can complete a 10001-item folder',()=>{
  const scan=createBridgeFolderPrefetch();
  let result;
  for(let i=0;i<BRIDGE_FILE_LIMITS.maxTotalEntries/100;i++){
   result=scan.record({handle:'root',offset:i*100,
    page:{entries:files(),nextOffset:(i+1)*100}});
  }
- assert.equal(result.atLimit,true);
+ assert.equal(result.autoFetch,true,'offset 10000 is still readable by TX');
  assert.equal(result.complete,false);
- assert.equal(result.autoFetch,false);
  assert.equal(result.itemsSeen,BRIDGE_FILE_LIMITS.maxTotalEntries);
+ const last=scan.record({handle:'root',offset:10000,
+   page:{entries:dirs(1),nextOffset:-1}});
+ assert.equal(last.complete,true);
+ assert.equal(last.itemsSeen,10001);
 });
 
 test('a different folder or reloading the root resets progress',()=>{
