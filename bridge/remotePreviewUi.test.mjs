@@ -211,3 +211,22 @@ test('remote folder download retains verified files on transient read interrupti
  assert.match(source,/result\.interruptedBy==='transient_read'/);
  assert.match(source,/Gli altri file non sono stati salvati/);
 });
+
+test('folder-first discovery continues automatically after early directories, with no 16-page UI cap',()=>{
+ assert.match(source,/const scan=folderPrefetch\.record\(\{handle:current\.handle,offset,page\}\)/);
+ assert.match(source,/if\(scan\.autoFetch\)\{/);
+ assert.match(source,/void more\.onclick\(\)/);
+ assert.doesNotMatch(source,/maxAutomaticPages|pagesRead\s*[<>]=?\s*16/);
+ assert.match(source,/const directoriesFound=folders\.querySelectorAll\('\.bridge-entry'\)\.length/);
+ assert.match(source,/Cartelle: '\+directoriesFound/);
+ assert.match(source,/Ricerca di tutte le sottocartelle/);
+ assert.match(source,/Fine elenco trasmesso dal telefono \(cartella completa\)/);
+ assert.match(source,/Elenco non completo: limite di navigazione/);
+});
+
+test('remote pagination safety limit and errors do not pretend all folders were discovered',()=>{
+ assert.match(source,/offset>=10000/);
+ assert.match(source,/Elenco incompleto: il Bridge remoto supera il limite tecnico di paginazione/);
+ assert.match(source,/Ricerca sottocartelle interrotta/);
+ assert.match(source,/Carica altri file e cartelle/);
+});
