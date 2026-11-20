@@ -9,13 +9,18 @@ import {validateBridgeFolderPage, BRIDGE_FILE_LIMITS} from '../src/bridgeFilePro
 const HANDLE=/^(?:root|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const cancelled = signal => { if(signal?.aborted) throw Error('bridge_transfer_cancelled'); };
 
-export async function planBridgeFolder({root='root',listPage,signal,maxEntries=BRIDGE_FILE_LIMITS.maxTotalEntries}={}) {
+export async function planBridgeFolder({
+  root='root',listPage,signal,maxEntries=BRIDGE_FILE_LIMITS.maxTotalEntries,
+  onScanProgress=()=>{}
+}={}) {
   if(!HANDLE.test(root)||typeof listPage!=='function'||
+     typeof onScanProgress!=='function'||
      !Number.isSafeInteger(maxEntries)||maxEntries<1||maxEntries>BRIDGE_FILE_LIMITS.maxTotalEntries)
     throw Error('bridge_folder_plan_invalid_options');
   const pending=[{handle:root,path:[],depth:0}];
   const knownHandles=new Set([root]);
   const items=[];
+  let scannedPages=0,foundFiles=0;
   for(let index=0;index<pending.length;index++) {
     const parent=pending[index];
     cancelled(signal);
@@ -40,11 +45,19 @@ export async function planBridgeFolder({root='root',listPage,signal,maxEntries=B
         if(!entry.directory && entry.size<0)throw Error('bridge_folder_unknown_file_size');
         const item=Object.freeze({handle:entry.handle,path:Object.freeze(path),directory:entry.directory,size:entry.size,mime:entry.mime});
         items.push(item);
+        if(!entry.directory)foundFiles++;
         if(entry.directory){
           if(path.length>=BRIDGE_FILE_LIMITS.maxDepth)throw Error('bridge_folder_depth_limit');
           pending.push({handle:entry.handle,path,depth:path.length});
         }
       }
+      scannedPages++;
+      cancelled(signal);
+      onScanProgress(Object.freeze({
+        scannedPages,scannedFolders:index+1,
+        pendingFolders:pending.length-(index+1),
+        foundEntries:items.length,foundFiles
+      }));
       if(page.nextOffset===-1)break;
       if(page.nextOffset<=offset)throw Error('bridge_folder_pagination_loop');
       offset=page.nextOffset;
@@ -54,21 +67,29 @@ export async function planBridgeFolder({root='root',listPage,signal,maxEntries=B
 }
 
 /** Whole-directory atomicity must be supplied by the Android destination adapter. */
-export async function receiveBridgeFolder({root,listPage,begin,makeDirectory,downloadFile,commit,discard,signal,maxEntries}={}){
-  if([begin,makeDirectory,downloadFile,commit,discard].some(fn=>typeof fn!=='function'))
+export async function receiveBridgeFolder({
+  root,listPage,begin,makeDirectory,downloadFile,commit,discard,
+  signal,maxEntries,onScanProgress=()=>{},onStage=()=>{}
+}={}){
+  if([begin,makeDirectory,downloadFile,commit,discard,onScanProgress,onStage]
+      .some(fn=>typeof fn!=='function'))
     throw Error('bridge_folder_destination_invalid');
-  const manifest=await planBridgeFolder({root,listPage,signal,maxEntries});
+  onStage('scanning');
+  const manifest=await planBridgeFolder({root,listPage,signal,maxEntries,onScanProgress});
   let started=false,done=false;
   try{
     cancelled(signal);
+    onStage('destination');
     started=true;
     await begin();
+    onStage('transfer');
     for(const item of manifest){
       cancelled(signal);
       if(item.directory)await makeDirectory(item.path);
       else await downloadFile({handle:item.handle,path:item.path,size:item.size,mime:item.mime,signal});
     }
     cancelled(signal);
+    onStage('finalizing');
     await commit();
     done=true;
     return {entries:manifest.length,files:manifest.filter(item=>!item.directory).length};
