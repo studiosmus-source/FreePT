@@ -121,9 +121,9 @@ export async function receiveBridgeFolder({
     }
     cancelled(signal);
     onStage('finalizing');
-    const saved=await commit({partial:false});
+    await commit({partial:false});
     done=true;
-    return {...totals,savedName:saved?.name||null};
+    return {entries:totals.entries,files:totals.files};
   }catch(error){
     if(started&&preserveCompletedOnCancel&&signal?.aborted&&
        completedFiles>0){
