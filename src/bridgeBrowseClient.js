@@ -7,12 +7,16 @@ import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
  */
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Staging SQL expires queued/sent jobs after 60s. Allow scheduling and HTTP
+// jitter, but do not wait for minutes if an older backend reports stale states.
+const BROWSE_WAIT_MS=70_000;
 export function createBridgeRemoteFolderLister({
-  api,deviceId,pause=wait,pollMs=1200,maxPolls=90
+  api,deviceId,pause=wait,pollMs=1200,maxPolls=90,now=Date.now
 }={}){
   if(!UUID.test(deviceId)||!api||
      ['requestBrowse','getStatus','getBrowsePage'].some(k=>typeof api[k]!=='function')||
-     typeof pause!=='function'||!Number.isSafeInteger(pollMs)||pollMs<0||
+     typeof pause!=='function'||typeof now!=='function'||
+     !Number.isSafeInteger(pollMs)||pollMs<0||
      !Number.isSafeInteger(maxPolls)||maxPolls<1)
     throw Error('bridge_remote_browse_invalid_options');
 
@@ -26,10 +30,11 @@ export function createBridgeRemoteFolderLister({
     if(!UUID.test(job?.jobId)||job.deviceId!==deviceId||job.state!=='queued')
       throw Error('bridge_remote_browse_invalid_job');
     let success=false;
-    const startedAt=Date.now();
+    const startedAt=now();
     let lastProgress=0;
     let lastState='';
     try{
+      if(now()-startedAt>=BROWSE_WAIT_MS)throw Error('bridge_remote_browse_timeout');
       let complete=false;
       for(let attempt=0;attempt<maxPolls;attempt++){
         if(signal?.aborted)throw Error('bridge_transfer_cancelled');
@@ -37,12 +42,15 @@ export function createBridgeRemoteFolderLister({
         if(status?.jobId!==job.jobId||status.deviceId!==deviceId)
           throw Error('bridge_remote_browse_job_mismatch');
         if(status.state==='done'){complete=true;break}
+        if(status.state==='expired')throw Error('bridge_remote_browse_expired');
         if(['queued','sent'].includes(status.state)){
-          const now=Date.now();
-          if(status.state!==lastState||now-lastProgress>=5000){
-            onProgress({state:status.state,elapsedSeconds:Math.max(0,Math.floor((now-startedAt)/1000))});
+          const currentTime=now();
+          if(currentTime-startedAt>=BROWSE_WAIT_MS)
+            throw Error('bridge_remote_browse_timeout');
+          if(status.state!==lastState||currentTime-lastProgress>=5000){
+            onProgress({state:status.state,elapsedSeconds:Math.max(0,Math.floor((currentTime-startedAt)/1000))});
             lastState=status.state;
-            lastProgress=now;
+            lastProgress=currentTime;
           }
         }
         if(!['queued','sent'].includes(status.state))
