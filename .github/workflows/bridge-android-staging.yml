@@ -1,7 +1,7 @@
 name: Build FreePT TEST isolated staging APK
 on:
   push:
-    branches: [work/unified-verified-20261119]
+    branches: [work/unified-verified-20261119, fix/bridge-job-expiry-timeout-20261120]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,7 +14,11 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Never build another branch or production with this workflow
-        run: test "$GITHUB_REF" = 'refs/heads/work/unified-verified-20261119'
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/work/unified-verified-20261119|refs/heads/fix/bridge-job-expiry-timeout-20261120) ;;
+            *) echo "Refusing a non-staging branch"; exit 1;;
+          esac
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -33,7 +37,7 @@ jobs:
       - name: Install web dependencies
         run: npm ci --no-audit --no-fund
       - name: Bridge unit regression tests (development branch only)
-        if: github.ref == 'refs/heads/work/unified-verified-20261119'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120'
         run: npm run test:bridge
       - name: Silent reconnect and consent regression tests
         run: node --test src/bridgeReconnect.test.mjs src/chieditore.test.mjs src/bridgeAutoSetup.test.mjs
@@ -46,7 +50,7 @@ jobs:
       - name: JavaScript syntax check
         run: node --check src/main.js
       - name: Require isolated Supabase test project for Bridge APK
-        if: github.ref == 'refs/heads/work/unified-verified-20261119'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120'
         env:
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
@@ -69,7 +73,7 @@ jobs:
           print('Bridge test Supabase configuration present; production project rejected')
           PY
       - name: Require experimental HTTPS Bridge backend endpoint
-        if: github.ref == 'refs/heads/work/unified-verified-20261119'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120'
         env:
           VITE_BRIDGE_TEST_API_URL: ${{ 'https://freept-bridge-staging.onrender.com' }}
         run: |
@@ -89,10 +93,10 @@ jobs:
       - name: Build web bundle (3-minute diagnostic timeout)
         shell: bash
         env:
-          VITE_SUPABASE_URL: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && vars.FREEPT_BRIDGE_TEST_SUPABASE_URL || '' }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY || '' }}
-          VITE_BRIDGE_TEST_API_URL: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && 'https://freept-bridge-staging.onrender.com' || '' }}
-          VITE_BRIDGE_ISOLATED_BUILD: ${{ github.ref == 'refs/heads/work/unified-verified-20261119' && 'true' || 'false' }}
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
           VITE_BRIDGE_BOOTSTRAP_ENABLED: 'true'
         run: |
           set -euo pipefail
@@ -108,7 +112,7 @@ jobs:
           path: vite-build.log
           if-no-files-found: warn
       - name: Isolate experimental Bridge APK identity
-        if: github.ref == 'refs/heads/work/unified-verified-20261119'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120'
         run: |
           python3 - <<'PY'
           import json
@@ -165,7 +169,7 @@ jobs:
           python3 -m py_compile android-bridge/install.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Install native file catalogue and foreground TX (Bridge staging only)
-        if: github.ref == 'refs/heads/work/unified-verified-20261119'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120'
         env:
           VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
           FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
@@ -305,7 +309,7 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee android-apk-info.txt
-          if [[ "$GITHUB_REF" == "refs/heads/work/unified-verified-20261119" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/work/unified-verified-20261119" || "$GITHUB_REF" == "refs/heads/fix/bridge-job-expiry-timeout-20261120" ]]; then
             EXPECTED_ID=it.freept.bridge.next
           else
             EXPECTED_ID=it.freept.app
@@ -316,7 +320,7 @@ jobs:
       - name: Upload APK verification report
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ 'FreePT-bridge-staging-apk-report' }}
+          name: ${{ github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120' && 'FreePT-Bridge-speed-TEST-report' || 'FreePT-bridge-staging-apk-report' }}
           path: |
             android-apk-info.txt
             android-apk-sha256.txt
@@ -324,6 +328,6 @@ jobs:
       - name: Upload stable signed Bridge APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ 'FreePT-bridge-staging-stable-apk' }}
+          name: ${{ github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120' && 'FreePT-Bridge-speed-TEST-apk' || 'FreePT-bridge-staging-stable-apk' }}
           path: android/app/build/outputs/apk/debug/bridge-stable.apk
           if-no-files-found: error
