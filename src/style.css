@@ -224,3 +224,24 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
   font-size:13px;font-weight:700;letter-spacing:.02em;
   color:#536679;border-bottom:1px solid #dbe3eb}
 .bridge-list-section-heading[hidden]{display:none}
+
+/* Remote file browser: columns are GROUPS, not flex-wrapped file cards. */
+.bridge-remote-entries>.bridge-remote-folders,
+.bridge-remote-entries>.bridge-remote-files{
+  display:block;box-sizing:border-box;width:100%;padding:0;margin:0;
+  border:0;border-radius:0;background:transparent;
+}
+.bridge-remote-folders>.bridge-entry,
+.bridge-remote-files>.bridge-entry{
+  display:flex;align-items:center;flex-wrap:nowrap;gap:4px;
+  padding:0 4px;margin:0;min-height:54px;min-width:0;
+  border:0;border-bottom:1px solid #e4e9ee;
+  border-radius:0;background:#fff;
+}
+.bridge-remote-folders>.bridge-entry>.bridge-entry-primary,
+.bridge-remote-files>.bridge-entry>.bridge-entry-primary{
+  display:block;flex:1 1 auto;min-width:0;
+  min-height:52px;text-align:left;overflow-wrap:anywhere;
+}
+.bridge-remote-folders>.bridge-entry>.bridge-entry-menu,
+.bridge-remote-files>.bridge-entry>.bridge-entry-menu{flex:0 0 auto;}
