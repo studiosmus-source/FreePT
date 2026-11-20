@@ -113,6 +113,30 @@ public class BridgeDestinationPlugin extends Plugin {
         }
     }
 
+    /**
+     * SAF document providers may append a MIME extension to a newly created
+     * file. Include that extension on hidden staging files from the start,
+     * while retaining the strict createFresh identity/name/MIME checks.
+     */
+    private String temporaryFileName(String finalFileName,String mime){
+        String suffix="";
+        if(!"application/octet-stream".equals(mime)&&!mime.isEmpty()){
+            String inferred=android.webkit.MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(mime);
+            if(inferred!=null&&inferred.matches("[A-Za-z0-9]{1,12}"))
+                suffix="."+inferred;
+            else{
+                int dot=finalFileName.lastIndexOf('.');
+                if(dot>=0&&dot<finalFileName.length()-1){
+                    String candidate=finalFileName.substring(dot);
+                    if(candidate.matches("\\.[A-Za-z0-9]{1,12}"))
+                        suffix=candidate;
+                }
+            }
+        }
+        return ".freept-partial-"+UUID.randomUUID()+suffix;
+    }
+
     /** Never write to an existing document returned by a broken provider. */
     private Uri createFresh(Uri parent,String mime,String requested) throws Exception {
         java.util.Set<String> ids=new java.util.HashSet<>();
@@ -473,7 +497,7 @@ public class BridgeDestinationPlugin extends Plugin {
             name=availableName(name);
             Uri temp=createFresh(parent(),
                 mime.isEmpty()?"application/octet-stream":mime,
-                ".freept-partial-"+UUID.randomUUID());
+                temporaryFileName(name,mime));
             if(temp==null)throw new IllegalStateException();
             try{journal(temp);}catch(Exception error){DocumentsContract.deleteDocument(getContext().getContentResolver(),temp);throw error;}
             singleStaging=temp;singleName=name;
