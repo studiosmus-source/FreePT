@@ -30,6 +30,8 @@ export function renderBridgeRemoteFiles({
   let activeDownload=false;
   let abortActiveBrowse=()=>{};
   const previewClosers=new Set();
+  const setBridgeBusy=value=>{host.dataset.bridgeBusy=value?'true':'false';};
+  setBridgeBusy(false);
   // In-memory only, bounded cache: reopening an already viewed photo is instant.
   // Never persist remote file content, paths or authorization data.
   const previewCache=new Map();
@@ -103,6 +105,7 @@ export function renderBridgeRemoteFiles({
   const showPreview=async(item,deviceId)=>{
     if(activeDownload||!alive())return;
     closePreviews();
+    setBridgeBusy(true);
     const priorFocus=document.activeElement;
     const panel=create('section',undefined,document.body);
     panel.className='bridge-file-preview-overlay';
@@ -133,6 +136,7 @@ export function renderBridgeRemoteFiles({
       document.removeEventListener('keydown',onKeyDown);
       panel.remove();
       previewClosers.delete(dismiss);
+      if(!activeDownload)setBridgeBusy(false);
       if(priorFocus?.isConnected)priorFocus.focus();
     };
     const onKeyDown=event=>{
@@ -204,6 +208,7 @@ export function renderBridgeRemoteFiles({
     if(!confirm('Scaricare '+title+' nella cartella di destinazione scelta su questo telefono?'))return;
     closePreviews();
     activeDownload=true;
+    setBridgeBusy(true);
     cancel.hidden=false;
     controller=new AbortController();
     try{
@@ -228,6 +233,7 @@ export function renderBridgeRemoteFiles({
       setStatus(error?.message||'Download non riuscito.');
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
+      setBridgeBusy(false);
     }
   };
   cancel.onclick=()=>{controller?.abort();setStatus('Interruzione richiesta…')};
@@ -411,5 +417,6 @@ export function renderBridgeRemoteFiles({
     stopObservingMore();
     closePreviews();
     clearPreviewCache();
+    setBridgeBusy(false);
   };
 }
