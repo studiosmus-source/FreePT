@@ -28,6 +28,8 @@ export function renderBridgeRemoteFiles({
   let controller=null;
   let activeDownload=false;
   const previewClosers=new Set();
+  let moreObserver=null;
+  const stopObservingMore=()=>{moreObserver?.disconnect();moreObserver=null;};
   const closePreviews=()=>{for(const close of [...previewClosers])close()};
   const alive=()=>!disposed&&host.isConnected&&isAuthorized();
   const notice=create('p',ownerId?
@@ -207,6 +209,7 @@ export function renderBridgeRemoteFiles({
   }
   async function showDevice(deviceId,label){
     const marker=++revision;
+    stopObservingMore();
     closePreviews();
     const stack=[{handle:'root',name:label}];
     const lister=createBridgeRemoteFolderLister({api:bridgeClient,deviceId});
@@ -221,7 +224,7 @@ export function renderBridgeRemoteFiles({
       const view=++navigation;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
-      if(offset===0){closePreviews();browser.replaceChildren();}
+      if(offset===0){stopObservingMore();closePreviews();browser.replaceChildren();}
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
@@ -284,12 +287,24 @@ export function renderBridgeRemoteFiles({
           // navigable while earlier entries are available, even on a slow TX.
           // Keep the retry control if an individual page request fails.
           more.onclick=async()=>{
-            if(more.disabled||activeDownload)return;
+            if(more.disabled||activeDownload||!more.isConnected||view!==navigation)return;
+            stopObservingMore();
             more.disabled=true;
             const loaded=await display(page.nextOffset);
             if(loaded)more.remove();
             else if(more.isConnected)more.disabled=false;
           };
+          // Load the next bounded page only as the reader nears the bottom.
+          // Keep the manual button as fallback; never flood TX with all pages.
+          if(typeof IntersectionObserver==='function'){
+            moreObserver=new IntersectionObserver(entries=>{
+              if(entries.some(entry=>entry.isIntersecting)&&more.isConnected&&
+                 !more.disabled&&view===navigation){
+                void more.onclick();
+              }
+            },{root:null,rootMargin:'0px 0px 180px 0px'});
+            moreObserver.observe(more);
+          }
         }
         if(!page.entries.length&&offset===0)create('p','Cartella vuota.',list);
         setStatus(cached?'Elenco già caricato.':'Elenco aggiornato. Puoi aprire o scaricare file e cartelle.');
@@ -306,6 +321,7 @@ export function renderBridgeRemoteFiles({
   return ()=>{
     disposed=true;revision++;
     controller?.abort();
+    stopObservingMore();
     closePreviews();
   };
 }
