@@ -93,7 +93,7 @@ test('browser names dot-hidden items and distinguishes partial lists from finish
  assert.match(source,/create\('small','nascosto',line\)/);
  assert.match(source,/bridge-folder-completeness/);
  assert.match(source,/querySelectorAll\('\.bridge-entry\[data-bridge-hidden="true"\]'\)/);
- assert.match(source,/Elenco parziale: scorri per caricare le altre pagine/);
+ assert.match(source,/Elenco parziale: carica le altre pagine/);
  assert.match(source,/Fine elenco trasmesso dal telefono/);
  assert.match(styles,/\.bridge-folder-completeness/);
 });
@@ -106,13 +106,16 @@ test('repeated File tab and rapid Refresh do not create duplicate root jobs',()=
  assert.match(source,/if\(openingDeviceId===deviceId\)return/);
  assert.match(source,/finally\{if\(openingDeviceId===deviceId\)openingDeviceId=null;\}/);
 });
-test('folders display before files across paginated pages, without new browsing requests',()=>{
+test('folders display above file groups and discover legacy file-first pages sequentially',()=>{
  const styles=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
  assert.match(source,/create\('h4','Cartelle',list\)/);
  assert.match(source,/create\('h4','File',list\)/);
  assert.match(source,/className='bridge-remote-folders'/);
  assert.match(source,/className='bridge-remote-files'/);
  assert.match(source,/const target=item\.directory\?folders:files/);
+ assert.match(source,/folderPrefetch\.record\(\{handle:current\.handle,offset,page\}\)/);
+ assert.match(source,/if\(scan\.autoFetch\)/);
+ assert.match(source,/void more\.onclick\(\)/);
  assert.match(source,/const line=create\('div',undefined,target\)/);
  assert.match(source,/target\.previousElementSibling\.hidden=false/);
  assert.match(source,/inventoryItems=\[\.\.\.manifest\]\.sort\(/);
@@ -152,5 +155,5 @@ test('remote directory loading reports queued/sent states without infinite spinn
  assert.match(source,/progress\.state==='queued'/);
  assert.match(source,/progress\.elapsedSeconds/);
  assert.match(source,/bridge_remote_browse_timeout/);
- assert.match(source,/Premi Aggiorna per riprovare/);
+ assert.match(source,/Riprova da questa schermata/);
 });
