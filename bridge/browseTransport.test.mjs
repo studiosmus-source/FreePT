@@ -156,3 +156,35 @@ test('successful browse never triggers job cancellation',async()=>{
  await lister();
  assert.equal(cancels,0);
 });
+
+test('slow remote browse displays queued/sent progress and still succeeds',async()=>{
+ const statuses=['queued','queued','sent','done'];
+ const progress=[];
+ let checks=0,cancels=0;
+ const lister=createBridgeRemoteFolderLister({
+  deviceId:DEVICE,maxPolls:10,pollMs:0,pause:async()=>{},
+  api:{
+   async requestBrowse(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+   async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:statuses[checks++]}},
+   async getBrowsePage(){return {jobId:JOB,entries,nextOffset:-1}},
+   async cancel(){cancels++}
+  }
+ });
+ assert.deepEqual(await lister({onProgress:p=>progress.push(p)}),{entries,nextOffset:-1});
+ assert.equal(checks,4);
+ assert.deepEqual(progress.map(x=>x.state),['queued','sent']);
+ assert.ok(progress.every(x=>Number.isInteger(x.elapsedSeconds)&&x.elapsedSeconds>=0));
+ assert.equal(cancels,0);
+});
+test('browse rejects invalid progress callback before server enqueue',async()=>{
+ let enqueued=false;
+ const lister=createBridgeRemoteFolderLister({
+  deviceId:DEVICE,
+  api:{
+   async requestBrowse(){enqueued=true;throw Error('should not enqueue')},
+   async getStatus(){},async getBrowsePage(){}
+  }
+ });
+ await assert.rejects(lister({onProgress:7}),/bridge_remote_browse_invalid_request/);
+ assert.equal(enqueued,false);
+});
