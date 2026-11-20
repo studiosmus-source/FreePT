@@ -166,7 +166,7 @@ test('browser requests thumbnails only for visible rows, after folder discovery'
  assert.match(source,/if\(!thumbnailsAllowed\|\|thumbnailActive\|\|pendingBrowse\|\|activeDownload/);
  assert.match(source,/fetchBridgeThumbnail\(\{/);
  assert.match(source,/compactBridgeThumbnail\(blob\)/);
- assert.match(source,/thumbnailCacheBytes>THUMBNAIL_CACHE_BYTES/);
+ assert.match(source,/thumbnailCacheBytes\\+blob\\.size>THUMBNAIL_CACHE_BYTES/);
  assert.match(source,/thumbnailAbort\?\.abort\(\)/);
  const css=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
  assert.match(css,/\.bridge-entry-photo-thumb\[hidden\]/);
