@@ -64,9 +64,16 @@ public class Harness {
   }
   if(hidden==null||!folder||android==null||extraHandle==null)throw new AssertionError("missing shared files or external volume");
   JSArray extraPage=(JSArray)BridgeAllFilesCore.list(extraHandle,0).get("entries");
-  if(extraPage.size()!=1||!"extra.bin".equals(((JSObject)extraPage.get(0)).get("name")))
-   throw new AssertionError("secondary shared-storage volume missing/protected entries leaked");
-  String extraFile=(String)((JSObject)extraPage.get(0)).get("handle");
+  String extraFile=null,extraAndroid=null;
+  for(Object x:extraPage){
+   JSObject e=(JSObject)x;
+   if("extra.bin".equals(e.get("name")))extraFile=(String)e.get("handle");
+   if("Android".equals(e.get("name")))extraAndroid=(String)e.get("handle");
+  }
+  if(extraFile==null||extraAndroid==null)
+   throw new AssertionError("secondary shared-storage missing");
+  JSArray protectedExtra=(JSArray)BridgeAllFilesCore.list(extraAndroid,0).get("entries");
+  if(!protectedExtra.isEmpty())throw new AssertionError("secondary private Android/data leaked");
   if(!"BQY=".equals(BridgeAllFilesCore.read(extraFile,0,2).get("base64")))
    throw new AssertionError("secondary volume bytes missing");
   if(!"AQIDBA==".equals(BridgeAllFilesCore.read(hidden,0,4).get("base64")))throw new AssertionError("wrong bytes");
@@ -88,4 +95,7 @@ public class Harness {
             external = base / 'removable'
             external.mkdir()
             subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-d', tmp, *files], check=True, capture_output=True)
-            subprocess.run(['java', '-Dcatalogue.root=' + str(storage), '-Dcatalogue.volume=' + str(external), '-cp', tmp, 'catalogue.Harness'], check=True, capture_output=True)
+            run = subprocess.run(['java', '-Dcatalogue.root=' + str(storage),
+                                  '-Dcatalogue.volume=' + str(external), '-cp', tmp,
+                                  'catalogue.Harness'], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
