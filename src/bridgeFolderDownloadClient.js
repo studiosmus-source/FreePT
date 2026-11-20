@@ -4,7 +4,7 @@
  * the owner's selected SAF tree, plus an Android SAF staging destination.
  * This module does not infer paths from URIs or access unrestricted storage.
  */
-import {receiveBridgeFolder} from '../bridge/folderReceiver.mjs';
+import {receiveBridgeFolder,planBridgeFolder,summarizeBridgeFolder} from '../bridge/folderReceiver.mjs';
 import {downloadBridgeFile} from './bridgeDownloadClient.js';
 import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
 
@@ -16,17 +16,44 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
  * {write(bytes,offset),commit(),discard()}, commit(), discard().
  * The root directory is staged until the final successful commit.
  */
+/**
+ * A complete, fresh, consent-gated remote inventory, independent of which
+ * folders the receiver has previously opened. No local files are created.
+ */
+export async function inspectBridgeFolder({
+  api,deviceId,root='root',listPage,signal,pause,pollMs,maxPolls,maxEntries,
+  onScanProgress=()=>{}
+}={}){
+  if(!UUID.test(deviceId)||!api||
+     (listPage!==undefined&&typeof listPage!=='function')||
+     typeof onScanProgress!=='function')
+    throw Error('bridge_folder_inspect_invalid_options');
+  const reader=listPage??createBridgeRemoteFolderLister({
+    api,deviceId,
+    ...(pause===undefined?{}:{pause}),
+    ...(pollMs===undefined?{}:{pollMs}),
+    ...(maxPolls===undefined?{}:{maxPolls})
+  });
+  const manifest=await planBridgeFolder({
+    root,signal,onScanProgress,
+    ...(maxEntries===undefined?{}:{maxEntries}),
+    listPage:({handle,offset})=>reader({handle,offset,signal})
+  });
+  return Object.freeze({manifest,summary:summarizeBridgeFolder(manifest)});
+}
+
 export async function downloadBridgeFolder({
   api,deviceId,root='root',listPage,destination,signal,
   pause,pollMs,maxPolls,maxEntries,onProgress=()=>{},
-  onScanProgress=()=>{},onStage=()=>{}
+  onScanProgress=()=>{},onStage=()=>{},manifest=null,
+  preserveCompletedOnCancel=false
 }={}){
   if(!UUID.test(deviceId)||!api||
      (listPage!==undefined&&typeof listPage!=='function')||
      !destination||['begin','makeDirectory','openFile','commit','discard']
        .some(method=>typeof destination[method]!=='function')||
      typeof onProgress!=='function'||typeof onScanProgress!=='function'||
-     typeof onStage!=='function')
+     typeof onStage!=='function'||typeof preserveCompletedOnCancel!=='boolean')
     throw Error('bridge_folder_download_invalid_options');
 
   // Prefer the authenticated remote catalogue when no custom page reader
@@ -58,12 +85,12 @@ export async function downloadBridgeFolder({
 
   return receiveBridgeFolder({
     root,listPage:({handle,offset})=>reader({handle,offset,signal}),signal,
-    onScanProgress,onStage,
+    manifest,onScanProgress,onStage,preserveCompletedOnCancel,
     ...(maxEntries===undefined?{}:{maxEntries}),
     begin:()=>destination.begin(),
     makeDirectory:path=>destination.makeDirectory(path),
     downloadFile,
-    commit:()=>destination.commit(),
+    commit:options=>destination.commit(options),
     discard:()=>destination.discard()
   });
 }
