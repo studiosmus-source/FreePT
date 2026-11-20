@@ -13,6 +13,12 @@ test('remote preview is explicit and bounded',()=>{
   assert.match(source,/item\.size<=PDF_PREVIEW_LIMIT/);
   assert.doesNotMatch(source,/createObjectURL\(new Blob\(parts[^)]*\)\).*for\s*\(/);
 });
+test('JPEG previews prefer bounded embedded EXIF thumbnail before any full download',()=>{
+ assert.match(source,/readBridgePreviewPrefix\(\{/);
+ assert.match(source,/extractEmbeddedJpegThumbnail\(prefix\)/);
+ assert.match(source,/if\(thumbnail\)\{publishPreview\(\[thumbnail\]\);return;\}/);
+ assert.match(source,/message\.textContent='Nessuna miniatura incorporata/);
+});
 test('preview uses authorized chunk download and local blob URL',()=>{
   assert.match(source,/await downloadBridgeFile\(\{/);
   assert.match(source,/deviceId,handle:item\.handle,size:item\.size/);
