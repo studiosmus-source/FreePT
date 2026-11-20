@@ -263,8 +263,15 @@ jobs:
           test -n "$TOOL"
           SRC=android/app/build/outputs/apk/debug/app-debug.apk
           APK=android/app/build/outputs/apk/debug/bridge-stable.apk
-          "$TOOL" sign --ks "$RUNNER_TEMP/freept-bridge.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --out "$APK" "$SRC"
+          "$TOOL" sign --ks "$RUNNER_TEMP/freept-bridge.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" "$SRC"
           "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/bridge-signing-check.txt"
+          # ColorOS compatibility: refuse publication unless all three schemes verify.
+          for scheme in v1 v2 v3; do
+            if ! grep -Eq "^Verified using ${scheme} scheme .*: true$" "$RUNNER_TEMP/bridge-signing-check.txt"; then
+              echo "::error::APK missing verified ${scheme} signing scheme; APK withheld"
+              exit 1
+            fi
+          done
           # Independently derive the certificate fingerprint from the protected
           # keystore. No certificate fingerprint or secret is printed to logs.
           EXPECTED="$(printf "%s" "$BRIDGE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
