@@ -176,7 +176,9 @@ public final class BridgeTxService extends Service {
             throw new java.io.IOException("invalid_job_ack");
     }
     private void runWorker(){
-        Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+        // This is an explicitly enabled foreground dataSync service. Directory
+        // enumeration must not compete with background-only thread scheduling.
+        Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT);
         active=true;
         try{
             // Same foreground service, authenticated technical principal before
@@ -194,6 +196,7 @@ public final class BridgeTxService extends Service {
             }
             if(!running.get())return;
             BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(this);
+            long reconnectDelayMs=1500;
             while(running.get()&&!Thread.currentThread().isInterrupted()){
                 boolean connectedOnce=false;
                 try{
@@ -203,15 +206,20 @@ public final class BridgeTxService extends Service {
                     if(!token.matches("^[0-9a-f]{64}$"))
                         throw new SecurityException("invalid_session");
                     connectedOnce=true;
-                    // After a read, briefly poll faster for the next chunk.
-                    // Keep the normal 2s idle cadence to protect gateway rate limits.
+                    // After browsing or reading, briefly poll faster for a
+                    // subsequent page/chunk. Keep the 2s idle cadence to
+                    // protect the shared gateway's request rate limit.
                     int followupPolls=0;
                     while(running.get()&&!Thread.currentThread().isInterrupted()){
                         JSONObject command=post("/bridge/tx/poll",payload(cred.deviceId,token));
                         JSONObject job=command.optJSONObject("job");
+                        // A successful round trip resets the transient-failure
+                        // retry delay. Permanent permission denial still stops.
+                        reconnectDelayMs=1500;
                         if(job!=null){
                             executeJob(job,cred.deviceId,token);
-                            followupPolls="read".equals(job.optString("operation"))?2:0;
+                            String operation=job.optString("operation");
+                            followupPolls=("read".equals(operation)||"browse".equals(operation))?2:0;
                         }else{
                             Thread.sleep(followupPolls>0?750:2000);
                             if(followupPolls>0)followupPolls--;
@@ -227,7 +235,8 @@ public final class BridgeTxService extends Service {
                     // Do not expose credentials, paths or exception messages.
                     Log.w("FreePTBridgeTX","worker_error="+intermittent.getClass().getSimpleName());
                     if(!running.get())break;
-                    try{Thread.sleep(5000);}catch(InterruptedException stop){break;}
+                    try{Thread.sleep(reconnectDelayMs);}catch(InterruptedException stop){break;}
+                    reconnectDelayMs=Math.min(reconnectDelayMs*2,8000);
                 }
             }
         }catch(Exception ignored){
