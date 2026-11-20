@@ -15,6 +15,38 @@ test('discovers nested folder and preserves relative paths',async()=>{
  assert.deepEqual(result.map(x=>x.path.join('/')),['Foto','note.txt','Foto/foto.jpg']);
  assert.deepEqual(calls,[{handle:'root',offset:0},{handle:D,offset:0}]);
 });
+test('reports scan pages and pending descendants before any destination creation',async()=>{
+ const progress=[],stages=[],events=[];
+ const listPage=async({handle})=>handle==='root'?
+  page([item(D,'Photos',true),item(F,'note.txt')]):
+  page([item(F2,'picture.jpg')]);
+ const result=await receiveBridgeFolder({
+  listPage,onScanProgress:p=>progress.push(p),onStage:p=>stages.push(p),
+  begin:async()=>events.push('begin'),makeDirectory:async()=>events.push('mkdir'),
+  downloadFile:async()=>events.push('file'),commit:async()=>events.push('commit'),
+  discard:async()=>events.push('discard')
+ });
+ assert.deepEqual(stages,['scanning','destination','transfer','finalizing']);
+ assert.deepEqual(progress,[
+  {scannedPages:1,scannedFolders:1,pendingFolders:1,foundEntries:2,foundFiles:1},
+  {scannedPages:2,scannedFolders:2,pendingFolders:0,foundEntries:3,foundFiles:2}
+ ]);
+ assert.equal(events[0],'begin');
+ assert.deepEqual(result,{entries:3,files:2});
+});
+test('scan cancellation never creates a destination folder',async()=>{
+ const ctl=new AbortController(),stages=[];
+ let created=false;
+ await assert.rejects(receiveBridgeFolder({
+  signal:ctl.signal,listPage:async()=>page([item(D,'subfolder',true)]),
+  onStage:phase=>stages.push(phase),
+  onScanProgress:()=>ctl.abort(),
+  begin:async()=>{created=true},makeDirectory:async()=>{},downloadFile:async()=>{},
+  commit:async()=>{},discard:async()=>{}
+ }),/bridge_transfer_cancelled/);
+ assert.equal(created,false);
+ assert.deepEqual(stages,['scanning']);
+});
 test('receives files with a whole-directory staging lifecycle',async()=>{
  const events=[];
  const result=await receiveBridgeFolder({
