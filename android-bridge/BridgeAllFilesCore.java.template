@@ -141,7 +141,6 @@ final class BridgeAllFilesCore {
             System.nanoTime()-cached.created<SNAPSHOT_NANOS)return cached;
         File[] raw=parent.file.listFiles();
         if(raw==null)throw new IOException("unreadable_directory");
-        Arrays.sort(raw,Comparator.comparing(File::getName));
         ArrayList<File> accepted=new ArrayList<>(raw.length);
         int fileCount=0,dirCount=0,skipped=0;
         for(File candidate:raw){
@@ -150,6 +149,12 @@ final class BridgeAllFilesCore {
             if(valid(candidate,parent.volumeRoot))accepted.add(candidate);
             else skipped++;
         }
+        // Sort the WHOLE validated catalogue before slicing into pages.
+        // Sorting each page in RX would put some files before later folders.
+        accepted.sort(Comparator
+            .comparing((File item)->!item.isDirectory())
+            .thenComparing(File::getName,String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(File::getName));
         DirectorySnapshot next=new DirectorySnapshot(handle,parent.file,
             accepted.toArray(new File[0]),fileCount,dirCount,skipped);
         lastSnapshot=next;
