@@ -22,3 +22,18 @@ test('service recovery checks consent and respects explicit pause',()=>{
   for(const required of ['state?.paused','state?.running','permission?.granted','device?.provisioned','setting?.enabled','grants.some(x=>x.active)'])
     assert.ok(recovery.includes(required),required);
 });
+
+test('visible approved owner checks native TX health periodically without re-enrollment or duplicate timers',()=>{
+ const start=source.indexOf('const BRIDGE_TX_HEALTH_CHECK_MS=15000;');
+ const end=source.indexOf('async function startProvisionedTxWhenAllowed()',start);
+ assert.ok(start>=0&&end>start);
+ const health=source.slice(start,end);
+ assert.match(health,/bridgeTxHealthTimer!==null/);
+ assert.match(health,/document\.visibilityState==='visible'/);
+ assert.match(health,/profile\?\.role==='user'/);
+ assert.match(health,/profile\?\.status==='approved'/);
+ assert.match(health,/void startProvisionedTxWhenAllowed\(\)/);
+ assert.doesNotMatch(health,/requestPermission\(|enroll\(|\.clear\(/);
+ assert.match(source,/startBridgeTxHealthChecks\(\);void bindBootstrapAfterApproval\(\)/);
+ assert.match(source,/async function logout\(\)\{stopBridgeTxHealthChecks\(\)/);
+});
