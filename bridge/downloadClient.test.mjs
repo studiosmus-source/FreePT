@@ -23,11 +23,21 @@ test('downloads entire binary file automatically with repeated read jobs',async(
   size:data.length,destination:f.destination,pause:async()=>{}});
  assert.equal(result.bytesReceived,data.length);
  assert.deepEqual(Buffer.concat(f.chunks),data);
- // Conservative network jobs avoid 256 KiB TX session failures in real transfers.
- const expectedRequests=[];
- for(let offset=0;offset<data.length;offset+=65536)
-  expectedRequests.push({handle:HANDLE,offset,length:Math.min(65536,data.length-offset)});
- assert.deepEqual(f.requests,expectedRequests);
+ // The happy path uses fewer 256 KiB authenticated remote jobs.
+ assert.deepEqual(f.requests.map(r=>[r.offset,r.length]),[
+  [0,262144],[262144,262144],[524288,75712]
+ ]);
+ assert.equal(f.committed,1);assert.equal(f.discarded,0);
+});
+test('adaptively halves transfer blocks after consecutive TX cancellations without losing bytes',async()=>{
+ const data=Buffer.alloc(520000,137),f=fixture(data,['cancelled','cancelled','done']);
+ const result=await downloadBridgeFile({api:f.api,deviceId:DEVICE,handle:HANDLE,
+  size:data.length,destination:f.destination,pause:async()=>{}});
+ assert.equal(result.bytesReceived,data.length);
+ assert.deepEqual(f.requests.slice(0,3).map(r=>[r.offset,r.length]),[
+  [0,262144],[0,262144],[0,131072]
+ ]);
+ assert.deepEqual(Buffer.concat(f.chunks),data);
  assert.equal(f.committed,1);assert.equal(f.discarded,0);
 });
 test('recovers one cancelled TX job by re-reading the same range once',async()=>{
