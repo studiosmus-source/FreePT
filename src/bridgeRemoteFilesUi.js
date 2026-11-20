@@ -481,7 +481,18 @@ export function renderBridgeRemoteFiles({
       try{
         const cached=folderPages.get(key);
         const page=cached??validateBridgeFolderPage(await lister({
-          handle:current.handle,offset,signal:currentBrowse.signal
+          handle:current.handle,offset,signal:currentBrowse.signal,
+          onProgress:progress=>{
+            if(!alive()||marker!==revision||view!==navigation||
+               currentBrowse.signal.aborted)return;
+            const waiting=progress.state==='queued';
+            const elapsed=progress.elapsedSeconds;
+            setStatus((waiting
+              ?'In attesa che il telefono remoto risponda'
+              :'Il telefono remoto sta elaborando l’elenco')+
+              ' · '+elapsed+' s'+
+              (elapsed>=30?' · Risposta lenta del Bridge':''));
+          }
         }));
         if(!alive()||marker!==revision||view!==navigation)return;
         if(!cached)folderPages.set(key,page);
@@ -603,7 +614,9 @@ export function renderBridgeRemoteFiles({
         return true;
       }catch(error){
         if(currentBrowse.signal.aborted)return false;
-        setStatus('Elenco non disponibile: '+(error?.message||'errore remoto'));
+        setStatus(error?.message==='bridge_remote_browse_timeout'
+          ?'Il telefono remoto non ha risposto entro il limite di attesa. Premi Aggiorna per riprovare.'
+          :'Elenco non disponibile: '+(error?.message||'errore remoto'));
         return false;
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
