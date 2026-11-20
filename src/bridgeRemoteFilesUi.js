@@ -617,7 +617,7 @@ export function renderBridgeRemoteFiles({
         setStatus(error?.message==='bridge_remote_browse_expired'
           ?'Richiesta scaduta: il telefono remoto non ha ritirato o completato il lavoro. Controlla il Bridge sul telefono e premi Aggiorna.'
           :error?.message==='bridge_remote_browse_timeout'
-            ?'Il telefono remoto non ha risposto entro il limite di attesa. Controlla il Bridge sul telefono e premi Aggiorna.'
+            ?'Il telefono remoto non ha risposto entro il limite di attesa. Controlla il Bridge sul telefono. Premi Aggiorna per riprovare.'
             :'Elenco non disponibile: '+(error?.message||'errore remoto'));
         return false;
       }finally{
