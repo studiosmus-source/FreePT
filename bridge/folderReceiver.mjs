@@ -2,13 +2,22 @@
  * Experimental Bridge receiver: discover and reconstruct an authorized SAF tree.
  * No network or Android storage access is performed here. The caller must bind
  * every listPage request to a live grant/session and implement destination
- * staging. Non-cancellation failures roll back; explicit cancellation can
- * retain already verified complete files in a clearly partial folder.
+ * staging. Unrecoverable failures roll back. Explicit cancellation or an
+ * approved transient read failure can retain ONLY verified complete files,
+ * prominently identified as a partial folder.
  */
 import {validateBridgeFolderPage, BRIDGE_FILE_LIMITS} from '../src/bridgeFileProtocol.js';
 
 const HANDLE=/^(?:root|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const cancelled = signal => { if(signal?.aborted) throw Error('bridge_transfer_cancelled'); };
+// These are read/transport failures, NOT authorization, malformed content,
+// data-integrity, destination filesystem or final-publication failures.
+const transientReadErrors=new Set([
+  'bridge_backend_unavailable','bridge_network_unavailable',
+  'bridge_request_throttled','bridge_request_failed',
+  'bridge_device_unavailable','bridge_download_timeout',
+  'bridge_download_job_cancelled'
+]);
 const verifiedPlans=new WeakSet();
 export function summarizeBridgeFolder(manifest){
   if(!verifiedPlans.has(manifest))throw Error('bridge_folder_plan_unverified');
@@ -88,10 +97,11 @@ export async function planBridgeFolder({
 export async function receiveBridgeFolder({
   root,listPage,manifest=null,begin,makeDirectory,downloadFile,commit,discard,
   signal,maxEntries,onScanProgress=()=>{},onStage=()=>{},
-  preserveCompletedOnCancel=false
+  preserveCompletedOnCancel=false,preserveCompletedOnFailure=false
 }={}){
   if([begin,makeDirectory,downloadFile,commit,discard,onScanProgress,onStage]
-      .some(fn=>typeof fn!=='function')||typeof preserveCompletedOnCancel!=='boolean')
+      .some(fn=>typeof fn!=='function')||typeof preserveCompletedOnCancel!=='boolean'||
+      typeof preserveCompletedOnFailure!=='boolean')
     throw Error('bridge_folder_destination_invalid');
   let source=manifest;
   if(source!==null){
@@ -125,15 +135,20 @@ export async function receiveBridgeFolder({
     done=true;
     return {entries:totals.entries,files:totals.files};
   }catch(error){
-    if(started&&preserveCompletedOnCancel&&signal?.aborted&&
-       error?.message==='bridge_transfer_cancelled'&&completedFiles>0){
+    const cancelledByUser=preserveCompletedOnCancel&&signal?.aborted&&
+      error?.message==='bridge_transfer_cancelled';
+    const interruptedByNetwork=preserveCompletedOnFailure&&!signal?.aborted&&
+      transientReadErrors.has(error?.message);
+    if(started&&completedFiles>0&&(cancelledByUser||interruptedByNetwork)){
       onStage('preserving');
-      // The in-flight file writer has already discarded its partial bytes
-      // before downloadFile throws. All remaining native entries are complete.
+      // The in-flight file writer discarded its unverified bytes before
+      // throwing. Native SAF can publish only completed entries in a distinct
+      // '(parziale)' folder. Never present this as a successful full download.
       keepStaging=true;
       const saved=await commit({partial:true,completedFiles});
       done=true;
       return {...totals,files:completedFiles,partial:true,
+        interruptedBy:cancelledByUser?'user_cancel':'transient_read',
         savedName:saved?.name||null};
     }
     throw error;
