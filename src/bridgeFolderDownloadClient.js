@@ -18,13 +18,15 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
  */
 export async function downloadBridgeFolder({
   api,deviceId,root='root',listPage,destination,signal,
-  pause,pollMs,maxPolls,maxEntries,onProgress=()=>{}
+  pause,pollMs,maxPolls,maxEntries,onProgress=()=>{},
+  onScanProgress=()=>{},onStage=()=>{}
 }={}){
   if(!UUID.test(deviceId)||!api||
      (listPage!==undefined&&typeof listPage!=='function')||
      !destination||['begin','makeDirectory','openFile','commit','discard']
        .some(method=>typeof destination[method]!=='function')||
-     typeof onProgress!=='function')
+     typeof onProgress!=='function'||typeof onScanProgress!=='function'||
+     typeof onStage!=='function')
     throw Error('bridge_folder_download_invalid_options');
 
   // Prefer the authenticated remote catalogue when no custom page reader
@@ -56,6 +58,7 @@ export async function downloadBridgeFolder({
 
   return receiveBridgeFolder({
     root,listPage:({handle,offset})=>reader({handle,offset,signal}),signal,
+    onScanProgress,onStage,
     ...(maxEntries===undefined?{}:{maxEntries}),
     begin:()=>destination.begin(),
     makeDirectory:path=>destination.makeDirectory(path),
