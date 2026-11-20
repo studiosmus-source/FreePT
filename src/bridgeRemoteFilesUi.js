@@ -388,6 +388,7 @@ export function renderBridgeRemoteFiles({
         const result=await downloadBridgeFolder({
           api:bridgeClient,deviceId,manifest,
           destination:writer,signal,preserveCompletedOnCancel:true,
+          preserveCompletedOnFailure:true,
           onStage:stage=>{
             if(stage==='destination')setStatus('Creazione cartella temporanea…');
             else if(stage==='transfer')setStatus('Scaricamento dei '+summary.files+' file…');
@@ -398,8 +399,12 @@ export function renderBridgeRemoteFiles({
             ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
         });
         if(result.partial){
-          setStatus('Annullato. Conservati '+result.files+' file completi in '+
-            (result.savedName||'cartella (parziale)')+'.');
+          setStatus((result.interruptedBy==='transient_read'
+            ?'Download interrotto per un errore di comunicazione. '
+            :'Download annullato. ')+
+            'Conservati '+result.files+'/'+summary.files+' file completi in '+
+            (result.savedName||'cartella (parziale)')+
+            '. Gli altri file non sono stati salvati.');
         }else setStatus('Cartella scaricata: '+result.files+' file.');
       }else{
         setStatus('Controllo cartella di destinazione…');
@@ -879,6 +884,19 @@ export function renderBridgeRemoteFiles({
             : 'Altri elementi disponibili: scorri per continuare.');
         return true;
       }catch(error){
+        if(!currentBrowse.signal.aborted&&offset>0){
+          // A failed catalogue page must not permanently block existing
+          // viewport thumbnails. Keep manual page retry and loaded rows.
+          thumbnailsAllowed=true;
+          const interrupted=browser.querySelector('.bridge-folder-discovery-status');
+          if(interrupted&&!interrupted.hidden)
+            interrupted.textContent='Ricerca sottocartelle interrotta. '+
+              'Usa Carica altri file e cartelle per riprendere.';
+          const summary=browser.querySelector('.bridge-folder-completeness');
+          if(summary)summary.textContent=summary.textContent.replace(
+            'Ricerca automatica delle sottocartelle in corso',
+            'Ricerca interrotta: file caricati conservati');
+        }
         if(currentBrowse.signal.aborted){
           if(activeDownload&&offset>0){
             pausedPageOffset=offset;
