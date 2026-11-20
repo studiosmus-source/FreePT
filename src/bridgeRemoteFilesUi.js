@@ -117,6 +117,8 @@ export function renderBridgeRemoteFiles({
       return 'Connessione al Bridge temporaneamente non disponibile: riprova.';
     if(code==='bridge_request_failed')
       return 'Richiesta non riuscita. Puoi riprovare senza perdere le voci già caricate.';
+    if(code==='bridge_destination_size_mismatch')
+      return 'Il file salvato non corrisponde alla dimensione attesa: download non completato.';
     return code||'errore remoto';
   };
   const fileDownload=async(item,deviceId)=>{
