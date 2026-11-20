@@ -122,14 +122,18 @@ final class BridgeAllFilesCore {
             if(c<32||c==127)return false;
         }
         try{
-            String base=volumeRoot.getCanonicalPath();
+            // Every volumeRoot is already canonicalized by prepare(). Avoid
+            // repeating that filesystem lookup for every scanned sibling.
+            String base=volumeRoot.getPath();
             String canonical=file.getCanonicalPath();
             if(!canonical.startsWith(base+File.separator))return false;
             String relative=canonical.substring(base.length()+1).replace(File.separatorChar,'/');
             if(relative.equals("Android/data")||relative.startsWith("Android/data/")||
                relative.equals("Android/obb")||relative.startsWith("Android/obb/"))return false;
             // Never follow filesystem symlinks or directory traversal.
-            if(!file.getCanonicalFile().equals(file.getAbsoluteFile()))return false;
+            // One canonical resolution is enough for both containment and
+            // symlink defense. Never trust a raw absolute path by itself.
+            if(!canonical.equals(file.getAbsolutePath()))return false;
             return file.isDirectory()||(file.isFile()&&file.length()<=MAX_BYTES);
         }catch(IOException error){return false;}
     }
@@ -142,17 +146,24 @@ final class BridgeAllFilesCore {
         File[] raw=parent.file.listFiles();
         if(raw==null)throw new IOException("unreadable_directory");
         ArrayList<File> accepted=new ArrayList<>(raw.length);
+        // Sorting by File.isDirectory() repeatedly performs filesystem stats
+        // on each comparator call (O(N log N) metadata reads). Snapshot the
+        // type once and revalidate the visible page before releasing handles.
+        Map<File,Boolean> directories=new HashMap<>(raw.length);
         int fileCount=0,dirCount=0,skipped=0;
         for(File candidate:raw){
-            if(candidate.isFile())fileCount++;
-            else if(candidate.isDirectory())dirCount++;
-            if(valid(candidate,parent.volumeRoot))accepted.add(candidate);
-            else skipped++;
+            boolean directory=candidate.isDirectory();
+            if(directory)dirCount++;
+            else if(candidate.isFile())fileCount++;
+            if(valid(candidate,parent.volumeRoot)){
+                accepted.add(candidate);
+                directories.put(candidate,directory);
+            }else skipped++;
         }
         // Sort the WHOLE validated catalogue before slicing into pages.
         // Sorting each page in RX would put some files before later folders.
         accepted.sort(Comparator
-            .comparing((File item)->!item.isDirectory())
+            .comparing((File item)->!Boolean.TRUE.equals(directories.get(item)))
             .thenComparing(File::getName,String.CASE_INSENSITIVE_ORDER)
             .thenComparing(File::getName));
         DirectorySnapshot next=new DirectorySnapshot(handle,parent.file,
