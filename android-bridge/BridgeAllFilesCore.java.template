@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.RandomAccessFile;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,6 +36,23 @@ final class BridgeAllFilesCore {
     private static File root;
     private static Context appContext;
     private static final Map<String,Entry> extraVolumes=new LinkedHashMap<>();
+    // One bounded session-local snapshot. Page 2+ must not rescan and
+    // canonicalize every sibling in a large folder again and again.
+    private static final long SNAPSHOT_NANOS=300_000_000_000L;
+    private static DirectorySnapshot lastSnapshot;
+    private static final class DirectorySnapshot {
+        final String handle;
+        final File folder;
+        final File[] visible;
+        final int rawFiles,rawDirs,skipped;
+        final long created;
+        DirectorySnapshot(String handle,File folder,File[] visible,
+                          int rawFiles,int rawDirs,int skipped){
+            this.handle=handle;this.folder=folder;this.visible=visible;
+            this.rawFiles=rawFiles;this.rawDirs=rawDirs;this.skipped=skipped;
+            this.created=System.nanoTime();
+        }
+    }
     static synchronized void configure(Context context){
         if(context!=null)appContext=context.getApplicationContext();
     }
@@ -52,13 +70,13 @@ final class BridgeAllFilesCore {
     }
     private static boolean prepare(){
         if(!granted()){
-            entries.clear();reverse.clear();extraVolumes.clear();root=null;return false;
+            entries.clear();reverse.clear();extraVolumes.clear();lastSnapshot=null;root=null;return false;
         }
         try{
             File candidate=Environment.getExternalStorageDirectory().getCanonicalFile();
             if(root==null||!root.equals(candidate)){
                 root=candidate;
-                entries.clear();reverse.clear();extraVolumes.clear();
+                entries.clear();reverse.clear();extraVolumes.clear();lastSnapshot=null;
                 entries.put("root",new Entry(root,0,root));
             }
             // Only currently mounted, readable shared volumes. Do not try
@@ -115,20 +133,39 @@ final class BridgeAllFilesCore {
             return file.isDirectory()||(file.isFile()&&file.length()<=MAX_BYTES);
         }catch(IOException error){return false;}
     }
+    private static DirectorySnapshot snapshotFor(String handle,Entry parent,int offset)
+            throws Exception {
+        DirectorySnapshot cached=lastSnapshot;
+        if(offset>0&&cached!=null&&cached.handle.equals(handle)&&
+            cached.folder.equals(parent.file)&&
+            System.nanoTime()-cached.created<SNAPSHOT_NANOS)return cached;
+        File[] raw=parent.file.listFiles();
+        if(raw==null)throw new IOException("unreadable_directory");
+        Arrays.sort(raw,Comparator.comparing(File::getName));
+        ArrayList<File> accepted=new ArrayList<>(raw.length);
+        int fileCount=0,dirCount=0,skipped=0;
+        for(File candidate:raw){
+            if(candidate.isFile())fileCount++;
+            else if(candidate.isDirectory())dirCount++;
+            if(valid(candidate,parent.volumeRoot))accepted.add(candidate);
+            else skipped++;
+        }
+        DirectorySnapshot next=new DirectorySnapshot(handle,parent.file,
+            accepted.toArray(new File[0]),fileCount,dirCount,skipped);
+        lastSnapshot=next;
+        return next;
+    }
     static synchronized JSObject list(String handle,int offset)throws Exception {
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
         if(offset<0||offset>10000)throw new IllegalArgumentException("offset");
         Entry parent=entries.get(handle);
         if(parent==null||!currentVolume(parent)||!parent.file.isDirectory()||parent.depth>=32)
             throw new SecurityException("invalid_directory");
-        File[] children=parent.file.listFiles();
-        if(children==null)throw new IOException("unreadable_directory");
-        Arrays.sort(children,Comparator.comparing(File::getName));
+        DirectorySnapshot snapshot=snapshotFor(handle,parent,offset);
         JSArray list=new JSArray();
-        int counted=0,emitted=0,skipped=0;
+        int counted=0,emitted=0;
         boolean hasMore=false;
-        // Additional mounted shared-storage volumes appear as folders at the
-        // top of the original root; the existing primary paths remain intact.
+        // Extra mounted shared volumes appear beside the primary root.
         if("root".equals(handle)){
             int index=0;
             for(Map.Entry<String,Entry> volume:extraVolumes.entrySet()){
@@ -144,10 +181,12 @@ final class BridgeAllFilesCore {
                 list.put(mount);emitted++;
             }
         }
-        if(!hasMore)for(File file:children){
-            if(!valid(file,parent.volumeRoot)){skipped++;continue;}
+        if(!hasMore)for(File file:snapshot.visible){
             if(counted++<offset)continue;
             if(emitted>=PAGE){hasMore=true;break;}
+            // A cached page never bypasses permissions or symlink checks.
+            if(!valid(file,parent.volumeRoot))
+                throw new IOException("catalogue_changed_retry");
             String key=file.getCanonicalPath();
             String id=reverse.get(key);
             if(id==null){
@@ -168,19 +207,15 @@ final class BridgeAllFilesCore {
             list.put(item);
             emitted++;
         }
-        // Aggregate-only diagnostics; never log names, paths or contents.
         if(offset==0){
-            int rawFiles=0,rawDirs=0;
-            for(File child:children){
-                if(child.isFile())rawFiles++;
-                else if(child.isDirectory())rawDirs++;
-            }
-            Log.i("FreePTBridgeCatalogue","files="+rawFiles+" dirs="+rawDirs+
-                " accepted="+counted+" skipped="+skipped+" emitted="+emitted);
+            Log.i("FreePTBridgeCatalogue","files="+snapshot.rawFiles+
+                " dirs="+snapshot.rawDirs+" accepted="+snapshot.visible.length+
+                " skipped="+snapshot.skipped+" emitted="+emitted);
         }
-        JSObject out=new JSObject();
-        if(offset==0 && counted==0 && skipped>0)
+        if(offset==0&&snapshot.visible.length==0&&snapshot.skipped>0&&
+           (list.length()==0))
             throw new IOException("directory_entries_inaccessible");
+        JSObject out=new JSObject();
         out.put("entries",list);
         out.put("nextOffset",hasMore?offset+emitted:-1);
         return out;
