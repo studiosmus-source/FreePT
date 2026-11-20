@@ -17,6 +17,7 @@ function fixture(enabled=true){
     calls.push({name,args});
     if(revoked)return {data:null,error:{code:'42501'}};
     if(name==='bridge_server_enqueue_read')return {data:JOB,error:null};
+    if(name==='bridge_server_claim_browse')return {data:null,error:null};
     if(name==='bridge_server_claim_list')return {data:null,error:null};
     if(name==='bridge_server_claim_read')return {data:{jobId:JOB,deviceId:DEVICE,operation:'read',state:'sent',handle:HANDLE,offset:0,length:3},error:null};
     if(name==='bridge_server_complete_read')return {data:true,error:null};
@@ -50,6 +51,8 @@ test('read job passes authenticated admin enqueue, TX dispatch and chunk retriev
   assert.equal(queued.body.jobId,JOB);
   const claim=await f.adapter.pollDevice({deviceId:DEVICE,sessionToken:TOKEN});
   assert.equal(claim.operation,'read');assert.equal(claim.handle,HANDLE);
+  assert.deepEqual(f.calls.filter(c=>c.name.startsWith('bridge_server_claim_')).map(c=>c.name),
+    ['bridge_server_claim_browse','bridge_server_claim_read']);
   const completed=await f.tx({method:'POST',path:'/bridge/tx/chunk',
     body:{deviceId:DEVICE,sessionToken:TOKEN,jobId:JOB,chunk:CHUNK}});
   assert.equal(completed.status,200);
