@@ -11,6 +11,29 @@ import {createBridgeAndroidFolderDestination,createBridgeAndroidSingleFileWriter
 import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
 import {filterOwnerAuthorizedDevices} from './bridgeChatDeviceFilter.js';
 
+// Only a validated ROOT page, bound to the current authenticated receiver and
+// device, is reused briefly within the same runtime. No disk or account-wide
+// storage; grants are checked anew before showDevice can be reached.
+const recentRoots=new WeakMap();
+const ROOT_CACHE_MS=90000;
+const cacheKey=(adminId,ownerId,deviceId)=>[adminId,ownerId||'',deviceId].join('|');
+const getRecentRoot=(client,key)=>{
+  const holder=recentRoots.get(client);
+  const entry=holder?.get(key);
+  if(!entry)return null;
+  if(Date.now()-entry.at>ROOT_CACHE_MS){
+    holder.delete(key);return null;
+  }
+  return entry.page;
+};
+const putRecentRoot=(client,key,page)=>{
+  let holder=recentRoots.get(client);
+  if(!holder){holder=new Map();recentRoots.set(client,holder);}
+  // Single root per client at a time avoids retaining cross-chat metadata.
+  holder.clear();
+  holder.set(key,{page,at:Date.now()});
+};
+
 function create(node,label,parent){
   const el=document.createElement(node);
   if(label!==undefined)el.textContent=label;
@@ -422,6 +445,9 @@ export function renderBridgeRemoteFiles({
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
     const folderPages=new Map();
+    const rootCacheKey=cacheKey(adminId,ownerId,deviceId);
+    const rootCached=getRecentRoot(bridgeClient,rootCacheKey);
+    if(rootCached)folderPages.set('root|0',rootCached);
     let navigation=0;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
@@ -441,6 +467,9 @@ export function renderBridgeRemoteFiles({
         }));
         if(!alive()||marker!==revision||view!==navigation)return;
         if(!cached)folderPages.set(key,page);
+        if(current.handle==='root'&&offset===0&&!cached){
+          putRecentRoot(bridgeClient,rootCacheKey,page);
+        }
         if(offset===0){
           const nav=create('nav',undefined,browser);
           nav.className='bridge-breadcrumbs';
@@ -460,7 +489,9 @@ export function renderBridgeRemoteFiles({
             current.handle==='root');
           const reload=create('button','Aggiorna',actions);
           reload.onclick=()=>{
-            for(const key of folderPages.keys())if(key.startsWith(current.handle+'|'))folderPages.delete(key);
+            for(const pageKey of folderPages.keys())
+              if(pageKey.startsWith(current.handle+'|'))folderPages.delete(pageKey);
+            if(current.handle==='root')recentRoots.get(bridgeClient)?.delete(rootCacheKey);
             void display();
           };
           const completeness=create('p','',browser);
@@ -533,9 +564,11 @@ export function renderBridgeRemoteFiles({
           (page.nextOffset===-1
             ? ' · Fine elenco trasmesso dal telefono'
             : ' · Elenco parziale: scorri per caricare le altre pagine');
-        setStatus(page.nextOffset===-1
-          ? 'Fine elenco trasmesso dal telefono.'
-          : 'Altri elementi disponibili: scorri per continuare.');
+        setStatus(cached&&current.handle==='root'&&offset===0
+          ? 'Elenco principale recente (in memoria). Premi Aggiorna per verificarlo sul telefono.'
+          :page.nextOffset===-1
+            ? 'Fine elenco trasmesso dal telefono.'
+            : 'Altri elementi disponibili: scorri per continuare.');
         return true;
       }catch(error){
         if(currentBrowse.signal.aborted)return false;
@@ -547,7 +580,11 @@ export function renderBridgeRemoteFiles({
     }
     await display();
   }
-  refresh.onclick=()=>void listDevices();
+  refresh.onclick=()=>{
+    // Explicit refresh must never silently show stale remote metadata.
+    recentRoots.get(bridgeClient)?.clear();
+    void listDevices();
+  };
   void listDevices();
   return ()=>{
     disposed=true;revision++;
