@@ -69,7 +69,7 @@ test('folder inventory is independently counted before user approval and destina
  assert.match(source,/reviewFolderInventory\(\{/);
  assert.match(source,/summary\.files\+' file/);
  assert.match(source,/summary\.hidden/);
- assert.match(source,/manifest\[shown\+\+\]/);
+ assert.match(source,/inventoryItems\[shown\+\+\]/);
  assert.match(source,/bridge-folder-inventory-scroll/);
  assert.match(source,/const approved=await reviewFolderInventory/);
  assert.match(source,/if\(!approved\)/);
@@ -105,6 +105,19 @@ test('repeated File tab and rapid Refresh do not create duplicate root jobs',()=
  assert.match(source,/finally\{listingDevices=false;refresh\.disabled=false;\}/);
  assert.match(source,/if\(openingDeviceId===deviceId\)return/);
  assert.match(source,/finally\{if\(openingDeviceId===deviceId\)openingDeviceId=null;\}/);
+});
+test('folders display before files across paginated pages, without new browsing requests',()=>{
+ const styles=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ assert.match(source,/create\('h4','Cartelle',list\)/);
+ assert.match(source,/create\('h4','File',list\)/);
+ assert.match(source,/className='bridge-remote-folders'/);
+ assert.match(source,/className='bridge-remote-files'/);
+ assert.match(source,/const target=item\.directory\?folders:files/);
+ assert.match(source,/const line=create\('div',undefined,target\)/);
+ assert.match(source,/target\.previousElementSibling\.hidden=false/);
+ assert.match(source,/inventoryItems=\[\.\.\.manifest\]\.sort\(/);
+ assert.match(source,/Number\(b\.directory\)-Number\(a\.directory\)/);
+ assert.match(styles,/\.bridge-list-section-heading\[hidden\]\{display:none\}/);
 });
 test('remote browser preserves bounded paging, lazy loads on scroll, and cleans observers',()=>{
  assert.match(source,/more\.onclick=async\(\)=>/);
