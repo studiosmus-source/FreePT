@@ -19,7 +19,9 @@ export async function downloadBridgeFile({
   let activeJob=null;
   try{
     return await receiveBridgeFile({
-      size,signal,chunkBytes:262144,
+      // Keep every TX response comfortably below gateway and database payload limits.
+      // A cancelled 256 KiB second chunk was observed on the live TEST route.
+      size,signal,chunkBytes:65536,
       write:(bytes,offset)=>destination.write(bytes,offset),
       commit:()=>destination.commit(),
       discard:()=>destination.discard(),
