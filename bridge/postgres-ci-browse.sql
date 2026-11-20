@@ -6,6 +6,7 @@ declare
   owner_id uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   admin_id uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   stranger uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  job_expired uuid:='89999999-9999-4999-8999-999999999999';
   job_root uuid:='82222222-2222-4222-8222-222222222222';
   job_nested uuid:='83333333-3333-4333-8333-333333333333';
   job_after uuid:='84444444-4444-4444-8444-444444444444';
@@ -38,6 +39,19 @@ begin
       folder_handle::text,0);
     raise exception 'unlisted folder browsed';
   exception when sqlstate '42501' then null; end;
+  -- Expired pending jobs can never be claimed, so status must not say queued.
+  perform public.bridge_server_enqueue_browse(job_expired,dev,admin_id,'root',0);
+  update public.bridge_jobs
+    set created_at=clock_timestamp()-interval '2 minutes',
+        expires_at=clock_timestamp()-interval '1 minute'
+    where id=job_expired;
+  if (public.bridge_server_job_status(job_expired,admin_id)->>'state')
+       is distinct from 'expired' then
+    raise exception 'expired browse still shown as pending';
+  end if;
+  if public.bridge_server_claim_browse(dev,bind) is not null then
+    raise exception 'expired browse was dispatched';
+  end if;
   perform public.bridge_server_enqueue_browse(job_root,dev,admin_id,'root',0);
   claimed:=public.bridge_server_claim_browse(dev,bind);
   if claimed->>'jobId'<>job_root::text or claimed->>'handle'<>'root' then
