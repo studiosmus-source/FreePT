@@ -58,6 +58,20 @@ test('downloads selected folder recursively, nested 40KB and root file, commits 
  assert.equal(f.events.at(-1),'folder_commit');
  assert.equal(f.events.includes('folder_discard'),false);
 });
+test('download exposes inventory phase and destination phase before the first byte',async()=>{
+ const f=makeFixture(),stages=[],scans=[];
+ const result=await downloadBridgeFolder({
+  api:f.api,deviceId:DEVICE,listPage:f.listPage,destination:f.destination,
+  pause:async()=>{},onStage:phase=>stages.push(phase),
+  onScanProgress:progress=>scans.push(progress)
+ });
+ assert.equal(result.files,2);
+ assert.deepEqual(stages,['scanning','destination','transfer','finalizing']);
+ assert.equal(scans.length,2);
+ assert.deepEqual(scans.map(p=>p.foundEntries),[2,3]);
+ assert.equal(f.events[0],'begin');
+ assert.equal(f.events.at(-1),'folder_commit');
+});
 test('storage error rolls back whole folder rather than leaving partial files',async()=>{
  const f=makeFixture({failFile:'test.bin'});
  await assert.rejects(downloadBridgeFolder({
