@@ -7,9 +7,9 @@ import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
  */
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-// The server queues browse jobs for 60 seconds. Stop waiting before an
-// unclaimable job can leave the admin browser spinning indefinitely.
-const BROWSE_WAIT_MS=55_000;
+// Staging SQL expires queued/sent jobs after 60s. Allow scheduling and HTTP
+// jitter, but do not wait for minutes if an older backend reports stale states.
+const BROWSE_WAIT_MS=70_000;
 export function createBridgeRemoteFolderLister({
   api,deviceId,pause=wait,pollMs=1200,maxPolls=90,now=Date.now
 }={}){
@@ -26,11 +26,11 @@ export function createBridgeRemoteFolderLister({
       throw Error('bridge_remote_browse_invalid_request');
     if(typeof onProgress!=='function')throw Error('bridge_remote_browse_invalid_request');
     if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-    const startedAt=now();
     const job=await api.requestBrowse(deviceId,{handle,offset},{signal});
     if(!UUID.test(job?.jobId)||job.deviceId!==deviceId||job.state!=='queued')
       throw Error('bridge_remote_browse_invalid_job');
     let success=false;
+    const startedAt=now();
     let lastProgress=0;
     let lastState='';
     try{
