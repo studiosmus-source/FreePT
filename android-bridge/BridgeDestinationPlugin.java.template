@@ -328,7 +328,18 @@ public class BridgeDestinationPlugin extends Plugin {
             directories.clear();directories.put("",temp);files.clear();
             JSObject result=new JSObject();result.put("started",true);
             call.resolve(result);
-        }catch(Exception error){call.reject("bridge_destination_create_failed");}
+        }catch(Exception error){
+            // Preserve the specific failure stage without leaking document paths or names.
+            String detail="bridge_destination_create_failed";
+            if(error instanceof SecurityException)detail+="_permission";
+            else if(error instanceof java.io.FileNotFoundException)detail+="_provider";
+            else if(error instanceof IllegalStateException &&
+                error.getMessage()!=null &&
+                error.getMessage().matches("bridge_destination_[a-z_]+"))
+                detail=error.getMessage();
+            android.util.Log.e("FreePTBridgeDestination","Download destination preparation failed",error);
+            call.reject(detail);
+        }
     }
 
     @PluginMethod
@@ -471,7 +482,18 @@ public class BridgeDestinationPlugin extends Plugin {
             files.put(id,new FileEntry(temp,size));
             JSObject result=new JSObject();result.put("fileId",id);
             call.resolve(result);
-        }catch(Exception error){call.reject("bridge_destination_create_failed");}
+        }catch(Exception error){
+            // Preserve the specific failure stage without leaking document paths or names.
+            String detail="bridge_destination_create_failed";
+            if(error instanceof SecurityException)detail+="_permission";
+            else if(error instanceof java.io.FileNotFoundException)detail+="_provider";
+            else if(error instanceof IllegalStateException &&
+                error.getMessage()!=null &&
+                error.getMessage().matches("bridge_destination_[a-z_]+"))
+                detail=error.getMessage();
+            android.util.Log.e("FreePTBridgeDestination","Download destination preparation failed",error);
+            call.reject(detail);
+        }
     }
 
     @PluginMethod
