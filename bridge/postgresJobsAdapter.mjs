@@ -110,7 +110,7 @@ export class BridgePostgresJobsAdapter {
         Object.keys(data).length!==3 ||
         data.jobId!==jobId || typeof data.deviceId!=='string' ||
         !UUID.test(data.deviceId) ||
-        !['queued','sent','done','cancelled'].includes(data.state) ||
+        !['queued','sent','done','cancelled','expired'].includes(data.state) ||
         (requiredState!==null && data.state!==requiredState))
       throw new Error('bridge_jobs_invalid_response');
     return {jobId:data.jobId,deviceId:data.deviceId,state:data.state};
