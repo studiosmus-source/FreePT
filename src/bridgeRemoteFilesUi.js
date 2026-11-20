@@ -522,6 +522,9 @@ export function renderBridgeRemoteFiles({
     let thumbnailActive=null;
     let thumbnailGeneration=0;
     let thumbnailsAllowed=false;
+    let thumbnailRetryTimer=null;
+    let thumbnailNextAt=0;
+    let thumbnailFailureStreak=0;
     const rememberThumbnail=(key,blob)=>{
       if(blob.size>THUMBNAIL_CACHE_BYTES)return;
       const previous=thumbnailCache.get(key);
@@ -548,6 +551,10 @@ export function renderBridgeRemoteFiles({
       thumbnailAbort?.abort();
       thumbnailAbort=null;
       thumbnailActive=null;
+      if(thumbnailRetryTimer!==null)clearTimeout(thumbnailRetryTimer);
+      thumbnailRetryTimer=null;
+      thumbnailNextAt=0;
+      thumbnailFailureStreak=0;
       thumbnailObserver?.disconnect();
       thumbnailObserver=null;
       for(const row of thumbnailRows.values())releaseThumbnail(row);
@@ -562,6 +569,7 @@ export function renderBridgeRemoteFiles({
     pauseThumbnails=()=>{
       if(thumbnailActive)thumbnailActive.attempted=false;
       thumbnailAbort?.abort();
+      if(thumbnailRetryTimer!==null){clearTimeout(thumbnailRetryTimer);thumbnailRetryTimer=null;}
     };
     const showThumbnail=(row,blob)=>{
       if(!row.element.isConnected||!row.visible||!alive()||marker!==revision)return;
@@ -574,6 +582,14 @@ export function renderBridgeRemoteFiles({
     const startVisibleThumbnail=()=>{
       if(!thumbnailsAllowed||thumbnailActive||pendingBrowse||activeDownload||
          previewClosers.size>0||!alive()||marker!==revision)return;
+      const waitMs=thumbnailNextAt-Date.now();
+      if(waitMs>0){
+        if(thumbnailRetryTimer===null)thumbnailRetryTimer=setTimeout(()=>{
+          thumbnailRetryTimer=null;
+          startVisibleThumbnail();
+        },waitMs);
+        return;
+      }
       const row=[...thumbnailRows.values()].find(item=>
         item.visible&&!item.attempted&&item.element.isConnected);
       if(!row)return;
@@ -596,8 +612,16 @@ export function renderBridgeRemoteFiles({
           }
           if(abort.signal.aborted||generation!==thumbnailGeneration)return;
           showThumbnail(row,blob);
+          thumbnailFailureStreak=0;
+          // Keep expensive read jobs secondary to navigation and downloads.
+          thumbnailNextAt=Date.now()+2000;
         }catch{
-          // Optional thumbnails cannot interrupt the file browser.
+          // One remote image failure must not trigger a storm of subsequent
+          // read jobs. Back off progressively without changing TX or grants.
+          if(!abort.signal.aborted){
+            thumbnailFailureStreak=Math.min(4,thumbnailFailureStreak+1);
+            thumbnailNextAt=Date.now()+Math.min(30000,4000*thumbnailFailureStreak);
+          }
         }finally{
           if(thumbnailActive===row){
             thumbnailActive=null;
