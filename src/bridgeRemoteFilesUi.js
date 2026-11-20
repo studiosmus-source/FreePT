@@ -4,6 +4,7 @@
  * This UI never embeds device credentials, raw paths or server-role keys.
  */
 import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
+import {createBridgeFolderPrefetch} from './bridgeFolderPrefetch.js';
 import {downloadBridgeFolder,inspectBridgeFolder} from './bridgeFolderDownloadClient.js';
 import {downloadBridgeFile,readBridgePreviewPrefix} from './bridgeDownloadClient.js';
 import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
@@ -459,6 +460,7 @@ export function renderBridgeRemoteFiles({
     closePreviews();
     const stack=[{handle:'root',name:label}];
     const lister=createBridgeRemoteFolderLister({api:bridgeClient,deviceId});
+    const folderPrefetch=createBridgeFolderPrefetch();
     const history=()=>stack.map(x=>x.name).join(' / ');
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
@@ -531,6 +533,9 @@ export function renderBridgeRemoteFiles({
           foldersTitle.className='bridge-list-section-heading';
           foldersTitle.hidden=true;
           create('div',undefined,list).className='bridge-remote-folders';
+          const folderDiscovery=create('p','',list);
+          folderDiscovery.className='bridge-folder-discovery-status';
+          folderDiscovery.hidden=true;
           const filesTitle=create('h4','File',list);
           filesTitle.className='bridge-list-section-heading';
           filesTitle.hidden=true;
@@ -571,10 +576,29 @@ export function renderBridgeRemoteFiles({
             const details=create('small',item.size+' byte · '+item.mime,options);
           }
         }
+        // Pages can arrive file-first from older remote Bridge builds. Keep
+        // the already loaded file rows usable while discovering folders ahead
+        // of them across later pages. Do not require changes on the owner TX.
+        const scan=folderPrefetch.record({handle:current.handle,offset,page});
+        const folderNotice=list.querySelector('.bridge-folder-discovery-status');
+        if(folderNotice){
+          folderNotice.hidden=!scan.pending;
+          if(scan.pending){
+            folders.previousElementSibling.hidden=false;
+            folderNotice.textContent=scan.atLimit
+              ? 'Altre sottocartelle potrebbero trovarsi nelle pagine successive. Premi Carica altri file e cartelle per continuare.'
+              : 'Ricerca sottocartelle nelle pagine successive… ('+scan.pagesRead+' pagine caricate)';
+          }else if(!folders.children.length){
+            folders.previousElementSibling.hidden=true;
+          }
+        }
         if(page.nextOffset!==-1){
           const more=create('button','Carica altri file e cartelle',list);
           more.className='bridge-load-more';
-          // Load subsequent pages only on demand. Large folders must stay
+          // Keep the retry button near the directory heading when scanning:
+          // file-first catalogues may have hundreds of entries below it.
+          if(scan.pending)list.insertBefore(more,files.previousElementSibling);
+          // Load subsequent pages one at a time; never enqueue in parallel. Large folders must stay
           // navigable while earlier entries are available, even on a slow TX.
           // Keep the retry control if an individual page request fails.
           more.onclick=async()=>{
@@ -585,9 +609,15 @@ export function renderBridgeRemoteFiles({
             if(loaded)more.remove();
             else if(more.isConnected)more.disabled=false;
           };
-          // Load the next bounded page only as the reader nears the bottom.
-          // Keep the manual button as fallback; never flood TX with all pages.
-          if(typeof IntersectionObserver==='function'){
+          // Legacy TX sometimes sends ALL files before two directories in
+          // its final page. Scan ahead in a bounded sequential batch while
+          // preserving existing rows and an explicit retry on any failure.
+          if(scan.autoFetch){
+            void Promise.resolve().then(()=>{
+              if(more.isConnected&&!more.disabled&&view===navigation)
+                void more.onclick();
+            });
+          }else if(!scan.atLimit&&typeof IntersectionObserver==='function'){
             moreObserver=new IntersectionObserver(entries=>{
               if(entries.some(entry=>entry.isIntersecting)&&more.isConnected&&
                  !more.disabled&&view===navigation){
@@ -606,8 +636,10 @@ export function renderBridgeRemoteFiles({
           (page.nextOffset===-1
             ? ' · Fine elenco trasmesso dal telefono'
             : ' · Elenco parziale: scorri per caricare le altre pagine');
-        setStatus(cached&&current.handle==='root'&&offset===0
-          ? 'Elenco principale recente (in memoria). Premi Aggiorna per verificarlo sul telefono.'
+        setStatus(scan.autoFetch
+          ? 'Ricerca delle sottocartelle nelle pagine successive…'
+          :cached&&current.handle==='root'&&offset===0
+            ? 'Elenco principale recente (in memoria). Premi Aggiorna per verificarlo sul telefono.'
           :page.nextOffset===-1
             ? 'Fine elenco trasmesso dal telefono.'
             : 'Altri elementi disponibili: scorri per continuare.');
@@ -618,7 +650,14 @@ export function renderBridgeRemoteFiles({
           ?'Richiesta scaduta: il telefono remoto non ha ritirato o completato il lavoro. Controlla il Bridge sul telefono e premi Aggiorna.'
           :error?.message==='bridge_remote_browse_timeout'
             ?'Il telefono remoto non ha risposto entro il limite di attesa. Controlla il Bridge sul telefono. Premi Aggiorna per riprovare.'
-            :'Elenco non disponibile: '+(error?.message||'errore remoto'));
+            :'Elenco non disponibile: '+(
+              error?.message==='bridge_request_throttled'
+                ? 'server momentaneamente occupato. Riprendi dal pulsante Carica altri file e cartelle.'
+                :error?.message==='bridge_backend_unavailable'
+                  ? 'server temporaneamente non disponibile. Riprova senza perdere l’elenco già caricato.'
+                  :error?.message==='bridge_request_failed'
+                    ? 'richiesta remota non riuscita. Riprova senza perdere l’elenco già caricato.'
+                    :(error?.message||'errore remoto')));
         return false;
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
