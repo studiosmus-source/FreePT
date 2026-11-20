@@ -72,8 +72,14 @@ public class Harness {
   }
   if(extraFile==null||extraAndroid==null)
    throw new AssertionError("secondary shared-storage missing");
-  JSArray protectedExtra=(JSArray)BridgeAllFilesCore.list(extraAndroid,0).get("entries");
-  if(!protectedExtra.isEmpty())throw new AssertionError("secondary private Android/data leaked");
+  // The only child is protected: the catalogue must fail explicitly rather
+  // than silently report the protected directory as an empty readable one.
+  try{
+   BridgeAllFilesCore.list(extraAndroid,0);
+   throw new AssertionError("private secondary Android/data was not rejected");
+  }catch(java.io.IOException blocked){
+   if(!"directory_entries_inaccessible".equals(blocked.getMessage()))throw blocked;
+  }
   if(!"BQY=".equals(BridgeAllFilesCore.read(extraFile,0,2).get("base64")))
    throw new AssertionError("secondary volume bytes missing");
   if(!"AQIDBA==".equals(BridgeAllFilesCore.read(hidden,0,4).get("base64")))throw new AssertionError("wrong bytes");
