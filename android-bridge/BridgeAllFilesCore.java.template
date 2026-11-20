@@ -16,8 +16,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.List;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -90,6 +88,13 @@ final class BridgeAllFilesCore {
             return true;
         }catch(IOException error){return false;}
     }
+    /** Reject handles retained from a removable volume that is no longer mounted. */
+    private static boolean currentVolume(Entry item){
+        if(item.volumeRoot.equals(root))return true;
+        for(Entry mounted:extraVolumes.values())
+            if(mounted.volumeRoot.equals(item.volumeRoot))return true;
+        return false;
+    }
     private static boolean valid(File file,File volumeRoot){
         String name=file.getName();
         if(name.isEmpty()||name.length()>255||name.equals(".")||name.equals("..")||
@@ -114,7 +119,7 @@ final class BridgeAllFilesCore {
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
         if(offset<0||offset>10000)throw new IllegalArgumentException("offset");
         Entry parent=entries.get(handle);
-        if(parent==null||!parent.file.isDirectory()||parent.depth>=32)
+        if(parent==null||!currentVolume(parent)||!parent.file.isDirectory()||parent.depth>=32)
             throw new SecurityException("invalid_directory");
         File[] children=parent.file.listFiles();
         if(children==null)throw new IOException("unreadable_directory");
@@ -183,7 +188,8 @@ final class BridgeAllFilesCore {
     static synchronized JSObject read(String handle,long offset,int length)throws Exception{
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
         Entry entry=entries.get(handle);
-        if(entry==null||!entry.file.isFile()||!valid(entry.file,entry.volumeRoot)||!entry.file.canRead()||
+        if(entry==null||!currentVolume(entry)||!entry.file.isFile()||
+           !valid(entry.file,entry.volumeRoot)||!entry.file.canRead()||
            offset<0||offset>MAX_BYTES||length<1||length>MAX_CHUNK||
            offset>MAX_BYTES-length)
             throw new SecurityException("invalid_file_request");
