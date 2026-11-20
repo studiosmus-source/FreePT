@@ -28,6 +28,23 @@ test('downloads entire binary file automatically with repeated read jobs',async(
  assert.deepEqual(f.requests.map(r=>r.offset),[0,262144,524288]);
  assert.equal(f.committed,1);assert.equal(f.discarded,0);
 });
+test('recovers one cancelled TX job by re-reading the same range once',async()=>{
+ const data=Buffer.from([4,5,6,7,8]);
+ const f=fixture(data,['cancelled','done']);
+ const result=await downloadBridgeFile({api:f.api,deviceId:DEVICE,handle:HANDLE,
+  size:data.length,destination:f.destination,pause:async()=>{}});
+ assert.equal(result.bytesReceived,data.length);
+ assert.deepEqual(f.requests.map(r=>[r.offset,r.length]),[[0,5],[0,5]]);
+ assert.deepEqual(Buffer.concat(f.chunks),data);
+ assert.equal(f.committed,1);assert.equal(f.discarded,0);
+});
+test('repeated TX cancellations fail closed and discard the staged file',async()=>{
+ const f=fixture(Buffer.from([4,5,6]),['cancelled']);
+ await assert.rejects(downloadBridgeFile({api:f.api,deviceId:DEVICE,handle:HANDLE,
+  size:3,destination:f.destination,pause:async()=>{}}),/bridge_download_job_cancelled/);
+ assert.equal(f.requests.length,3);
+ assert.equal(f.committed,0);assert.equal(f.discarded,1);
+});
 test('times out without committing partial bytes',async()=>{
  const f=fixture(Buffer.from([1,2,3]),['queued']);
  await assert.rejects(downloadBridgeFile({api:f.api,deviceId:DEVICE,handle:HANDLE,size:3,
