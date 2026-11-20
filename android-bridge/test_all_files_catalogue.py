@@ -48,7 +48,9 @@ public class Harness {
   Files.createDirectories(extra.resolve("Android/data"));
   BridgeAllFilesCore.configure(new android.content.Context());
   Files.write(root.resolve(".hidden"),new byte[]{1,2,3,4});
+  Files.write(root.resolve(".nomedia"),new byte[0]);
   Files.createDirectories(root.resolve(".private-folder"));
+  Files.write(root.resolve(".private-folder/.secret"),new byte[]{7,8});
   Files.createDirectories(root.resolve("Android/data"));
   Files.createDirectories(root.resolve("Android/obb"));
   Files.createDirectories(root.resolve("Android/media"));
@@ -60,21 +62,29 @@ public class Harness {
   if(next!=100)throw new AssertionError("pagination did not advance by 100");
   JSObject follow=BridgeAllFilesCore.list("root",next);
   JSArray second=(JSArray)follow.get("entries");
-  if((Integer)follow.get("nextOffset")!=-1||second.size()!=49)
+  if((Integer)follow.get("nextOffset")!=-1||second.size()!=50)
    throw new AssertionError("last page missing entries");
   java.util.HashSet<String> unique=new java.util.HashSet<>();
   for(Object entry:page)unique.add((String)((JSObject)entry).get("handle"));
   for(Object entry:second)unique.add((String)((JSObject)entry).get("handle"));
-  if(unique.size()!=149)throw new AssertionError("duplicate or missing catalogue handles");
-  String hidden=null,android=null,extraHandle=null;boolean folder=false;
+  if(unique.size()!=150)throw new AssertionError("duplicate or missing catalogue handles");
+  String hidden=null,android=null,extraHandle=null,privateFolder=null,nomedia=null;
   for(Object x:page){JSObject e=(JSObject)x;String n=(String)e.get("name");
    if(n.equals("escape"))throw new AssertionError("symlink escaped");
    if(n.equals(".hidden"))hidden=(String)e.get("handle");
-   if(n.equals(".private-folder"))folder=true;
+   if(n.equals(".private-folder"))privateFolder=(String)e.get("handle");
+   if(n.equals(".nomedia"))nomedia=(String)e.get("handle");
    if(n.equals("Android"))android=(String)e.get("handle");
    if(n.equals("Memoria aggiuntiva 1"))extraHandle=(String)e.get("handle");
   }
-  if(hidden==null||!folder||android==null||extraHandle==null)throw new AssertionError("missing shared files or external volume");
+  if(hidden==null||privateFolder==null||nomedia==null||android==null||extraHandle==null)
+   throw new AssertionError("missing dot-hidden shared items or secondary volume");
+  JSArray nested=(JSArray)BridgeAllFilesCore.list(privateFolder,0).get("entries");
+  if(nested.size()!=1||!".secret".equals(((JSObject)nested.get(0)).get("name")))
+   throw new AssertionError("hidden nested file missing");
+  String secret=(String)((JSObject)nested.get(0)).get("handle");
+  if(!"Bwg=".equals(BridgeAllFilesCore.read(secret,0,2).get("base64")))
+   throw new AssertionError("nested hidden file read mismatch");
   JSArray extraPage=(JSArray)BridgeAllFilesCore.list(extraHandle,0).get("entries");
   String extraFile=null,extraAndroid=null;
   for(Object x:extraPage){
