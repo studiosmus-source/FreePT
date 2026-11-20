@@ -813,6 +813,7 @@ export function renderBridgeRemoteFiles({
         // the already loaded file rows usable while discovering folders ahead
         // of them across later pages. Do not require changes on the owner TX.
         const scan=folderPrefetch.record({handle:current.handle,offset,page});
+        const directoriesFound=folders.querySelectorAll('.bridge-entry').length;
         pausedPageOffset=scan.autoFetch?page.nextOffset:null;
         pausedPageHandle=scan.autoFetch?current.handle:null;
         pausedPageNavigation=scan.autoFetch?view:null;
@@ -823,8 +824,10 @@ export function renderBridgeRemoteFiles({
           if(scan.pending){
             folders.previousElementSibling.hidden=false;
             folderNotice.textContent=scan.atLimit
-              ? 'Altre sottocartelle potrebbero trovarsi nelle pagine successive. Premi Carica altri file e cartelle per continuare.'
-              : 'Ricerca sottocartelle nelle pagine successive… ('+scan.pagesRead+' pagine caricate)';
+              ? 'Limite di navigazione raggiunto: elenco NON completo. Cartelle trovate: '+
+                directoriesFound+'.'
+              : 'Ricerca di tutte le sottocartelle… '+directoriesFound+
+                ' trovate · '+scan.pagesRead+' pagine verificate.';
           }else if(!folders.children.length){
             folders.previousElementSibling.hidden=true;
           }
@@ -869,14 +872,18 @@ export function renderBridgeRemoteFiles({
         const hiddenRows=list.querySelectorAll('.bridge-entry[data-bridge-hidden="true"]');
         const completeness=browser.querySelector('.bridge-folder-completeness');
         if(completeness)completeness.textContent=
-          'Elementi caricati: '+rows.length+' · Nascosti: '+hiddenRows.length+
+          'Elementi caricati: '+rows.length+' · Cartelle: '+directoriesFound+
+          ' · Nascosti: '+hiddenRows.length+
           (page.nextOffset===-1
-            ? ' · Fine elenco trasmesso dal telefono'
-            :scan.autoFetch
-              ? ' · Ricerca automatica delle sottocartelle in corso'
-              : ' · Elenco parziale: carica le altre pagine');
+            ? ' · Fine elenco trasmesso dal telefono (cartella completa)'
+            :scan.atLimit
+              ? ' · Elenco non completo: limite di navigazione'
+              :scan.autoFetch
+                ? ' · Ricerca automatica delle sottocartelle in corso'
+                : ' · Elenco parziale: carica le altre pagine');
         setStatus(scan.autoFetch
-          ? 'Ricerca delle sottocartelle nelle pagine successive…'
+          ? 'Ricerca completa delle sottocartelle: pagina '+scan.pagesRead+
+            ', trovate '+directoriesFound+' cartelle…'
           :cached&&current.handle==='root'&&offset===0
             ? 'Elenco principale recente (in memoria). Premi Aggiorna per verificarlo sul telefono.'
           :page.nextOffset===-1
@@ -905,7 +912,10 @@ export function renderBridgeRemoteFiles({
           }
           return false;
         }
-        setStatus(error?.message==='bridge_remote_browse_expired'
+        setStatus(offset>=10000&&
+          ['bridge_file_page_invalid','bridge_remote_browse_invalid_page'].includes(error?.message)
+          ?'Elenco incompleto: il Bridge remoto supera il limite tecnico di paginazione. Le cartelle già trovate restano disponibili.'
+          :error?.message==='bridge_remote_browse_expired'
           ?'Richiesta scaduta: nessuna risposta entro il termine. Riprova da questa schermata.'
           :error?.message==='bridge_remote_browse_timeout'
             ?'Il telefono remoto non ha risposto entro il limite di attesa. Riprova da questa schermata.'
