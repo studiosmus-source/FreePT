@@ -1,37 +1,55 @@
+import {BRIDGE_FILE_LIMITS} from './bridgeFileProtocol.js';
+
 /**
- * Receiver-only progressive discovery for older TX catalogues which may put
- * files before directories across 100-entry pages.
+ * Exhaustive, receiver-side paging for one OPEN folder. Old TX builds can
+ * return files before folders (or mix them on every page), so discovering any
+ * folder in a page is NOT evidence that later pages contain no more folders.
  *
- * Never reorder remote offsets: each new page must be requested in sequence
- * so opaque file handles and pagination validation keep their normal guards.
- * Bounded automatic discovery prevents scanning huge directories forever.
+ * Continue sequentially until TX says nextOffset === -1. The only upper
+ * bound is the existing wire/Android maximum of 10,000 entries, after which
+ * completeness must be reported as unknown rather than claiming "all".
+ * Does not recursively enumerate private/unauthorized paths.
  */
-export function createBridgeFolderPrefetch({maxAutomaticPages=16}={}){
-  if(!Number.isSafeInteger(maxAutomaticPages)||maxAutomaticPages<2||maxAutomaticPages>100)
+export function createBridgeFolderPrefetch({maxEntries=BRIDGE_FILE_LIMITS.maxTotalEntries}={}){
+  if(!Number.isSafeInteger(maxEntries)||maxEntries<1||
+     maxEntries>BRIDGE_FILE_LIMITS.maxTotalEntries)
     throw Error('bridge_folder_prefetch_invalid_limit');
   let currentHandle=null;
-  let discovering=false;
   let pagesRead=0;
+  let itemsSeen=0;
+  let expectedOffset=0;
   return Object.freeze({
     record({handle,offset,page}={}){
-      if(typeof handle!=='string'||!Number.isSafeInteger(offset)||offset<0||
-         !page||!Array.isArray(page.entries)||!Number.isSafeInteger(page.nextOffset))
+      if(typeof handle!=='string'||!handle||
+         !Number.isSafeInteger(offset)||offset<0||
+         !page||!Array.isArray(page.entries)||
+         !Number.isSafeInteger(page.nextOffset)||
+         page.nextOffset!==-1&&page.nextOffset<=offset)
         throw Error('bridge_folder_prefetch_invalid_page');
       if(currentHandle!==handle||offset===0){
+        if(offset!==0)throw Error('bridge_folder_prefetch_missing_first_page');
         currentHandle=handle;
         pagesRead=0;
-        // The current TX sorts directories at the front. A first page made
-        // solely of files signals a possible old file-first transmitter.
-        discovering=offset===0&&page.nextOffset!==-1&&
-          !page.entries.some(item=>item.directory===true);
+        itemsSeen=0;
+        expectedOffset=0;
       }
+      if(offset!==expectedOffset)
+        throw Error('bridge_folder_prefetch_nonsequential_page');
       pagesRead++;
-      const pending=discovering&&page.nextOffset!==-1;
+      itemsSeen+=page.entries.length;
+      // A catalogue can be larger than the permitted protocol window.
+      // Never treat hitting the window as a complete directory.
+      const complete=page.nextOffset===-1;
+      const atLimit=!complete&&(itemsSeen>=maxEntries||
+        page.nextOffset>=BRIDGE_FILE_LIMITS.maxTotalEntries);
+      expectedOffset=complete?-1:page.nextOffset;
       return Object.freeze({
-        pending,
-        autoFetch:pending&&pagesRead<maxAutomaticPages,
-        atLimit:pending&&pagesRead>=maxAutomaticPages,
-        pagesRead
+        pending:!complete,
+        autoFetch:!complete&&!atLimit,
+        complete,
+        atLimit,
+        pagesRead,
+        itemsSeen
       });
     }
   });
