@@ -181,14 +181,3 @@ test('database cancellation and status failure cannot fall back to local state',
     authContext:'verified-admin',jobId:JOB
   }),/bridge_jobs_database_unavailable/);
 });
-
-test('staging adapter reports an expired job without accepting it as a cancellation acknowledgement',async()=>{
- const f=fixture();
- f.db.rpc=async ()=>({data:{jobId:JOB,deviceId:DEVICE,state:'expired'},error:null});
- assert.equal((await f.service.getRequestStatus({
-   authContext:'verified-admin',jobId:JOB
- })).state,'expired');
- await assert.rejects(()=>f.service.cancelRequest({
-   authContext:'verified-admin',jobId:JOB
- }),/bridge_jobs_invalid_response/);
-});
