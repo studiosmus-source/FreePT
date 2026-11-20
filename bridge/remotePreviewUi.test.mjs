@@ -157,3 +157,23 @@ test('remote directory loading reports queued/sent states without infinite spinn
  assert.match(source,/bridge_remote_browse_timeout/);
  assert.match(source,/Riprova da questa schermata/);
 });
+
+test('browser requests thumbnails only for visible rows, after folder discovery',()=>{
+ assert.match(source,/canLoadBridgeThumbnail\(item\)/);
+ assert.match(source,/trackThumbnail\(line,item,img,icon\)/);
+ assert.match(source,/thumbnailObserver=new IntersectionObserver/);
+ assert.match(source,/thumbnailsAllowed=!scan\.autoFetch/);
+ assert.match(source,/if\(!thumbnailsAllowed\|\|thumbnailActive\|\|pendingBrowse\|\|activeDownload/);
+ assert.match(source,/fetchBridgeThumbnail\(\{/);
+ assert.match(source,/compactBridgeThumbnail\(blob\)/);
+ assert.match(source,/thumbnailCacheBytes>THUMBNAIL_CACHE_BYTES/);
+ assert.match(source,/thumbnailAbort\?\.abort\(\)/);
+ const css=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ assert.match(css,/\.bridge-entry-photo-thumb\[hidden\]/);
+ assert.match(css,/object-fit:cover/);
+});
+
+test('SAF download reports size mismatch without pretending a file was saved',()=>{
+ assert.match(source,/bridge_destination_size_mismatch/);
+ assert.match(source,/download non completato/);
+});
