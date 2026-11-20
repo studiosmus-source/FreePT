@@ -6,8 +6,9 @@ import {BRIDGE_FILE_LIMITS} from './bridgeFileProtocol.js';
  * folder in a page is NOT evidence that later pages contain no more folders.
  *
  * Continue sequentially until TX says nextOffset === -1. The only upper
- * bound is the existing wire/Android maximum of 10,000 entries, after which
- * completeness must be reported as unknown rather than claiming "all".
+ * bound is the existing wire/Android maximum paging offset of 10,000. A
+ * final short page at offset 10,000 may still complete the list; beyond that
+ * limit completeness must never be falsely claimed.
  * Does not recursively enumerate private/unauthorized paths.
  */
 export function createBridgeFolderPrefetch({maxEntries=BRIDGE_FILE_LIMITS.maxTotalEntries}={}){
@@ -40,8 +41,8 @@ export function createBridgeFolderPrefetch({maxEntries=BRIDGE_FILE_LIMITS.maxTot
       // A catalogue can be larger than the permitted protocol window.
       // Never treat hitting the window as a complete directory.
       const complete=page.nextOffset===-1;
-      const atLimit=!complete&&(itemsSeen>=maxEntries||
-        page.nextOffset>=BRIDGE_FILE_LIMITS.maxTotalEntries);
+      const atLimit=!complete&&(page.nextOffset>maxEntries||
+        page.nextOffset>BRIDGE_FILE_LIMITS.maxTotalEntries);
       expectedOffset=complete?-1:page.nextOffset;
       return Object.freeze({
         pending:!complete,
