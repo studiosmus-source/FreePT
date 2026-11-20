@@ -5,7 +5,8 @@
  */
 import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
 import {downloadBridgeFolder} from './bridgeFolderDownloadClient.js';
-import {downloadBridgeFile} from './bridgeDownloadClient.js';
+import {downloadBridgeFile,readBridgePreviewPrefix} from './bridgeDownloadClient.js';
+import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
 import {createBridgeAndroidFolderDestination,createBridgeAndroidSingleFileWriter} from './bridgeAndroidDestination.js';
 import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
 import {filterOwnerAuthorizedDevices} from './bridgeChatDeviceFilter.js';
@@ -103,16 +104,7 @@ export function renderBridgeRemoteFiles({
       commit:async()=>{},
       discard:async()=>{parts.length=0}
     };
-    try{
-      await downloadBridgeFile({
-        api:bridgeClient,deviceId,handle:item.handle,size:item.size,
-        destination,signal:abort.signal,
-        onProgress:p=>{
-          if(!abort.signal.aborted&&alive())
-            message.textContent='Anteprima: '+p.receivedBytes+' / '+p.totalBytes+' byte';
-        }
-      });
-      if(abort.signal.aborted||!alive()){dismiss();return;}
+    const publishPreview=parts=>{
       url=URL.createObjectURL(new Blob(parts,{type:item.mime}));
       message.remove();
       const view=document.createElement(item.mime==='application/pdf'?'iframe':'img');
@@ -122,6 +114,28 @@ export function renderBridgeRemoteFiles({
       view.style.maxHeight='65vh';
       if(view.tagName==='IFRAME'){view.style.width='100%';view.style.height='55vh';view.setAttribute('sandbox','');}
       panel.appendChild(view);
+    };
+    try{
+      if(item.mime==='image/jpeg'){
+        message.textContent='Ricerca miniatura rapida…';
+        const prefix=await readBridgePreviewPrefix({
+          api:bridgeClient,deviceId,handle:item.handle,size:item.size,signal:abort.signal
+        });
+        if(abort.signal.aborted||!alive()){dismiss();return;}
+        const thumbnail=extractEmbeddedJpegThumbnail(prefix);
+        if(thumbnail){publishPreview([thumbnail]);return;}
+        message.textContent='Nessuna miniatura incorporata. Carico la foto completa…';
+      }
+      await downloadBridgeFile({
+        api:bridgeClient,deviceId,handle:item.handle,size:item.size,
+        destination,signal:abort.signal,
+        onProgress:p=>{
+          if(!abort.signal.aborted&&alive())
+            message.textContent='Anteprima: '+p.receivedBytes+' / '+p.totalBytes+' byte';
+        }
+      });
+      if(abort.signal.aborted||!alive()){dismiss();return;}
+      publishPreview(parts);
     }catch(error){
       if(!abort.signal.aborted)message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
     }
