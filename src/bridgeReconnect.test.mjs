@@ -35,5 +35,5 @@ test('visible approved owner checks native TX health periodically without re-enr
  assert.match(health,/void startProvisionedTxWhenAllowed\(\)/);
  assert.doesNotMatch(health,/requestPermission\(|enroll\(|\.clear\(/);
  assert.match(source,/startBridgeTxHealthChecks\(\);void bindBootstrapAfterApproval\(\)/);
- assert.match(source,/async function logout\(\)\{stopBridgeTxHealthChecks\(\)/);
+ assert.match(source,/closeAdminOverlays\(\);stopBridgeTxHealthChecks\(\)/);
 });
