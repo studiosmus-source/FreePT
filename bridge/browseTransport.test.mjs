@@ -188,3 +188,32 @@ test('browse rejects invalid progress callback before server enqueue',async()=>{
  await assert.rejects(lister({onProgress:7}),/bridge_remote_browse_invalid_request/);
  assert.equal(enqueued,false);
 });
+
+test('an expired remote browse ends immediately and cancels the stale job',async()=>{
+ let polls=0,cancels=0;
+ const lister=createBridgeRemoteFolderLister({deviceId:DEVICE,pollMs:0,pause:async()=>{},api:{
+  async requestBrowse(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+  async getStatus(){polls++;return {jobId:JOB,deviceId:DEVICE,state:'expired'}},
+  async getBrowsePage(){throw Error('expired_job_must_not_read')},
+  async cancel(){cancels++}
+ }});
+ await assert.rejects(lister({handle:'root'}),/bridge_remote_browse_expired/);
+ assert.equal(polls,1);
+ assert.equal(cancels,1);
+});
+
+test('a permanently queued browse stops before server expiration instead of spinning 198 seconds',async()=>{
+ let clock=0,polls=0,cancels=0;
+ const lister=createBridgeRemoteFolderLister({
+  deviceId:DEVICE,pollMs:0,maxPolls:90,pause:async()=>{},now:()=>clock,
+  api:{
+   async requestBrowse(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+   async getStatus(){polls++;clock+=28000;return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+   async getBrowsePage(){throw Error('must_not_fetch_page')},
+   async cancel(){cancels++}
+  }
+ });
+ await assert.rejects(lister(),/bridge_remote_browse_timeout/);
+ assert.equal(polls,2);
+ assert.equal(cancels,1);
+});
