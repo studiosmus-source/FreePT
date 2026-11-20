@@ -35,6 +35,7 @@ public class BridgeAllFilesPlugin extends Plugin {
         call.resolve(out);
     }
     @PluginMethod public void list(PluginCall call){
+        BridgeAllFilesCore.configure(getContext());
         try{
             String handle=call.getString("handle","root");
             Integer offset=call.getInt("offset",0);
@@ -43,6 +44,7 @@ public class BridgeAllFilesPlugin extends Plugin {
         }catch(Exception error){call.reject("bridge_all_files_list_denied");}
     }
     @PluginMethod public void readChunk(PluginCall call){
+        BridgeAllFilesCore.configure(getContext());
         try{
             Object raw=call.getData().opt("offset");
             long offset=raw instanceof Number?((Number)raw).longValue():-1;
