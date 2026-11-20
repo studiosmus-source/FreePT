@@ -51,6 +51,18 @@ test('already opened previews are cached only in bounded session memory',()=>{
  assert.match(source,/clearPreviewCache\(\)/);
  assert.match(source,/if\(closed\|\|abort\.signal\.aborted\)return/);
 });
+test('active file transfer prevents navigation away and defers chat polling',()=>{
+ const main=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ assert.match(source,/const setBridgeBusy=value=>/);
+ assert.match(source,/setBridgeBusy\(true\)/);
+ assert.match(source,/setBridgeBusy\(false\)/);
+ assert.match(main,/function bridgeTransferActive\(\)/);
+ assert.match(main,/function guardBridgeNavigation\(\)/);
+ assert.match(main,/chatMessagesView'\)\.onclick=\(\)=>\{\s*if\(guardBridgeNavigation\(\)\)return/);
+ assert.match(main,/chatRemoteFilesView'\)\.onclick=async\(\)=>\{\s*if\(guardBridgeNavigation\(\)\)return/);
+ assert.match(main,/id='back'|getElementById\('back'\)/);
+ assert.match(main,/fetchingMessages \|\| bridgeTransferActive\(\)/);
+});
 test('remote browser preserves bounded paging, lazy loads on scroll, and cleans observers',()=>{
  assert.match(source,/more\.onclick=async\(\)=>/);
  assert.match(source,/moreObserver=new IntersectionObserver/);
