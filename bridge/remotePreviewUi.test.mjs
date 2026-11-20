@@ -63,6 +63,17 @@ test('active file transfer prevents navigation away and defers chat polling',()=
  assert.match(main,/id='back'|getElementById\('back'\)/);
  assert.match(main,/fetchingMessages \|\| bridgeTransferActive\(\)/);
 });
+test('folder downloads show manifest progress instead of an indefinite preparation label',()=>{
+ assert.match(source,/Scansione della cartella remota/);
+ assert.match(source,/onScanProgress:p=>/);
+ assert.match(source,/p\.foundEntries/);
+ assert.match(source,/p\.pendingFolders/);
+ assert.match(source,/setInterval\(\(\)=>\{/);
+ assert.match(source,/clearInterval\(scanHeartbeat\)/);
+ assert.match(source,/cachedFolderLister=async\(\{handle,offset,signal\}\)=>/);
+ assert.match(source,/folderPages\.get\(key\)/);
+ assert.match(source,/listPage:folderLister/);
+});
 test('remote browser preserves bounded paging, lazy loads on scroll, and cleans observers',()=>{
  assert.match(source,/more\.onclick=async\(\)=>/);
  assert.match(source,/moreObserver=new IntersectionObserver/);
