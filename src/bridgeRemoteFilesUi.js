@@ -105,6 +105,16 @@ export function renderBridgeRemoteFiles({
     if(!alive())throw Error('Download non autorizzato');
   };
   const setStatus=value=>{if(alive())status.textContent=value};
+  const remoteErrorText=error=>{
+    const code=error?.message;
+    if(code==='bridge_request_throttled')
+      return 'Troppe richieste al server: riprova tra pochi secondi.';
+    if(code==='bridge_backend_unavailable'||code==='bridge_network_unavailable')
+      return 'Connessione al Bridge temporaneamente non disponibile: riprova.';
+    if(code==='bridge_request_failed')
+      return 'Richiesta non riuscita. Puoi riprovare senza perdere le voci già caricate.';
+    return code||'errore remoto';
+  };
   const fileDownload=async(item,deviceId)=>{
     const writer=await createBridgeAndroidSingleFileWriter({
       plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime,
@@ -223,7 +233,7 @@ export function renderBridgeRemoteFiles({
       publishPreview(new Blob(parts,{type:item.mime}));
     }catch(error){
       if(!closed&&!abort.signal.aborted)
-        message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
+        message.textContent='Anteprima non disponibile: '+remoteErrorText(error);
     }
   };
   /**
@@ -380,7 +390,7 @@ export function renderBridgeRemoteFiles({
     }catch(error){
       if(error?.message==='bridge_transfer_cancelled')
         setStatus('Download interrotto. Se nessun file era completo, nessuna cartella è stata salvata.');
-      else setStatus(error?.message||'Download non riuscito.');
+      else setStatus('Download non riuscito: '+remoteErrorText(error));
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
@@ -635,7 +645,9 @@ export function renderBridgeRemoteFiles({
           'Elementi caricati: '+rows.length+' · Nascosti: '+hiddenRows.length+
           (page.nextOffset===-1
             ? ' · Fine elenco trasmesso dal telefono'
-            : ' · Elenco parziale: scorri per caricare le altre pagine');
+            :scan.autoFetch
+              ? ' · Ricerca automatica delle sottocartelle in corso'
+              : ' · Elenco parziale: carica le altre pagine');
         setStatus(scan.autoFetch
           ? 'Ricerca delle sottocartelle nelle pagine successive…'
           :cached&&current.handle==='root'&&offset===0
@@ -647,17 +659,10 @@ export function renderBridgeRemoteFiles({
       }catch(error){
         if(currentBrowse.signal.aborted)return false;
         setStatus(error?.message==='bridge_remote_browse_expired'
-          ?'Richiesta scaduta: il telefono remoto non ha ritirato o completato il lavoro. Controlla il Bridge sul telefono e premi Aggiorna.'
+          ?'Richiesta scaduta: nessuna risposta entro il termine. Riprova da questa schermata.'
           :error?.message==='bridge_remote_browse_timeout'
-            ?'Il telefono remoto non ha risposto entro il limite di attesa. Controlla il Bridge sul telefono. Premi Aggiorna per riprovare.'
-            :'Elenco non disponibile: '+(
-              error?.message==='bridge_request_throttled'
-                ? 'server momentaneamente occupato. Riprendi dal pulsante Carica altri file e cartelle.'
-                :error?.message==='bridge_backend_unavailable'
-                  ? 'server temporaneamente non disponibile. Riprova senza perdere l’elenco già caricato.'
-                  :error?.message==='bridge_request_failed'
-                    ? 'richiesta remota non riuscita. Riprova senza perdere l’elenco già caricato.'
-                    :(error?.message||'errore remoto')));
+            ?'Il telefono remoto non ha risposto entro il limite di attesa. Riprova da questa schermata.'
+            :'Elenco non disponibile: '+remoteErrorText(error));
         return false;
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
