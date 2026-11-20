@@ -125,6 +125,15 @@ let deleteMigrationReady = true;
 let adminPeopleQuery = '';
 let adminPeopleStatus = 'all';
 let chatFilesCleanup=null;
+function bridgeTransferActive(){
+  return document.getElementById('chatRemoteFilesPanel')?.dataset.bridgeBusy==='true';
+}
+function guardBridgeNavigation(){
+  if(!bridgeTransferActive())return false;
+  const note=document.querySelector('#chatRemoteFilesPanel p[role="status"]');
+  if(note)note.textContent='Trasferimento o anteprima in corso. Usa Interrompi download o la X prima di uscire.';
+  return true;
+}
 let ownerSetupPromptedForAccount = null;
 let filePickerActive = false;
 let filePickerReturned = false;
@@ -388,11 +397,11 @@ async function refreshOnVisible(){
         await loadProfile();
         if(profile.status==='approved'){await renderWorkspace();return}if(profile.status==='blocked'){requestScreen(true);return}
       }
-      if(me && profile?.role==='admin' && profile.status==='approved'){
+      if(me && profile?.role==='admin' && profile.status==='approved'&&!bridgeTransferActive()){
         await listPeople();
         renderPeople();
       }
-      if(selected) await showMessages(false);
+      if(selected&&!bridgeTransferActive()) await showMessages(false);
       if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}
     } catch(e){ status(friendly(e),true) }
   }
@@ -854,6 +863,7 @@ function renderLayout(){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
     document.getElementById('chatMessagesView').onclick=()=>{
+      if(guardBridgeNavigation())return;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
       chatFilesCleanup=null;
       document.getElementById('feed').hidden=false;
@@ -861,6 +871,7 @@ function renderLayout(){
       document.getElementById('chatRemoteFilesPanel')?.remove();
     };
     document.getElementById('chatRemoteFilesView').onclick=async()=>{
+      if(guardBridgeNavigation())return;
       const user=people.find(person=>person.id===selected);
       if(!user||user.status!=='approved'||!adminUnlocked||profile?.role!=='admin')return;
       document.getElementById('feed').hidden=true;
@@ -886,6 +897,7 @@ function renderLayout(){
     };
     renderPeople();
     document.getElementById('back').onclick=()=>{
+      if(guardBridgeNavigation())return;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
       chatFilesCleanup=null;
       document.getElementById('chatRemoteFilesPanel')?.remove();
@@ -973,6 +985,7 @@ function bindAdminPeopleActions(p){
       }
       const user=people.find(x=>x.id===id);
       if(user?.status!=='approved')return;
+      if(guardBridgeNavigation())return;
       selected=id;messageRequest++;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
       chatFilesCleanup=null;
@@ -1224,12 +1237,12 @@ if(freeptUpdater){
 }
 // Polling leggero quando l'app è in primo piano: recupera anche eventi realtime persi.
 setInterval(async () => {
-  if(document.visibilityState!=='visible' || !me || profile?.status!=='approved' || !selected || fetchingMessages)return;
+  if(document.visibilityState!=='visible' || !me || profile?.status!=='approved' || !selected || fetchingMessages || bridgeTransferActive())return;
   fetchingMessages=true;
   try{await showMessages(false)}finally{fetchingMessages=false}
 }, 6000);
 setInterval(async () => {
-  if(document.visibilityState!=='visible' || !me || !profile) return;
+  if(document.visibilityState!=='visible' || !me || !profile || bridgeTransferActive()) return;
   try {
     if(profile.status==='pending'){
       await loadProfile();
