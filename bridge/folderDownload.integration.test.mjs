@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {downloadBridgeFolder} from '../src/bridgeFolderDownloadClient.js';
+import {downloadBridgeFolder,inspectBridgeFolder} from '../src/bridgeFolderDownloadClient.js';
 const DEVICE='11111111-1111-4111-8111-111111111111';
 const FOLDER='22222222-2222-4222-8222-222222222222';
 const FILE_A='33333333-3333-4333-8333-333333333333';
@@ -71,6 +71,25 @@ test('download exposes inventory phase and destination phase before the first by
  assert.deepEqual(scans.map(p=>p.foundEntries),[2,3]);
  assert.equal(f.events[0],'begin');
  assert.equal(f.events.at(-1),'folder_commit');
+});
+test('independent preflight counts all nested items and never rescans during approved transfer',async()=>{
+ const f=makeFixture(),scanCalls=[];
+ const inventory=await inspectBridgeFolder({
+  api:f.api,deviceId:DEVICE,listPage:async request=>{
+   scanCalls.push(request);return f.listPage(request);
+  }
+ });
+ assert.deepEqual(inventory.summary,{
+  entries:3,files:2,directories:1,hidden:0,totalBytes:40003
+ });
+ assert.equal(scanCalls.length,2);
+ const result=await downloadBridgeFolder({
+  api:f.api,deviceId:DEVICE,manifest:inventory.manifest,destination:f.destination,
+  listPage:async()=>{throw Error('unexpected_rescan')},pause:async()=>{}
+ });
+ assert.deepEqual(result,{entries:3,files:2});
+ assert.equal(scanCalls.length,2);
+ assert.equal(f.written.get('Photos/large.bin').length,40000);
 });
 test('storage error rolls back whole folder rather than leaving partial files',async()=>{
  const f=makeFixture({failFile:'test.bin'});
