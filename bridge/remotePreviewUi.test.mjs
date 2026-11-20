@@ -177,3 +177,22 @@ test('SAF download reports size mismatch without pretending a file was saved',()
  assert.match(source,/bridge_destination_size_mismatch/);
  assert.match(source,/download non completato/);
 });
+
+test('interrupted automatic directory paging resumes at saved offset after download',()=>{
+ assert.match(source,/let resumePausedFolderScan=\(\)=>\{\}/);
+ assert.match(source,/pausedPageOffset=scan\.autoFetch\?page\.nextOffset:null/);
+ assert.match(source,/resumePausedFolderScan=\(\)=>\{/);
+ assert.match(source,/if\(activeDownload\|\|pausedPageOffset===null/);
+ assert.match(source,/const next=pausedPageOffset/);
+ assert.match(source,/void display\(next\)/);
+ assert.match(source,/activeDownload=true;setBridgeBusy\(true\);[\s\S]*?abortActiveBrowse\(\)/);
+ assert.match(source,/resumePausedFolderScan\(\)/);
+ assert.match(source,/for\(const previous of list\.querySelectorAll\('\.bridge-load-more'\)\)/);
+});
+test('thumbnail jobs back off on errors instead of flooding remote phone',()=>{
+ assert.match(source,/thumbnailNextAt-Date\.now\(\)/);
+ assert.match(source,/thumbnailRetryTimer=setTimeout/);
+ assert.match(source,/thumbnailFailureStreak=Math\.min\(4/);
+ assert.match(source,/thumbnailNextAt=Date\.now\(\)\+Math\.min\(30000/);
+ assert.match(source,/if\(thumbnailRetryTimer!==null\)clearTimeout/);
+});
