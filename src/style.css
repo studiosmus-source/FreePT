@@ -245,3 +245,24 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 }
 .bridge-remote-folders>.bridge-entry>.bridge-entry-menu,
 .bridge-remote-files>.bridge-entry>.bridge-entry-menu{flex:0 0 auto;}
+
+/* Images: visible-row-only Bridge thumbnails, not eager downloads. */
+.bridge-remote-files>.bridge-entry>.bridge-entry-photo-button{
+  display:flex;align-items:center;gap:10px;min-width:0;
+  text-align:left;
+}
+.bridge-entry-photo-icon,
+.bridge-entry-photo-thumb{
+  display:block;flex:0 0 48px;width:48px;height:48px;
+  border-radius:7px;background:#edf2f6;
+}
+.bridge-entry-photo-icon{
+  display:grid;place-items:center;font-size:21px;color:#64748b;
+}
+.bridge-entry-photo-thumb{object-fit:cover;max-width:48px;max-height:48px;}
+.bridge-entry-photo-thumb[hidden],
+.bridge-entry-photo-icon[hidden]{display:none;}
+.bridge-entry-photo-name{
+  display:block;flex:1 1 auto;min-width:0;
+  overflow-wrap:anywhere;word-break:normal;
+}
