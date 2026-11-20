@@ -388,7 +388,16 @@ export function renderBridgeRemoteFiles({
       setStatus('Cartella di destinazione selezionata.');
     }catch{setStatus('Selezione destinazione annullata o non disponibile.');}
   };
+  let listingDevices=false;
   async function listDevices(){
+    // A second tap on Refresh while grants are loading is not a second job.
+    if(!alive()||listingDevices)return;
+    listingDevices=true;
+    refresh.disabled=true;
+    try{await fetchListDevices();}
+    finally{listingDevices=false;refresh.disabled=false;}
+  }
+  async function fetchListDevices(){
     if(!alive())return;
     abortActiveBrowse();
     const marker=++revision;
@@ -432,7 +441,11 @@ export function renderBridgeRemoteFiles({
       if(alive()&&marker===revision)setStatus('Impossibile ottenere i telefoni autorizzati.');
     }
   }
+  let openingDeviceId=null;
   async function showDevice(deviceId,label){
+    // Only one initial root request per device can be pending per browser.
+    if(openingDeviceId===deviceId)return;
+    openingDeviceId=deviceId;
     abortActiveBrowse();
     const marker=++revision;
     let pendingBrowse=null;
@@ -578,7 +591,8 @@ export function renderBridgeRemoteFiles({
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
       }
     }
-    await display();
+    try{await display();}
+    finally{if(openingDeviceId===deviceId)openingDeviceId=null;}
   }
   refresh.onclick=()=>{
     // Explicit refresh must never silently show stale remote metadata.
