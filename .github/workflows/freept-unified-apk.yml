@@ -1,7 +1,7 @@
 name: Build unified FreePT Android APK (manual)
 on:
   push:
-    branches: [fix/bridge-installable-20261118, build/bridge-256kb-20261118, feature/bridge-adaptive-poll-20261118, feature/bridge-fast-save-20261118, feature/oppo-install-clean-20261118, feature/admin-share-no-biometric-20261119, work/unified-verified-20261119]
+    branches: [fix/bridge-installable-20261118, build/bridge-256kb-20261118, feature/bridge-adaptive-poll-20261118, feature/bridge-fast-save-20261118, feature/oppo-install-clean-20261118, feature/admin-share-no-biometric-20261119, work/unified-verified-20261119, fix/bridge-job-expiry-timeout-20261120]
     paths:
       - '.github/workflows/freept-unified-apk.yml'
       - 'src/bridge*.js'
@@ -35,7 +35,7 @@ jobs:
       - name: Refuse other branches
         run: |
           case "$GITHUB_REF" in
-            refs/heads/fix/bridge-installable-20261118|refs/heads/feature/freept-updater-20261118|refs/heads/build/bridge-256kb-20261118|refs/heads/feature/bridge-adaptive-poll-20261118|refs/heads/feature/bridge-fast-save-20261118|refs/heads/feature/oppo-install-clean-20261118|refs/heads/feature/admin-share-no-biometric-20261119|refs/heads/work/unified-verified-20261119) ;;
+            refs/heads/fix/bridge-installable-20261118|refs/heads/feature/freept-updater-20261118|refs/heads/build/bridge-256kb-20261118|refs/heads/feature/bridge-adaptive-poll-20261118|refs/heads/feature/bridge-fast-save-20261118|refs/heads/feature/oppo-install-clean-20261118|refs/heads/feature/admin-share-no-biometric-20261119|refs/heads/work/unified-verified-20261119|refs/heads/fix/bridge-job-expiry-timeout-20261120) ;;
             *) echo "Refusing build from $GITHUB_REF"; exit 1;;
           esac
       - uses: actions/setup-node@v4
@@ -177,7 +177,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: github.ref != 'refs/heads/work/unified-verified-20261119'
         with:
-          name: FreePT-unified-stable-apk
+          name: ${{ github.ref == 'refs/heads/fix/bridge-job-expiry-timeout-20261120' && 'FreePT-Bridge-speed-TEST-apk' || 'FreePT-unified-stable-apk' }}
           path: |
             android/app/build/outputs/apk/debug/FreePT-unified-stable.apk
             apk-info.txt
