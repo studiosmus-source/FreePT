@@ -46,14 +46,15 @@ export async function downloadBridgeFolder({
   api,deviceId,root='root',listPage,destination,signal,
   pause,pollMs,maxPolls,maxEntries,onProgress=()=>{},
   onScanProgress=()=>{},onStage=()=>{},manifest=null,
-  preserveCompletedOnCancel=false
+  preserveCompletedOnCancel=false,preserveCompletedOnFailure=false
 }={}){
   if(!UUID.test(deviceId)||!api||
      (listPage!==undefined&&typeof listPage!=='function')||
      !destination||['begin','makeDirectory','openFile','commit','discard']
        .some(method=>typeof destination[method]!=='function')||
      typeof onProgress!=='function'||typeof onScanProgress!=='function'||
-     typeof onStage!=='function'||typeof preserveCompletedOnCancel!=='boolean')
+     typeof onStage!=='function'||typeof preserveCompletedOnCancel!=='boolean'||
+     typeof preserveCompletedOnFailure!=='boolean')
     throw Error('bridge_folder_download_invalid_options');
 
   // Prefer the authenticated remote catalogue when no custom page reader
@@ -86,6 +87,7 @@ export async function downloadBridgeFolder({
   return receiveBridgeFolder({
     root,listPage:({handle,offset})=>reader({handle,offset,signal}),signal,
     manifest,onScanProgress,onStage,preserveCompletedOnCancel,
+    preserveCompletedOnFailure,
     ...(maxEntries===undefined?{}:{maxEntries}),
     begin:()=>destination.begin(),
     makeDirectory:path=>destination.makeDirectory(path),
