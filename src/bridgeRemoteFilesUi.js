@@ -383,15 +383,23 @@ export function renderBridgeRemoteFiles({
             for(const key of folderPages.keys())if(key.startsWith(current.handle+'|'))folderPages.delete(key);
             void display();
           };
+          const completeness=create('p','',browser);
+          completeness.className='bridge-folder-completeness';
           create('div',undefined,browser).className='bridge-remote-entries';
         }
         const list=browser.querySelector('.bridge-remote-entries');
         for(const item of page.entries){
           const line=create('div',undefined,list);
           line.className='bridge-entry';
+          const hidden=item.name.startsWith('.');
+          line.dataset.bridgeHidden=hidden?'true':'false';
           const primary=create('button',(item.directory?'📁 ':'📄 ')+item.name,line);
           primary.className='bridge-entry-primary';
           primary.type='button';
+          if(hidden){
+            const marker=create('small','nascosto',line);
+            marker.className='bridge-hidden-label';
+          }
           primary.onclick=()=>item.directory?
             (stack.push({handle:item.handle,name:item.name}),void display()):
             (previewable(item)?void showPreview(item,deviceId):void startDownload(item,deviceId,false,cachedFolderLister));
@@ -437,7 +445,17 @@ export function renderBridgeRemoteFiles({
           }
         }
         if(!page.entries.length&&offset===0)create('p','Cartella vuota.',list);
-        setStatus(cached?'Elenco già caricato.':'Elenco aggiornato. Puoi aprire o scaricare file e cartelle.');
+        const rows=list.querySelectorAll('.bridge-entry');
+        const hiddenRows=list.querySelectorAll('.bridge-entry[data-bridge-hidden="true"]');
+        const completeness=browser.querySelector('.bridge-folder-completeness');
+        if(completeness)completeness.textContent=
+          'Elementi caricati: '+rows.length+' · Nascosti: '+hiddenRows.length+
+          (page.nextOffset===-1
+            ? ' · Fine elenco trasmesso dal telefono'
+            : ' · Elenco parziale: scorri per caricare le altre pagine');
+        setStatus(page.nextOffset===-1
+          ? 'Fine elenco trasmesso dal telefono.'
+          : 'Altri elementi disponibili: scorri per continuare.');
         return true;
       }catch(error){
         if(currentBrowse.signal.aborted)return false;
