@@ -64,3 +64,35 @@ test('Bridge client issues status and cancel with jobId only',async()=>{
  for(const request of f.requests)
    assert.deepEqual(JSON.parse(request[1].body),{jobId:JOB});
 });
+
+test('browsing passes an abort signal to HTTPS and stops promptly on navigation',async()=>{
+ const controller=new AbortController();
+ const endpoints=[],signals=[];
+ const auth={async getSession(){return {data:{session:{access_token:token}},error:null}}};
+ const api=createBridgeAdminClient({baseUrl:endpoint,auth,
+  fetchImpl:async(url,options)=>{
+   endpoints.push(url);signals.push(options.signal);
+   return new Promise((resolve,reject)=>{
+    options.signal?.addEventListener('abort',()=>reject(Error('aborted')),{once:true});
+   });
+  }
+ });
+ const pending=api.requestBrowse(DEVICE,{handle:'root',offset:0},{signal:controller.signal});
+ // Allow getSession and fetchImpl to start before aborting.
+ await Promise.resolve();await Promise.resolve();
+ controller.abort();
+ await assert.rejects(pending,/bridge_transfer_cancelled/);
+ assert.deepEqual(endpoints,[endpoint+'/bridge/admin/browse']);
+ assert.equal(signals[0],controller.signal);
+});
+test('aborted browse never sends a request after session lookup completes',async()=>{
+ const controller=new AbortController(),endpoints=[];
+ const auth={async getSession(){controller.abort();return {data:{session:{access_token:token}}}}};
+ const api=createBridgeAdminClient({baseUrl:endpoint,auth,
+  fetchImpl:async(url)=>{endpoints.push(url);throw Error('unexpected network call')}
+ });
+ await assert.rejects(api.requestBrowse(DEVICE,{handle:'root'},{
+  signal:controller.signal
+ }),/bridge_transfer_cancelled/);
+ assert.equal(endpoints.length,0);
+});
