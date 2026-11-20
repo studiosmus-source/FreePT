@@ -53,7 +53,19 @@ public class Harness {
   Files.createDirectories(root.resolve("Android/obb"));
   Files.createDirectories(root.resolve("Android/media"));
   Files.createSymbolicLink(root.resolve("escape"),root.getParent());
+  for(int i=0;i<145;i++)Files.write(root.resolve(String.format("file-%03d.txt",i)),new byte[]{1});
   JSArray page=(JSArray)BridgeAllFilesCore.list("root",0).get("entries");
+  if(page.size()!=100)throw new AssertionError("first page should contain 100 entries");
+  int next=(Integer)BridgeAllFilesCore.list("root",0).get("nextOffset");
+  if(next!=100)throw new AssertionError("pagination did not advance by 100");
+  JSObject follow=BridgeAllFilesCore.list("root",next);
+  JSArray second=(JSArray)follow.get("entries");
+  if((Integer)follow.get("nextOffset")!=-1||second.size()!=49)
+   throw new AssertionError("last page missing entries");
+  java.util.HashSet<String> unique=new java.util.HashSet<>();
+  for(Object entry:page)unique.add((String)((JSObject)entry).get("handle"));
+  for(Object entry:second)unique.add((String)((JSObject)entry).get("handle"));
+  if(unique.size()!=149)throw new AssertionError("duplicate or missing catalogue handles");
   String hidden=null,android=null,extraHandle=null;boolean folder=false;
   for(Object x:page){JSObject e=(JSObject)x;String n=(String)e.get("name");
    if(n.equals("escape"))throw new AssertionError("symlink escaped");
