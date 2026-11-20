@@ -23,9 +23,11 @@ test('downloads entire binary file automatically with repeated read jobs',async(
   size:data.length,destination:f.destination,pause:async()=>{}});
  assert.equal(result.bytesReceived,data.length);
  assert.deepEqual(Buffer.concat(f.chunks),data);
- // 256 KiB network chunks: far fewer read jobs than the old 32 KiB.
- assert.deepEqual(f.requests.map(r=>r.length),[262144,262144,75712]);
- assert.deepEqual(f.requests.map(r=>r.offset),[0,262144,524288]);
+ // Conservative network jobs avoid 256 KiB TX session failures in real transfers.
+ const expectedRequests=[];
+ for(let offset=0;offset<data.length;offset+=65536)
+  expectedRequests.push({handle:HANDLE,offset,length:Math.min(65536,data.length-offset)});
+ assert.deepEqual(f.requests,expectedRequests);
  assert.equal(f.committed,1);assert.equal(f.discarded,0);
 });
 test('recovers one cancelled TX job by re-reading the same range once',async()=>{
