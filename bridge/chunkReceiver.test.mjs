@@ -18,6 +18,25 @@ test('streams binary bytes in bounded chunks and commits',async()=>{
  assert.equal(result.bytesReceived,7);assert.equal(calls,3);
  assert.equal(sink.commits,1);assert.equal(sink.discards,0);
 });
+test('read failure may safely reduce future chunk size without advancing offset',async()=>{
+ const data=Buffer.alloc(14,27),sink=makeSink(),requests=[];
+ let preferred=8,failOnce=true;
+ await receiveBridgeFile({size:data.length,chunkBytes:8,
+  chooseChunkBytes:()=>preferred,
+  onReadError:(error,request)=>{
+   if(error.message==='session_cancelled'&&request.offset===0){preferred=4;return true;}
+   return false;
+  },
+  readChunk:async({offset,length})=>{
+   requests.push([offset,length]);
+   if(failOnce){failOnce=false;throw Error('session_cancelled');}
+   return block(data.subarray(offset,offset+length),offset+length===data.length);
+  },
+  write:sink.write,commit:sink.commit,discard:sink.discard});
+ assert.deepEqual(requests,[[0,8],[0,4],[4,4],[8,4],[12,2]]);
+ assert.deepEqual(Buffer.concat(sink.parts),data);
+ assert.equal(sink.commits,1);assert.equal(sink.discards,0);
+});
 test('rejects truncated data and discards partial output',async()=>{
  const sink=makeSink();
  await assert.rejects(receiveBridgeFile({size:8,readChunk:async()=>block(Buffer.from([1]),true),
