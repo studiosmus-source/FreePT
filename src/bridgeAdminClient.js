@@ -24,12 +24,13 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
   const url=normalizeBridgeApiUrl(baseUrl);
   if(!url||typeof auth?.getSession!=='function'||typeof fetchImpl!=='function')
     return null;
-  const perform=async(action,id)=>{
+  const perform=async(action,id,{signal}={})=>{
     if(!UUID.test(id))throw Error('bridge_invalid_id');
     const {data,error}=await auth.getSession();
     const token=data?.session?.access_token;
     if(error||typeof token!=='string'||token.length<20)
       throw Error('bridge_auth_required');
+    if(signal?.aborted)throw Error('bridge_transfer_cancelled');
     const field=action==='list'?'deviceId':'jobId';
     let response;
     try {
@@ -38,9 +39,12 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
         headers:{'content-type':'application/json',authorization:'Bearer '+token},
         body:JSON.stringify({[field]:id}),
         cache:'no-store',
-        redirect:'error'
+        redirect:'error',signal
       });
-    }catch{throw Error('bridge_network_unavailable');}
+    }catch{
+      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+      throw Error('bridge_network_unavailable');
+    }
     if(!response||!response.ok)
       throw Error(response?.status===401||response?.status===403
         ?'bridge_auth_required':'bridge_request_failed');
@@ -84,37 +88,41 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
       return {jobId,entries:page.entries,nextOffset:page.nextOffset};
     }catch{throw Error('bridge_invalid_response');}
   };
-  const readCall=async(action,body)=>{
+  const readCall=async(action,body,{signal}={})=>{
     const {data,error}=await auth.getSession();
     const token=data?.session?.access_token;
     if(error||typeof token!=='string'||token.length<20)
       throw Error('bridge_auth_required');
+    if(signal?.aborted)throw Error('bridge_transfer_cancelled');
     let response;
     try{
       response=await fetchImpl(url+'/bridge/admin/'+action,{
         method:'POST',headers:{'content-type':'application/json',
           authorization:'Bearer '+token},
-        body:JSON.stringify(body),cache:'no-store',redirect:'error'
+        body:JSON.stringify(body),cache:'no-store',redirect:'error',signal
       });
-    }catch{throw Error('bridge_network_unavailable');}
+    }catch{
+      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+      throw Error('bridge_network_unavailable');
+    }
     if(!response?.ok)
       throw Error(response?.status===401||response?.status===403?
         'bridge_auth_required':'bridge_request_failed');
     try{return await response.json()}
     catch{throw Error('bridge_invalid_response');}
   };
-  const requestBrowse=async(deviceId,{handle='root',offset=0}={})=>{
+  const requestBrowse=async(deviceId,{handle='root',offset=0}={},{signal}={})=>{
     if(!UUID.test(deviceId)||!(handle==='root'||UUID.test(handle))||
        !Number.isSafeInteger(offset)||offset<0||offset>10000)
       throw Error('bridge_browse_invalid');
-    const result=await readCall('browse',{deviceId,handle,offset});
+    const result=await readCall('browse',{deviceId,handle,offset},{signal});
     if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
        result.state!=='queued')throw Error('bridge_invalid_response');
     return result;
   };
-  const getBrowsePage=async(jobId)=>{
+  const getBrowsePage=async(jobId,{signal}={})=>{
     if(!UUID.test(jobId))throw Error('bridge_invalid_id');
-    const data=await readCall('browse-page',{jobId});
+    const data=await readCall('browse-page',{jobId},{signal});
     if(data?.jobId!==jobId)throw Error('bridge_invalid_response');
     const page=validateBridgeFolderPage({entries:data.entries,nextOffset:data.nextOffset});
     return {jobId,entries:page.entries,nextOffset:page.nextOffset};
@@ -142,7 +150,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     requestRead,getReadChunk,requestBrowse,getBrowsePage,
     getFolderPage,
     requestList: deviceId=>perform('list',deviceId),
-    getStatus: jobId=>perform('status',jobId),
+    getStatus: (jobId,options)=>perform('status',jobId,options),
     cancel: jobId=>perform('cancel',jobId)
   });
 }
