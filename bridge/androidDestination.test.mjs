@@ -136,7 +136,9 @@ test('Android destination rejects preexisting names before staging and before fi
  assert.match(java,/equalsIgnoreCase\(wanted\)/);
  assert.match(java,/name=availableName\(name\)/);
  assert.match(java,/if\(targetExists\(singleName\)\)throw/);
- assert.match(java,/if\(targetExists\(finalName\)\)throw/);
+ assert.match(java,/if\(targetExists\(publishName\)\)/);
+ assert.match(java,/String suffix=" \(parziale\)"/);
+ assert.match(java,/publishName=availableName\(/);
  assert.equal((java.match(/if\(targetExists\(/g)||[]).length,2);
 });
 test('Android keeps renamed document URI for rollback on final name verification error',()=>{
