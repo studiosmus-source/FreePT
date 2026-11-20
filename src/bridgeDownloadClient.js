@@ -26,22 +26,35 @@ export async function downloadBridgeFile({
       onProgress,
       readChunk:async({offset,length})=>{
         if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-        const requested=await api.requestRead(deviceId,{handle,offset,length});
-        activeJob=requested.jobId;
-        let completed=false;
-        for(let attempt=0;attempt<maxPolls;attempt++){
+        // A foreground TX session renewal can cancel an already-dispatched
+        // read job. Retry only the same byte range, never publish partial data,
+        // and keep retries bounded. Revoked access still fails at requestRead.
+        for(let retry=0;retry<3;retry++){
           if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-          const status=await api.getStatus(activeJob);
-          if(status?.jobId!==activeJob||status.deviceId!==deviceId)
-            throw Error('bridge_download_job_mismatch');
-          if(status.state==='done'){completed=true;break}
-          if(status.state==='cancelled'||!['queued','sent'].includes(status.state))
-            throw Error('bridge_download_job_cancelled');
-          await pause(pollMs);
+          const requested=await api.requestRead(deviceId,{handle,offset,length});
+          activeJob=requested.jobId;
+          let completed=false;
+          let cancelled=false;
+          for(let attempt=0;attempt<maxPolls;attempt++){
+            if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+            const status=await api.getStatus(activeJob);
+            if(status?.jobId!==activeJob||status.deviceId!==deviceId)
+              throw Error('bridge_download_job_mismatch');
+            if(status.state==='done'){completed=true;break}
+            if(status.state==='cancelled'){cancelled=true;break}
+            if(!['queued','sent'].includes(status.state))
+              throw Error('bridge_download_job_cancelled');
+            await pause(pollMs);
+          }
+          if(completed){
+            if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+            return api.getReadChunk(activeJob);
+          }
+          if(!cancelled)throw Error('bridge_download_timeout');
+          if(retry===2)throw Error('bridge_download_job_cancelled');
+          await pause(Math.max(1000,pollMs));
         }
-        if(!completed)throw Error('bridge_download_timeout');
-        if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-        return api.getReadChunk(activeJob);
+        throw Error('bridge_download_job_cancelled');
       }
     });
   }finally{
