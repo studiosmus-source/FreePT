@@ -576,7 +576,10 @@ begin
     raise exception 'bridge_job_not_authorized' using errcode='42501';
   end if;
   return pg_catalog.jsonb_build_object(
-    'jobId',v_job.id,'deviceId',v_job.device_id,'state',v_job.state
+    'jobId',v_job.id,'deviceId',v_job.device_id,'state',
+    case when v_job.state in ('queued','sent')
+           and v_job.expires_at <= clock_timestamp()
+      then 'expired' else v_job.state end
   );
 end;
 $$;
