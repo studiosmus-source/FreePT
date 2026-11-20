@@ -4,7 +4,7 @@
  * This UI never embeds device credentials, raw paths or server-role keys.
  */
 import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
-import {downloadBridgeFolder} from './bridgeFolderDownloadClient.js';
+import {downloadBridgeFolder,inspectBridgeFolder} from './bridgeFolderDownloadClient.js';
 import {downloadBridgeFile,readBridgePreviewPrefix} from './bridgeDownloadClient.js';
 import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
 import {createBridgeAndroidFolderDestination,createBridgeAndroidSingleFileWriter} from './bridgeAndroidDestination.js';
@@ -202,62 +202,156 @@ export function renderBridgeRemoteFiles({
         message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
     }
   };
-  const startDownload=async(item,deviceId,root=false,folderLister=null)=>{
+  /**
+   * Show the FULL validated inventory, regardless of what the file browser
+   * previously opened. Render in bounded batches, not 10k DOM nodes at once.
+   */
+  const reviewFolderInventory=({name,summary,manifest,signal})=>new Promise(resolve=>{
+    if(signal.aborted){resolve(false);return;}
+    const overlay=create('section',undefined,document.body);
+    overlay.className='bridge-file-preview-overlay bridge-folder-inventory-overlay';
+    overlay.setAttribute('role','dialog');
+    overlay.setAttribute('aria-modal','true');
+    overlay.setAttribute('aria-label','Contenuto completo di '+name);
+    const header=create('header',undefined,overlay);
+    header.className='bridge-file-preview-header';
+    const heading=create('strong','Contenuto di '+name,header);
+    heading.className='bridge-file-preview-title';
+    const close=create('button','×',header);
+    close.type='button';close.className='bridge-file-preview-close';
+    close.setAttribute('aria-label','Annulla download cartella');
+    const overview=create('p',summary.files+' file · '+summary.directories+
+      ' sottocartelle · '+summary.hidden+' elementi nascosti',overlay);
+    overview.className='bridge-folder-inventory-summary';
+    const scroller=create('div',undefined,overlay);
+    scroller.className='bridge-folder-inventory-scroll';
+    const list=create('div',undefined,scroller);
+    list.className='bridge-folder-inventory-entries';
+    const more=create('button','Mostra altre voci',scroller);
+    more.type='button';more.className='bridge-folder-inventory-more';
+    let shown=0,done=false;
+    const showNext=()=>{
+      const finish=Math.min(shown+120,manifest.length);
+      const fragment=document.createDocumentFragment();
+      while(shown<finish){
+        const entry=manifest[shown++];
+        const line=create('p',(entry.directory?'📁 ':'📄 ')+
+          entry.path.join('/')+
+          (entry.path.some(x=>x.startsWith('.'))?' · nascosto':''),fragment);
+        line.className='bridge-folder-inventory-entry';
+      }
+      list.appendChild(fragment);
+      more.hidden=shown>=manifest.length;
+      overview.textContent=summary.files+' file · '+summary.directories+
+        ' sottocartelle · '+summary.hidden+' elementi nascosti · '+
+        shown+'/'+manifest.length+' voci visualizzate';
+    };
+    more.onclick=showNext;
+    scroller.addEventListener('scroll',()=>{
+      if(!more.hidden&&scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-220)
+        showNext();
+    });
+    showNext();
+    const actions=create('div',undefined,overlay);
+    actions.className='bridge-folder-inventory-actions';
+    const no=create('button','Non scaricare',actions);
+    no.type='button';
+    const yes=create('button','Scarica '+summary.files+' file',actions);
+    yes.type='button';
+    const settle=accepted=>{
+      if(done)return;
+      done=true;
+      signal.removeEventListener('abort',aborted);
+      document.removeEventListener('keydown',onKeyDown);
+      overlay.remove();
+      resolve(accepted&&!signal.aborted);
+    };
+    const aborted=()=>settle(false);
+    const onKeyDown=event=>{if(event.key==='Escape')settle(false)};
+    signal.addEventListener('abort',aborted,{once:true});
+    close.onclick=()=>settle(false);
+    no.onclick=()=>settle(false);
+    yes.onclick=()=>settle(true);
+    close.focus();
+  });
+  const startDownload=async(item,deviceId,root=false)=>{
     if(activeDownload||!alive())return;
     const title=root?'Cartella condivisa':item.name;
-    if(!confirm('Scaricare '+title+' nella cartella di destinazione scelta su questo telefono?'))return;
+    const isFolder=root||item.directory;
+    if(!isFolder&&!confirm('Scaricare '+title+' nella cartella scelta?'))return;
     closePreviews();
-    activeDownload=true;
-    setBridgeBusy(true);
+    activeDownload=true;setBridgeBusy(true);
     cancel.hidden=false;
     controller=new AbortController();
+    const signal=controller.signal;
     try{
       if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
-      setStatus('Controllo cartella di destinazione…');
-      await destinationReady();
-      if(root||item.directory){
-        const writer=createBridgeAndroidFolderDestination({plugin:bridgeDestination,name:title,ownerId,ownerName});
-        let scanInfo='Scansione della cartella remota…';
-        let phase='scanning';
+      if(isFolder){
+        // Fresh independent inventory: never trust cached UI page counts.
+        let scanInfo='Scansione completa della cartella remota…';
         const startedAt=Date.now();
-        // The remote inventory is transactional: show progress during the
-        // inventory phase, which can include dozens of authenticated pages.
-        const scanHeartbeat=setInterval(()=>{
-          if(phase==='scanning'||phase==='destination')
-            setStatus(scanInfo+' · '+Math.floor((Date.now()-startedAt)/1000)+' s');
+        const heartbeat=setInterval(()=>{
+          setStatus(scanInfo+' · '+Math.floor((Date.now()-startedAt)/1000)+' s');
         },2000);
+        let inspection;
         try{
-          const result=await downloadBridgeFolder({
+          inspection=await inspectBridgeFolder({
             api:bridgeClient,deviceId,root:root?'root':item.handle,
-            ...(folderLister?{listPage:folderLister}:{}),
-            destination:writer,signal:controller.signal,
-            onStage:stage=>{
-              phase=stage;
-              if(stage==='scanning')scanInfo='Scansione della cartella remota…';
-              else if(stage==='destination')scanInfo='Creazione cartella temporanea…';
-              else if(stage==='transfer')setStatus('Elenco completato. Avvio download dei file…');
-              else if(stage==='finalizing')setStatus('Verifica e completamento della cartella…');
-              if(stage==='scanning'||stage==='destination')setStatus(scanInfo);
-            },
-            onScanProgress:p=>{
-              scanInfo='Scansione: '+p.foundEntries+' elementi, '+p.foundFiles+
-                ' file, '+p.pendingFolders+' sottocartelle da leggere';
+            signal,onScanProgress:p=>{
+              scanInfo='Conteggio: '+p.foundFiles+' file, '+p.foundEntries+
+                ' elementi · '+p.pendingFolders+' sottocartelle da esaminare';
               setStatus(scanInfo);
-            },
-            onProgress:p=>setStatus('Scaricati '+p.completedFiles+
-              ' file. '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
+            }
           });
-          setStatus('Cartella scaricata: '+result.files+' file.');
-        }finally{
-          clearInterval(scanHeartbeat);
+        }finally{clearInterval(heartbeat);}
+        if(signal.aborted)throw Error('bridge_transfer_cancelled');
+        const {manifest,summary}=inspection;
+        setStatus('Scansione completa: '+summary.files+' file in '+
+          summary.directories+' sottocartelle.');
+        // File names and totals are available BEFORE the user approves a
+        // download. No SAF destination has been created at this point.
+        const approved=await reviewFolderInventory({
+          name:title,summary,manifest,signal
+        });
+        if(!approved){
+          setStatus(signal.aborted?'Operazione annullata prima del download.':
+            'Download non avviato: elenco consultato.');
+          return;
         }
+        setStatus('Controllo cartella di destinazione…');
+        await destinationReady();
+        if(signal.aborted)throw Error('bridge_transfer_cancelled');
+        const writer=createBridgeAndroidFolderDestination({
+          plugin:bridgeDestination,name:title,ownerId,ownerName
+        });
+        const result=await downloadBridgeFolder({
+          api:bridgeClient,deviceId,manifest,
+          destination:writer,signal,preserveCompletedOnCancel:true,
+          onStage:stage=>{
+            if(stage==='destination')setStatus('Creazione cartella temporanea…');
+            else if(stage==='transfer')setStatus('Scaricamento dei '+summary.files+' file…');
+            else if(stage==='finalizing')setStatus('Verifica finale della cartella…');
+            else if(stage==='preserving')setStatus('Salvataggio dei file completi già scaricati…');
+          },
+          onProgress:p=>setStatus('Completati '+p.completedFiles+'/'+summary.files+
+            ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
+        });
+        if(result.partial){
+          setStatus('Annullato. Conservati '+result.files+' file completi in '+
+            (result.savedName||'cartella (parziale)')+'.');
+        }else setStatus('Cartella scaricata: '+result.files+' file.');
       }else{
+        setStatus('Controllo cartella di destinazione…');
+        await destinationReady();
+        if(signal.aborted)throw Error('bridge_transfer_cancelled');
         if(item.size<0)throw Error('Dimensione del file non disponibile.');
         await fileDownload(item,deviceId);
         setStatus('File scaricato: '+item.name);
       }
     }catch(error){
-      setStatus(error?.message||'Download non riuscito.');
+      if(error?.message==='bridge_transfer_cancelled')
+        setStatus('Download interrotto. Se nessun file era completo, nessuna cartella è stata salvata.');
+      else setStatus(error?.message||'Download non riuscito.');
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
@@ -328,20 +422,6 @@ export function renderBridgeRemoteFiles({
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
     const folderPages=new Map();
-    // Pages returned by this session's authenticated browsing can be reused
-    // during a folder download. Every file read still goes through the backend.
-    const cachedFolderLister=async({handle,offset,signal})=>{
-      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-      if(!alive()||marker!==revision)throw Error('bridge_transfer_cancelled');
-      const key=handle+'|'+offset;
-      const cached=folderPages.get(key);
-      if(cached)return cached;
-      const page=await lister({handle,offset,signal});
-      if(signal?.aborted||!alive()||marker!==revision)
-        throw Error('bridge_transfer_cancelled');
-      folderPages.set(key,page);
-      return page;
-    };
     let navigation=0;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
@@ -377,7 +457,7 @@ export function renderBridgeRemoteFiles({
           const download=create('button','Scarica cartella',actions);
           download.onclick=()=>void startDownload(
             {name:current.name,handle:current.handle,directory:true},deviceId,
-            current.handle==='root',cachedFolderLister);
+            current.handle==='root');
           const reload=create('button','Aggiorna',actions);
           reload.onclick=()=>{
             for(const key of folderPages.keys())if(key.startsWith(current.handle+'|'))folderPages.delete(key);
@@ -402,14 +482,14 @@ export function renderBridgeRemoteFiles({
           }
           primary.onclick=()=>item.directory?
             (stack.push({handle:item.handle,name:item.name}),void display()):
-            (previewable(item)?void showPreview(item,deviceId):void startDownload(item,deviceId,false,cachedFolderLister));
+            (previewable(item)?void showPreview(item,deviceId):void startDownload(item,deviceId));
           const menu=create('details',undefined,line);
           menu.className='bridge-entry-menu';
           const trigger=create('summary','⋮',menu);
           trigger.setAttribute('aria-label','Opzioni per '+item.name);
           const options=create('div',undefined,menu);
           const download=create('button',item.directory?'Scarica cartella':'Scarica file',options);
-          download.onclick=()=>{menu.open=false;void startDownload(item,deviceId,false,cachedFolderLister)};
+          download.onclick=()=>{menu.open=false;void startDownload(item,deviceId)};
           if(previewable(item)){
             const preview=create('button','Anteprima',options);
             preview.onclick=()=>{menu.open=false;void showPreview(item,deviceId)};
