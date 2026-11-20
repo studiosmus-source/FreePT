@@ -8,7 +8,7 @@ import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export function createBridgeRemoteFolderLister({
-  api,deviceId,pause=wait,pollMs=700,maxPolls=60
+  api,deviceId,pause=wait,pollMs=1200,maxPolls=90
 }={}){
   if(!UUID.test(deviceId)||!api||
      ['requestBrowse','getStatus','getBrowsePage'].some(k=>typeof api[k]!=='function')||
@@ -16,15 +16,19 @@ export function createBridgeRemoteFolderLister({
      !Number.isSafeInteger(maxPolls)||maxPolls<1)
     throw Error('bridge_remote_browse_invalid_options');
 
-  return async function listPage({handle='root',offset=0,signal}={}){
+  return async function listPage({handle='root',offset=0,signal,onProgress=()=>{}}={}){
     if(!(handle==='root'||UUID.test(handle))||
        !Number.isSafeInteger(offset)||offset<0||offset>10000)
       throw Error('bridge_remote_browse_invalid_request');
+    if(typeof onProgress!=='function')throw Error('bridge_remote_browse_invalid_request');
     if(signal?.aborted)throw Error('bridge_transfer_cancelled');
     const job=await api.requestBrowse(deviceId,{handle,offset},{signal});
     if(!UUID.test(job?.jobId)||job.deviceId!==deviceId||job.state!=='queued')
       throw Error('bridge_remote_browse_invalid_job');
     let success=false;
+    const startedAt=Date.now();
+    let lastProgress=0;
+    let lastState='';
     try{
       let complete=false;
       for(let attempt=0;attempt<maxPolls;attempt++){
@@ -33,6 +37,14 @@ export function createBridgeRemoteFolderLister({
         if(status?.jobId!==job.jobId||status.deviceId!==deviceId)
           throw Error('bridge_remote_browse_job_mismatch');
         if(status.state==='done'){complete=true;break}
+        if(['queued','sent'].includes(status.state)){
+          const now=Date.now();
+          if(status.state!==lastState||now-lastProgress>=5000){
+            onProgress({state:status.state,elapsedSeconds:Math.max(0,Math.floor((now-startedAt)/1000))});
+            lastState=status.state;
+            lastProgress=now;
+          }
+        }
         if(!['queued','sent'].includes(status.state))
           throw Error('bridge_remote_browse_cancelled');
         await pause(pollMs);
