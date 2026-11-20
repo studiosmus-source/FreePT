@@ -90,3 +90,61 @@ test('rejects unknown file size and caps tree entries',async()=>{
  await assert.rejects(planBridgeFolder({listPage:async()=>page([unknown])}),/unknown_file_size/);
  await assert.rejects(planBridgeFolder({maxEntries:1,listPage:async()=>page([item(D,'a'),item(F,'b')])}),/entry_limit/);
 });
+
+test('verified inventory is independent of browsing and contains hidden nested entries',async()=>{
+ const requests=[],hidden={...item(F2,'.secret'),size:3};
+ const plan=await planBridgeFolder({listPage:async({handle,offset})=>{
+  requests.push([handle,offset]);
+  return handle==='root'?page([item(D,'.hiddenDir',true),item(F,'visible.txt')]):
+    page([hidden]);
+ }});
+ assert.deepEqual(requests,[['root',0],[D,0]]);
+ const {summarizeBridgeFolder}=await import('./folderReceiver.mjs');
+ const summary=summarizeBridgeFolder(plan);
+ assert.deepEqual(summary,{entries:3,files:2,directories:1,hidden:2,totalBytes:6});
+});
+test('cancel after verified file preserves a distinct partial folder',async()=>{
+ const ac=new AbortController(),events=[];
+ const result=await receiveBridgeFolder({
+  signal:ac.signal,preserveCompletedOnCancel:true,
+  listPage:async()=>page([item(D,'done.bin'),item(F,'interrupted.bin')]),
+  begin:async()=>events.push('begin'),
+  makeDirectory:async()=>{},
+  downloadFile:async({path})=>{
+   if(path[0]==='done.bin'){events.push('file:done');return;}
+   events.push('file:discard');ac.abort();throw Error('bridge_transfer_cancelled');
+  },
+  commit:async options=>{
+   events.push('commit:'+(options.partial?'partial':'full'));
+   return {name:'Download (parziale)'};
+  },
+  discard:async()=>events.push('discard')
+ });
+ assert.equal(result.files,1);assert.equal(result.partial,true);
+ assert.equal(result.savedName,'Download (parziale)');
+ assert.deepEqual(events,['begin','file:done','file:discard','commit:partial']);
+});
+test('network failure still rolls back even if preserve-on-cancel enabled',async()=>{
+ const events=[];
+ await assert.rejects(receiveBridgeFolder({
+  preserveCompletedOnCancel:true,
+  listPage:async()=>page([item(D,'done.bin'),item(F,'broken.bin')]),
+  begin:async()=>events.push('begin'),makeDirectory:async()=>{},
+  downloadFile:async({path})=>{
+   if(path[0]==='broken.bin')throw Error('network_failed');
+   events.push('file:done');
+  },
+  commit:async()=>events.push('commit'),
+  discard:async()=>events.push('discard')
+ }),/network_failed/);
+ assert.deepEqual(events,['begin','file:done','discard']);
+});
+test('download rejects unverified externally supplied manifest',async()=>{
+ let began=false;
+ await assert.rejects(receiveBridgeFolder({
+  manifest:Object.freeze([]),begin:async()=>{began=true},
+  makeDirectory:async()=>{},downloadFile:async()=>{},
+  commit:async()=>{},discard:async()=>{}
+ }),/plan_unverified/);
+ assert.equal(began,false);
+});
