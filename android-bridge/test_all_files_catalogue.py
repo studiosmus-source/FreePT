@@ -60,6 +60,9 @@ public class Harness {
   if(page.size()!=100)throw new AssertionError("first page should contain 100 entries");
   int next=(Integer)BridgeAllFilesCore.list("root",0).get("nextOffset");
   if(next!=100)throw new AssertionError("pagination did not advance by 100");
+  // A new child appearing between pages must not shift or duplicate
+  // already paginated items. A fresh page-0 request rebuilds the snapshot.
+  Files.write(root.resolve("new-after-first-page.txt"),new byte[]{1});
   JSObject follow=BridgeAllFilesCore.list("root",next);
   JSArray second=(JSArray)follow.get("entries");
   if((Integer)follow.get("nextOffset")!=-1||second.size()!=50)
@@ -68,6 +71,11 @@ public class Harness {
   for(Object entry:page)unique.add((String)((JSObject)entry).get("handle"));
   for(Object entry:second)unique.add((String)((JSObject)entry).get("handle"));
   if(unique.size()!=150)throw new AssertionError("duplicate or missing catalogue handles");
+  // Explicit refresh reconstructs a new view, including additions that
+  // were intentionally not allowed to destabilize the first pagination.
+  BridgeAllFilesCore.list("root",0);
+  JSArray refreshed=(JSArray)BridgeAllFilesCore.list("root",100).get("entries");
+  if(refreshed.size()!=51)throw new AssertionError("refresh did not discover new file");
   String hidden=null,android=null,extraHandle=null,privateFolder=null,nomedia=null;
   for(Object x:page){JSObject e=(JSObject)x;String n=(String)e.get("name");
    if(n.equals("escape"))throw new AssertionError("symlink escaped");
