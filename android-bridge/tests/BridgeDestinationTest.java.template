@@ -26,6 +26,7 @@ public class BridgeDestinationTest {
  private final Map<String,Doc> docs=new LinkedHashMap<>();
  private Context context;private ContentResolver resolver;private BridgeDestinationPlugin plugin;
  private boolean permission=true,renameWrong=false,providerOffline=false,autoJpgExtension=false;
+ private boolean staleReportedSize=false;
  private String returnExisting=null;
  private int serial=0;
  static class Doc {String id,parent,name,mime;File bytes;Doc(String id,String p,String n,String m,File f){this.id=id;parent=p;name=n;mime=m;bytes=f;}}
@@ -54,6 +55,7 @@ public class BridgeDestinationTest {
    return c;
   });
   when(resolver.openFileDescriptor(any(Uri.class),eq("rw"))).thenAnswer(a->ParcelFileDescriptor.open(doc(a.getArgument(0)).bytes,ParcelFileDescriptor.MODE_READ_WRITE));
+  when(resolver.openInputStream(any(Uri.class))).thenAnswer(a->new FileInputStream(doc(a.getArgument(0)).bytes));
   ContentProviderClient client=mock(ContentProviderClient.class);
   when(resolver.acquireUnstableContentProviderClient(anyString())).thenReturn(client);
   when(client.call(anyString(),nullable(String.class),any(Bundle.class))).thenAnswer(a->providerCall(a.getArgument(0),a.getArgument(2)));
@@ -65,7 +67,7 @@ public class BridgeDestinationTest {
   Object[] values=new Object[columns.length];
   for(int i=0;i<columns.length;i++)switch(columns[i]){
    case "document_id":values[i]=d.id;break;case "_display_name":values[i]=d.name;break;
-   case "mime_type":values[i]=d.mime;break;case "_size":values[i]=d.bytes==null?0L:d.bytes.length();break;
+   case "mime_type":values[i]=d.mime;break;case "_size":values[i]=d.bytes==null?0L:staleReportedSize?0L:d.bytes.length();break;
   }c.addRow(values);
  }
  private Bundle providerCall(String method,Bundle in)throws Exception{
@@ -226,6 +228,33 @@ public class BridgeDestinationTest {
   assertEquals(folder.id,saved.parent);
   assertArrayEquals(new byte[]{1,2,3},Files.readAllBytes(saved.bytes.toPath()));
   assertFalse(docs.values().stream().anyMatch(x->"two.bin".equals(x.name)));
+ }
+
+ @Test public void staleSafSizeMetadataIsVerifiedByReadingActualBytes()throws Exception{
+  staleReportedSize=true;
+  String id=begin(A,"picture.jpg",3);
+  Call w=call(Map.of("fileId",id,"offset",0,"base64","AQID"));
+  plugin.writeChunk(w.call);assertNull(w.error);
+  Call verified=call(Map.of("fileId",id));
+  plugin.commitFile(verified.call);assertNull(verified.error);
+  Call published=call(Map.of());
+  plugin.commitSingleFile(published.call);assertNull(published.error);
+  Doc photo=docs.values().stream().filter(d->"picture.jpg".equals(d.name)).findFirst().orElseThrow();
+  assertArrayEquals(new byte[]{1,2,3},Files.readAllBytes(photo.bytes.toPath()));
+ }
+
+ @Test public void wrongActualSizeStillFailsEvenWhenSafMetadataIsStale()throws Exception{
+  staleReportedSize=true;
+  String id=begin(A,"truncated.bin",3);
+  Call w=call(Map.of("fileId",id,"offset",0,"base64","AQID"));
+  plugin.writeChunk(w.call);assertNull(w.error);
+  Doc staged=docs.values().stream().filter(d->d.name.startsWith(".freept-partial-")).findFirst().orElseThrow();
+  Files.write(staged.bytes.toPath(),new byte[]{1,2}); // simulate actual provider truncation
+  Call verified=call(Map.of("fileId",id));
+  plugin.commitFile(verified.call);assertEquals("bridge_destination_size_mismatch",verified.error);
+  Call cleanup=call(Map.of());
+  plugin.discardSingleFile(cleanup.call);assertNull(cleanup.error);
+  assertFalse(docs.values().stream().anyMatch(d->"truncated.bin".equals(d.name)));
  }
  @Test public void profileRenameAndManualDirectoryRenamePreserveTheMapping()throws Exception{
   finish(begin(A,"first.bin",0),new byte[0]);
