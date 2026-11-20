@@ -126,7 +126,7 @@ export async function receiveBridgeFolder({
     return {entries:totals.entries,files:totals.files};
   }catch(error){
     if(started&&preserveCompletedOnCancel&&signal?.aborted&&
-       completedFiles>0){
+       error?.message==='bridge_transfer_cancelled'&&completedFiles>0){
       onStage('preserving');
       // The in-flight file writer has already discarded its partial bytes
       // before downloadFile throws. All remaining native entries are complete.
