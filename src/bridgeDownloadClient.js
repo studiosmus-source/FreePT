@@ -17,11 +17,19 @@ export async function downloadBridgeFile({
      !Number.isSafeInteger(pollMs)||pollMs<0)
     throw Error('bridge_download_invalid_options');
   let activeJob=null;
+  // Use large requests when TX accepts them, but back off safely if the
+  // remote session cancels work. No server/TX change required.
+  let currentChunk=262144;
   try{
     return await receiveBridgeFile({
-      // Keep every TX response comfortably below gateway and database payload limits.
-      // A cancelled 256 KiB second chunk was observed on the live TEST route.
-      size,signal,chunkBytes:65536,
+      size,signal,chunkBytes:262144,
+      chooseChunkBytes:()=>currentChunk,
+      onReadError:error=>{
+        if(error?.message!=='bridge_download_job_cancelled'||currentChunk<=65536)
+          return false;
+        currentChunk=Math.max(65536,currentChunk/2);
+        return true;
+      },
       write:(bytes,offset)=>destination.write(bytes,offset),
       commit:()=>destination.commit(),
       discard:()=>destination.discard(),
@@ -31,7 +39,9 @@ export async function downloadBridgeFile({
         // A foreground TX session renewal can cancel an already-dispatched
         // read job. Retry only the same byte range, never publish partial data,
         // and keep retries bounded. Revoked access still fails at requestRead.
-        for(let retry=0;retry<3;retry++){
+        // One retry at larger sizes, more at 64 KiB to allow TX renewal.
+        const attempts=length>65536?2:3;
+        for(let retry=0;retry<attempts;retry++){
           if(signal?.aborted)throw Error('bridge_transfer_cancelled');
           const requested=await api.requestRead(deviceId,{handle,offset,length});
           activeJob=requested.jobId;
@@ -53,7 +63,7 @@ export async function downloadBridgeFile({
             return api.getReadChunk(activeJob);
           }
           if(!cancelled)throw Error('bridge_download_timeout');
-          if(retry===2)throw Error('bridge_download_job_cancelled');
+          if(retry===attempts-1)throw Error('bridge_download_job_cancelled');
           await pause(Math.max(1000,pollMs));
         }
         throw Error('bridge_download_job_cancelled');
