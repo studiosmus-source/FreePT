@@ -2,6 +2,9 @@ package __PACKAGE__;
 
 import android.os.Build;
 import android.os.Environment;
+import android.content.Context;
+import android.os.storage.StorageManager;
+import android.os.storage.StorageVolume;
 import android.util.Base64;
 import android.util.Log;
 import com.getcapacitor.JSArray;
@@ -13,6 +16,10 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /**
@@ -23,35 +30,67 @@ import java.util.UUID;
  */
 final class BridgeAllFilesCore {
     private BridgeAllFilesCore(){}
-    private static final int PAGE=100,MAX_HANDLES=12000,MAX_CHUNK=262144;
+    private static final int PAGE=100,MAX_HANDLES=60000,MAX_CHUNK=262144;
     private static final long MAX_BYTES=1099511627776L;
     private static final Map<String, Entry> entries=new HashMap<>();
     private static final Map<String,String> reverse=new HashMap<>();
     private static File root;
+    private static Context appContext;
+    private static final Map<String,Entry> extraVolumes=new LinkedHashMap<>();
+    static synchronized void configure(Context context){
+        if(context!=null)appContext=context.getApplicationContext();
+    }
 
     private static final class Entry {
         final File file;
         final int depth;
-        Entry(File file,int depth){this.file=file;this.depth=depth;}
+        final File volumeRoot;
+        Entry(File file,int depth,File volumeRoot){
+            this.file=file;this.depth=depth;this.volumeRoot=volumeRoot;
+        }
     }
     static synchronized boolean granted(){
         return Build.VERSION.SDK_INT>=30 && Environment.isExternalStorageManager();
     }
     private static boolean prepare(){
         if(!granted()){
-            entries.clear();reverse.clear();root=null;return false;
+            entries.clear();reverse.clear();extraVolumes.clear();root=null;return false;
         }
         try{
             File candidate=Environment.getExternalStorageDirectory().getCanonicalFile();
             if(root==null||!root.equals(candidate)){
                 root=candidate;
-                entries.clear();reverse.clear();
-                entries.put("root",new Entry(root,0));
+                entries.clear();reverse.clear();extraVolumes.clear();
+                entries.put("root",new Entry(root,0,root));
+            }
+            // Only currently mounted, readable shared volumes. Do not try
+            // Android/data, app-private storage or arbitrary /storage paths.
+            extraVolumes.clear();
+            if(Build.VERSION.SDK_INT>=30&&appContext!=null){
+                StorageManager manager=(StorageManager)appContext.getSystemService(Context.STORAGE_SERVICE);
+                if(manager!=null){
+                    int volumeIndex=0;
+                    for(StorageVolume volume:manager.getStorageVolumes()){
+                        if(volume.isPrimary()||!Environment.MEDIA_MOUNTED.equals(volume.getState()))
+                            continue;
+                        File directory=volume.getDirectory();
+                        if(directory==null||!directory.isDirectory()||!directory.canRead())
+                            continue;
+                        File canonical=directory.getCanonicalFile();
+                        if(canonical.equals(root)||volumeIndex>=8)continue;
+                        String id=UUID.nameUUIDFromBytes(("freept-shared-volume:"+canonical.getPath())
+                            .getBytes(StandardCharsets.UTF_8)).toString();
+                        Entry mount=new Entry(canonical,0,canonical);
+                        extraVolumes.put(id,mount);
+                        entries.put(id,mount);
+                        volumeIndex++;
+                    }
+                }
             }
             return true;
         }catch(IOException error){return false;}
     }
-    private static boolean valid(File file){
+    private static boolean valid(File file,File volumeRoot){
         String name=file.getName();
         if(name.isEmpty()||name.length()>255||name.equals(".")||name.equals("..")||
            name.indexOf('/')>=0||name.indexOf('\\')>=0)return false;
@@ -60,7 +99,7 @@ final class BridgeAllFilesCore {
             if(c<32||c==127)return false;
         }
         try{
-            String base=root.getCanonicalPath();
+            String base=volumeRoot.getCanonicalPath();
             String canonical=file.getCanonicalPath();
             if(!canonical.startsWith(base+File.separator))return false;
             String relative=canonical.substring(base.length()+1).replace(File.separatorChar,'/');
@@ -83,8 +122,25 @@ final class BridgeAllFilesCore {
         JSArray list=new JSArray();
         int counted=0,emitted=0,skipped=0;
         boolean hasMore=false;
-        for(File file:children){
-            if(!valid(file)){skipped++;continue;}
+        // Additional mounted shared-storage volumes appear as folders at the
+        // top of the original root; the existing primary paths remain intact.
+        if("root".equals(handle)){
+            int index=0;
+            for(Map.Entry<String,Entry> volume:extraVolumes.entrySet()){
+                index++;
+                if(counted++<offset)continue;
+                if(emitted>=PAGE){hasMore=true;break;}
+                JSObject mount=new JSObject();
+                mount.put("handle",volume.getKey());
+                mount.put("name","Memoria aggiuntiva "+index);
+                mount.put("directory",true);
+                mount.put("size",-1);
+                mount.put("mime","vnd.android.document/directory");
+                list.put(mount);emitted++;
+            }
+        }
+        if(!hasMore)for(File file:children){
+            if(!valid(file,parent.volumeRoot)){skipped++;continue;}
             if(counted++<offset)continue;
             if(emitted>=PAGE){hasMore=true;break;}
             String key=file.getCanonicalPath();
@@ -93,7 +149,7 @@ final class BridgeAllFilesCore {
                 if(entries.size()>=MAX_HANDLES)throw new IOException("handle_limit");
                 id=UUID.randomUUID().toString();
                 reverse.put(key,id);
-                entries.put(id,new Entry(file,parent.depth+1));
+                entries.put(id,new Entry(file,parent.depth+1,parent.volumeRoot));
             }
             boolean directory=file.isDirectory();
             JSObject item=new JSObject();
@@ -127,7 +183,7 @@ final class BridgeAllFilesCore {
     static synchronized JSObject read(String handle,long offset,int length)throws Exception{
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
         Entry entry=entries.get(handle);
-        if(entry==null||!entry.file.isFile()||!valid(entry.file)||!entry.file.canRead()||
+        if(entry==null||!entry.file.isFile()||!valid(entry.file,entry.volumeRoot)||!entry.file.canRead()||
            offset<0||offset>MAX_BYTES||length<1||length>MAX_CHUNK||
            offset>MAX_BYTES-length)
             throw new SecurityException("invalid_file_request");
