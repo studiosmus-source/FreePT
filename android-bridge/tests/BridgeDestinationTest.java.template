@@ -199,6 +199,34 @@ public class BridgeDestinationTest {
   assertEquals(owner.id,folder.parent);assertEquals(folder.id,sub.parent);assertEquals(sub.id,file.parent);
   assertArrayEquals(new byte[]{1,2,3,4},Files.readAllBytes(file.bytes.toPath()));
  }
+ @Test public void voluntaryCancellationKeepsOnlyCompleteFilesInPartialFolder()throws Exception{
+  Call started=call(Map.of("ownerId",A,"ownerName","Cristina","name","Foto"));
+  plugin.beginFolder(started.call);assertNull(started.error);
+  Call complete=call(Map.of("path",List.of("one.bin"),"size",3,"mime","application/octet-stream"));
+  plugin.openFile(complete.call);assertNull(complete.error);
+  String completeId=complete.result.getString("fileId");
+  Call written=call(Map.of("fileId",completeId,"offset",0,"base64","AQID"));
+  plugin.writeChunk(written.call);assertNull(written.error);
+  Call verified=call(Map.of("fileId",completeId));
+  plugin.commitFile(verified.call);assertNull(verified.error);
+  Call interrupted=call(Map.of("path",List.of("two.bin"),"size",100,"mime","application/octet-stream"));
+  plugin.openFile(interrupted.call);assertNull(interrupted.error);
+  String incompleteId=interrupted.result.getString("fileId");
+  Call partialWrite=call(Map.of("fileId",incompleteId,"offset",0,"base64","BAU="));
+  plugin.writeChunk(partialWrite.call);assertNull(partialWrite.error);
+  Call removePartial=call(Map.of("fileId",incompleteId));
+  plugin.discardFile(removePartial.call);assertNull(removePartial.error);
+  Call publish=call(Map.of("partial",true));
+  plugin.commitFolder(publish.call);assertNull(publish.error);
+  assertEquals("Foto (parziale)",publish.result.getString("name"));
+  Doc folder=docs.values().stream().filter(x->"Foto (parziale)".equals(x.name))
+      .findFirst().orElseThrow();
+  Doc saved=docs.values().stream().filter(x->"one.bin".equals(x.name))
+      .findFirst().orElseThrow();
+  assertEquals(folder.id,saved.parent);
+  assertArrayEquals(new byte[]{1,2,3},Files.readAllBytes(saved.bytes.toPath()));
+  assertFalse(docs.values().stream().anyMatch(x->"two.bin".equals(x.name)));
+ }
  @Test public void profileRenameAndManualDirectoryRenamePreserveTheMapping()throws Exception{
   finish(begin(A,"first.bin",0),new byte[0]);
   Doc owner=docs.values().stream().filter(d->"Cristina".equals(d.name)).findFirst().orElseThrow();owner.name="Nome manuale";
