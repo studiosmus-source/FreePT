@@ -16,18 +16,41 @@ test('remote preview is explicit and bounded',()=>{
 test('JPEG previews prefer bounded embedded EXIF thumbnail before any full download',()=>{
  assert.match(source,/readBridgePreviewPrefix\(\{/);
  assert.match(source,/extractEmbeddedJpegThumbnail\(prefix\)/);
- assert.match(source,/if\(thumbnail\)\{publishPreview\(\[thumbnail\]\);return;\}/);
- assert.match(source,/message\.textContent='Nessuna miniatura incorporata/);
+ assert.match(source,/publishPreview\(new Blob\(\[thumbnail\],\{type:item\.mime\}\)\);return/);
+ assert.match(source,/message\.textContent='Caricamento foto…'/);
 });
 test('preview uses authorized chunk download and local blob URL',()=>{
   assert.match(source,/await downloadBridgeFile\(\{/);
   assert.match(source,/deviceId,handle:item\.handle,size:item\.size/);
-  assert.match(source,/URL\.createObjectURL\(new Blob\(parts/);
+  assert.match(source,/URL\.createObjectURL\(blob\)/);
+  assert.match(source,/publishPreview\(new Blob\(parts,\{type:item\.mime\}\)\)/);
   assert.match(source,/URL\.revokeObjectURL\(url\)/);
   assert.match(source,/setAttribute\('sandbox',''\)/);
 });
 
 
+test('preview opens fullscreen on document.body with an always-available X and safe cleanup',()=>{
+ const styles=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ assert.match(source,/create\('section',undefined,document\.body\)/);
+ assert.match(source,/panel\.className='bridge-file-preview-overlay'/);
+ assert.match(source,/panel\.setAttribute\('aria-modal','true'\)/);
+ assert.match(source,/create\('button','×',header\)/);
+ assert.match(source,/close\.className='bridge-file-preview-close'/);
+ assert.match(source,/close\.onclick=dismiss/);
+ assert.match(source,/event\.key==='Escape'/);
+ assert.match(source,/URL\.revokeObjectURL\(url\)/);
+ assert.match(source,/document\.removeEventListener\('keydown',onKeyDown\)/);
+ assert.match(styles,/\.bridge-file-preview-overlay\{[\s\S]*?position:fixed;inset:0/);
+ assert.match(styles,/height:100dvh/);
+ assert.match(styles,/\.bridge-file-preview-media\{[\s\S]*?object-fit:contain/);
+});
+test('already opened previews are cached only in bounded session memory',()=>{
+ assert.match(source,/PREVIEW_CACHE_BYTES=12\*1024\*1024/);
+ assert.match(source,/cachedPreview\(key\)/);
+ assert.match(source,/if\(cached\)\{publishPreview\(cached\);return;\}/);
+ assert.match(source,/clearPreviewCache\(\)/);
+ assert.match(source,/if\(closed\|\|abort\.signal\.aborted\)return/);
+});
 test('remote browser preserves bounded paging, lazy loads on scroll, and cleans observers',()=>{
  assert.match(source,/more\.onclick=async\(\)=>/);
  assert.match(source,/moreObserver=new IntersectionObserver/);
