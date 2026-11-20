@@ -887,8 +887,13 @@ function renderLayout(){
         panel.textContent='Collegamento file non disponibile: il server Bridge HTTPS non è configurato.';
         return;
       }
+      // Do not restart the same pending root browse request when the tab is
+      // tapped twice: the old version cancelled it and queued another.
+      if(panel.dataset.bridgeOwnerId===user.id&&typeof chatFilesCleanup==='function')
+        return;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
       const ownerId=user.id;
+      panel.dataset.bridgeOwnerId=ownerId;
       chatFilesCleanup=renderBridgeRemoteFiles({
         host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
         isAuthorized:()=>panel.isConnected&&selected===ownerId&&
