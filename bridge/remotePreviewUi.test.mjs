@@ -74,6 +74,17 @@ test('folder downloads show manifest progress instead of an indefinite preparati
  assert.match(source,/folderPages\.get\(key\)/);
  assert.match(source,/listPage:folderLister/);
 });
+test('browser names dot-hidden items and distinguishes partial lists from finished pages',()=>{
+ const styles=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ assert.match(source,/const hidden=item\.name\.startsWith\('\.'\)/);
+ assert.match(source,/line\.dataset\.bridgeHidden=hidden\?'true':'false'/);
+ assert.match(source,/create\('small','nascosto',line\)/);
+ assert.match(source,/bridge-folder-completeness/);
+ assert.match(source,/querySelectorAll\('\.bridge-entry\[data-bridge-hidden="true"\]'\)/);
+ assert.match(source,/Elenco parziale: scorri per caricare le altre pagine/);
+ assert.match(source,/Fine elenco trasmesso dal telefono/);
+ assert.match(styles,/\.bridge-folder-completeness/);
+});
 test('remote browser preserves bounded paging, lazy loads on scroll, and cleans observers',()=>{
  assert.match(source,/more\.onclick=async\(\)=>/);
  assert.match(source,/moreObserver=new IntersectionObserver/);
