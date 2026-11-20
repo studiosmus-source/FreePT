@@ -24,8 +24,11 @@ export async function downloadBridgeFile({
     return await receiveBridgeFile({
       size,signal,chunkBytes:262144,
       chooseChunkBytes:()=>currentChunk,
-      onReadError:error=>{
-        if(error?.message!=='bridge_download_job_cancelled'||currentChunk<=65536)
+      onReadError:(error,{length})=>{
+        // Never retry a permanently failing small file merely because the
+        // preferred network chunk is larger than its remaining byte count.
+        if(error?.message!=='bridge_download_job_cancelled'||
+           length<=65536||currentChunk<=65536)
           return false;
         currentChunk=Math.max(65536,currentChunk/2);
         return true;
