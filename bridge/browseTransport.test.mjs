@@ -48,6 +48,8 @@ test('browse queue: authorized admin, session-bound TX and isolated page retriev
  const item=await f.adapter.pollDevice({deviceId:DEVICE,sessionToken:TOKEN});
  assert.equal(item.operation,'browse');assert.equal(item.handle,FOLDER);
  assert.equal(item.offset,0);
+ assert.deepEqual(f.calls.filter(x=>x.name.startsWith('bridge_server_claim_')).map(x=>x.name),
+   ['bridge_server_claim_browse']);
  const done=await f.tx({method:'POST',path:'/bridge/tx/browse',
   body:{deviceId:DEVICE,sessionToken:TOKEN,jobId:JOB,entries,nextOffset:-1}});
  assert.equal(done.status,200);
