@@ -544,7 +544,7 @@ export function renderBridgeRemoteFiles({
     };
     const startVisibleThumbnail=()=>{
       if(!thumbnailsAllowed||thumbnailActive||pendingBrowse||activeDownload||
-         !alive()||marker!==revision)return;
+         previewClosers.size>0||!alive()||marker!==revision)return;
       const row=[...thumbnailRows.values()].find(item=>
         item.visible&&!item.attempted&&item.element.isConnected);
       if(!row)return;
