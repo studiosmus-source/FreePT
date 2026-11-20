@@ -254,6 +254,12 @@ jobs:
           keytool -list -keystore "$RUNNER_TEMP/freept-bridge.jks" -storepass:env BRIDGE_STORE_PASSWORD -alias "$BRIDGE_KEY_ALIAS" >/dev/null
       - name: Build Android APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Test native SAF destination provider behavior (isolated TEST only)
+        if: github.ref == 'refs/heads/fix/bridge-folder-first-progressive-20261120'
+        run: |
+          python3 android-bridge/install_destination_tests.py
+          cd android
+          ./gradlew testDebugUnitTest --tests 'it.freept.bridge.next.BridgeDestinationTest' --no-daemon
       - name: Sign APK with persistent Bridge identity and verify certificate
         shell: bash
         env:
