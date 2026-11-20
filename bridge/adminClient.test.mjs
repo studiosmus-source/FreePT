@@ -159,3 +159,38 @@ test('aborting after a 429 stops retry before sending another browse request',as
   /bridge_transfer_cancelled/);
  assert.equal(attempts,1);
 });
+
+test('Bridge admin distinguishes server 409 offline and final job without exposing untrusted messages',async()=>{
+ const cases=[
+  [409,'device_unavailable','bridge_device_unavailable'],
+  [409,'job_already_final','bridge_job_already_final'],
+  [404,'not_found','bridge_resource_not_found'],
+  [400,'invalid_request','bridge_invalid_remote_request'],
+  [409,'private_file_name_must_not_leak','bridge_request_rejected_409']
+ ];
+ for(const [status,code,expected] of cases){
+  const api=createBridgeAdminClient({
+   baseUrl:endpoint,
+   auth:{async getSession(){return {data:{session:{access_token:token}}}}},
+   fetchImpl:async()=>({ok:false,status,json:async()=>({error:code})})
+  });
+  await assert.rejects(()=>api.requestRead(DEVICE,{
+   handle:JOB,offset:0,length:100
+  }),error=>{
+   assert.equal(error.message,expected);
+   assert.ok(!error.message.includes('private_file_name'));
+   return true;
+  });
+ }
+});
+test('Bridge admin distinguishes 5xx without replaying unsafe writes',async()=>{
+ let calls=0;
+ const api=createBridgeAdminClient({
+  baseUrl:endpoint,
+  auth:{async getSession(){return {data:{session:{access_token:token}}}}},
+  fetchImpl:async()=>{calls++;return {ok:false,status:500}},
+ });
+ await assert.rejects(()=>api.requestRead(DEVICE,{handle:JOB,offset:0,length:100}),
+  /bridge_backend_unavailable/);
+ assert.equal(calls,1);
+});
