@@ -96,3 +96,9 @@ test('aborted browse never sends a request after session lookup completes',async
  }),/bridge_transfer_cancelled/);
  assert.equal(endpoints.length,0);
 });
+
+test('expired job status is accepted but never mistaken for a successful cancellation',async()=>{
+ const f=client({reply:{jobId:JOB,deviceId:DEVICE,state:'expired'},status:200});
+ assert.equal((await f.client.getStatus(JOB)).state,'expired');
+ await assert.rejects(()=>f.client.cancel(JOB),/bridge_invalid_response/);
+});
