@@ -534,8 +534,8 @@ async function requestAdminBridgeList(panel,button,existingJob=null){
     let message='';
     const render=()=>{
       if(!stillAuthorized())return;
-      result.textContent=message||('Richiesta '+state+' (ID '+job.jobId+').');
-      const terminal=state==='done'||state==='cancelled';
+      result.textContent=message||('Richiesta '+(state==='expired'?'scaduta':state)+' (ID '+job.jobId+').');
+      const terminal=state==='done'||state==='cancelled'||state==='expired';
       statusButton.disabled=inFlight||terminal;
       cancelButton.disabled=inFlight||terminal;
       button.disabled=!terminal;
