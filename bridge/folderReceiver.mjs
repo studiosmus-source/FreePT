@@ -2,12 +2,24 @@
  * Experimental Bridge receiver: discover and reconstruct an authorized SAF tree.
  * No network or Android storage access is performed here. The caller must bind
  * every listPage request to a live grant/session and implement destination
- * staging so discard() removes the whole partial directory on failure.
+ * staging. Non-cancellation failures roll back; explicit cancellation can
+ * retain already verified complete files in a clearly partial folder.
  */
 import {validateBridgeFolderPage, BRIDGE_FILE_LIMITS} from '../src/bridgeFileProtocol.js';
 
 const HANDLE=/^(?:root|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const cancelled = signal => { if(signal?.aborted) throw Error('bridge_transfer_cancelled'); };
+const verifiedPlans=new WeakSet();
+export function summarizeBridgeFolder(manifest){
+  if(!verifiedPlans.has(manifest))throw Error('bridge_folder_plan_unverified');
+  let files=0,directories=0,hidden=0,totalBytes=0;
+  for(const item of manifest){
+    if(item.directory)directories++;
+    else {files++;totalBytes+=item.size;}
+    if(item.path.some(segment=>segment.startsWith('.')))hidden++;
+  }
+  return Object.freeze({entries:manifest.length,files,directories,hidden,totalBytes});
+}
 
 export async function planBridgeFolder({
   root='root',listPage,signal,maxEntries=BRIDGE_FILE_LIMITS.maxTotalEntries,
@@ -63,37 +75,69 @@ export async function planBridgeFolder({
       offset=page.nextOffset;
     }
   }
-  return Object.freeze(items);
+  const manifest=Object.freeze(items);
+  verifiedPlans.add(manifest);
+  return manifest;
 }
 
-/** Whole-directory atomicity must be supplied by the Android destination adapter. */
+/**
+ * Validate the entire authorized inventory before creating local files.
+ * A plan supplied by the UI must be one built by this module, not arbitrary
+ * unverified file handles or paths.
+ */
 export async function receiveBridgeFolder({
-  root,listPage,begin,makeDirectory,downloadFile,commit,discard,
-  signal,maxEntries,onScanProgress=()=>{},onStage=()=>{}
+  root,listPage,manifest=null,begin,makeDirectory,downloadFile,commit,discard,
+  signal,maxEntries,onScanProgress=()=>{},onStage=()=>{},
+  preserveCompletedOnCancel=false
 }={}){
   if([begin,makeDirectory,downloadFile,commit,discard,onScanProgress,onStage]
-      .some(fn=>typeof fn!=='function'))
+      .some(fn=>typeof fn!=='function')||typeof preserveCompletedOnCancel!=='boolean')
     throw Error('bridge_folder_destination_invalid');
-  onStage('scanning');
-  const manifest=await planBridgeFolder({root,listPage,signal,maxEntries,onScanProgress});
-  let started=false,done=false;
+  let source=manifest;
+  if(source!==null){
+    if(!verifiedPlans.has(source)||maxEntries!==undefined&&source.length>maxEntries)
+      throw Error('bridge_folder_plan_unverified');
+  }else{
+    onStage('scanning');
+    source=await planBridgeFolder({root,listPage,signal,maxEntries,onScanProgress});
+  }
+  const totals=summarizeBridgeFolder(source);
+  let started=false,done=false,completedFiles=0,keepStaging=false;
   try{
     cancelled(signal);
     onStage('destination');
     started=true;
     await begin();
     onStage('transfer');
-    for(const item of manifest){
+    for(const item of source){
       cancelled(signal);
       if(item.directory)await makeDirectory(item.path);
-      else await downloadFile({handle:item.handle,path:item.path,size:item.size,mime:item.mime,signal});
+      else{
+        await downloadFile({
+          handle:item.handle,path:item.path,size:item.size,mime:item.mime,signal
+        });
+        completedFiles++;
+      }
     }
     cancelled(signal);
     onStage('finalizing');
-    await commit();
+    const saved=await commit({partial:false});
     done=true;
-    return {entries:manifest.length,files:manifest.filter(item=>!item.directory).length};
+    return {...totals,savedName:saved?.name||null};
+  }catch(error){
+    if(started&&preserveCompletedOnCancel&&signal?.aborted&&
+       completedFiles>0){
+      onStage('preserving');
+      // The in-flight file writer has already discarded its partial bytes
+      // before downloadFile throws. All remaining native entries are complete.
+      keepStaging=true;
+      const saved=await commit({partial:true,completedFiles});
+      done=true;
+      return {...totals,files:completedFiles,partial:true,
+        savedName:saved?.name||null};
+    }
+    throw error;
   }finally{
-    if(started&&!done)await discard();
+    if(started&&!done&&!keepStaging)await discard();
   }
 }
