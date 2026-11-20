@@ -110,7 +110,7 @@ export class BridgePostgresJobsAdapter {
         Object.keys(data).length!==3 ||
         data.jobId!==jobId || typeof data.deviceId!=='string' ||
         !UUID.test(data.deviceId) ||
-        !['queued','sent','done','cancelled'].includes(data.state) ||
+        !['queued','sent','done','cancelled','expired'].includes(data.state) ||
         (requiredState!==null && data.state!==requiredState))
       throw new Error('bridge_jobs_invalid_response');
     return {jobId:data.jobId,deviceId:data.deviceId,state:data.state};
@@ -119,42 +119,41 @@ export class BridgePostgresJobsAdapter {
   async pollDevice({deviceId,sessionToken}) {
     requireId(deviceId);
     const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
-    if (!BINDING.test(binding)) throw new Error('bridge_invalid_session_binding');
-    const data=await this.#rpc('bridge_server_claim_list',{
-      p_device_id:deviceId,p_session_binding_hex:binding
-    });
-    if(data===null && this.readJobsEnabled){
-      const next=await this.#rpc('bridge_server_claim_read',{
-        p_device_id:deviceId,p_session_binding_hex:binding
-      });
-      if(next!==null){
-      if(!next||typeof next!=='object'||Array.isArray(next)||
-         Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,length,offset,operation,state'||
-         !UUID.test(next.jobId)||next.deviceId!==deviceId||
-         next.operation!=='read'||next.state!=='sent')
-        throw Error('bridge_jobs_invalid_response');
-      validateBridgeReadRequest({handle:next.handle,offset:next.offset,length:next.length});
-      if(next.length>262144)throw Error("bridge_jobs_invalid_response");
-      return next;
+    if(!BINDING.test(binding))throw Error('bridge_invalid_session_binding');
+    const args={p_device_id:deviceId,p_session_binding_hex:binding};
+    if(this.readJobsEnabled){
+      // The chat file browser enqueues 'browse' (not the legacy 'list').
+      // Claim it first: an available page is dispatched after ONE database
+      // RPC rather than waiting for two unrelated, empty claim queries.
+      const browse=await this.#rpc('bridge_server_claim_browse',args);
+      if(browse!==null){
+        if(!browse||typeof browse!=='object'||Array.isArray(browse)||
+           Object.keys(browse).sort().join(',')!=='deviceId,handle,jobId,offset,operation,state'||
+           !UUID.test(browse.jobId)||browse.deviceId!==deviceId||
+           browse.operation!=='browse'||browse.state!=='sent'||
+           !(browse.handle==='root'||UUID.test(browse.handle))||
+           !Number.isSafeInteger(browse.offset)||browse.offset<0||browse.offset>10000)
+          throw Error('bridge_jobs_invalid_response');
+        return browse;
+      }
+      // If no folder is being browsed, file bytes take priority over the
+      // historical list operation. TX session/grant checks stay in each RPC.
+      const read=await this.#rpc('bridge_server_claim_read',args);
+      if(read!==null){
+        if(!read||typeof read!=='object'||Array.isArray(read)||
+           Object.keys(read).sort().join(',')!=='deviceId,handle,jobId,length,offset,operation,state'||
+           !UUID.test(read.jobId)||read.deviceId!==deviceId||
+           read.operation!=='read'||read.state!=='sent')
+          throw Error('bridge_jobs_invalid_response');
+        validateBridgeReadRequest({handle:read.handle,offset:read.offset,length:read.length});
+        if(read.length>262144)throw Error('bridge_jobs_invalid_response');
+        return read;
       }
     }
-    if(data===null && this.readJobsEnabled){
-      const next=await this.#rpc('bridge_server_claim_browse',{
-        p_device_id:deviceId,p_session_binding_hex:binding
-      });
-      if(next===null)return null;
-      if(!next||typeof next!=='object'||Array.isArray(next)||
-         Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,offset,operation,state'||
-         !UUID.test(next.jobId)||next.deviceId!==deviceId||
-         next.operation!=='browse'||next.state!=='sent'||
-         !(next.handle==='root'||UUID.test(next.handle))||
-         !Number.isSafeInteger(next.offset)||next.offset<0||next.offset>10000)
-        throw Error('bridge_jobs_invalid_response');
-      return next;
-    }
-    if (data === null) return null;
-    if (typeof data !== 'string' || !UUID.test(data))
-      throw new Error('bridge_jobs_invalid_response');
+    const data=await this.#rpc('bridge_server_claim_list',args);
+    if(data===null)return null;
+    if(typeof data!=='string'||!UUID.test(data))
+      throw Error('bridge_jobs_invalid_response');
     return {jobId:data,deviceId,operation:'list',state:'sent'};
   }
 
