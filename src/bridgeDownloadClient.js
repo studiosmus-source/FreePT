@@ -18,6 +18,24 @@ export async function downloadBridgeFile({
      !Number.isSafeInteger(pollMs)||pollMs<0)
     throw Error('bridge_download_invalid_options');
   let activeJob=null;
+  // Request/status responses may be lost after the server has already
+  // completed work. Retry retrieval on the SAME existing job only: never
+  // duplicate an ambiguously enqueued read or advance the write offset.
+  const transientStatusCodes=new Set([
+    'bridge_backend_unavailable','bridge_network_unavailable',
+    'bridge_request_throttled'
+  ]);
+  const sameJob=async run=>{
+    for(let attempt=0;attempt<3;attempt++){
+      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+      try{return await run();}
+      catch(error){
+        if(!transientStatusCodes.has(error?.message)||attempt===2)throw error;
+        await pause(Math.max(700,pollMs)*(attempt+1));
+      }
+    }
+    throw Error('bridge_download_unavailable');
+  };
   // Use large requests when TX accepts them, but back off safely if the
   // remote session cancels work. No server/TX change required.
   let currentChunk=262144;
@@ -53,18 +71,20 @@ export async function downloadBridgeFile({
           let cancelled=false;
           for(let attempt=0;attempt<maxPolls;attempt++){
             if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-            const status=await api.getStatus(activeJob);
+            const status=await sameJob(()=>api.getStatus(activeJob));
             if(status?.jobId!==activeJob||status.deviceId!==deviceId)
               throw Error('bridge_download_job_mismatch');
             if(status.state==='done'){completed=true;break}
-            if(status.state==='cancelled'){cancelled=true;break}
+            if(status.state==='cancelled'||status.state==='expired'){
+              cancelled=true;break;
+            }
             if(!['queued','sent'].includes(status.state))
               throw Error('bridge_download_job_cancelled');
             await pause(pollMs);
           }
           if(completed){
             if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-            return api.getReadChunk(activeJob);
+            return sameJob(()=>api.getReadChunk(activeJob));
           }
           if(!cancelled)throw Error('bridge_download_timeout');
           if(retry===attempts-1)throw Error('bridge_download_job_cancelled');
