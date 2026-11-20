@@ -6,6 +6,7 @@ on:
       - feature/bridge-admin-foundation-20261106
       - feature/bridge-chunk-receiver-20261108
       - work/unified-verified-20261119
+      - fix/bridge-all-accessible-folders-20261120
     paths:
       - 'android-bridge/**'
       - 'bridge/**'
