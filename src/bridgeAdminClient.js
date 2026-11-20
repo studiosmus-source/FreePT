@@ -7,7 +7,7 @@
  */
 import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const STATES=new Set(['queued','sent','done','cancelled']);
+const STATES=new Set(['queued','sent','done','cancelled','expired']);
 const PROD='cpopqsvzzxfjgnlawlvc.supabase.co';
 
 export function normalizeBridgeApiUrl(raw) {
