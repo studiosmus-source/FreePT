@@ -570,24 +570,34 @@ public class BridgeDestinationPlugin extends Plugin {
             if(!file.completed){call.reject("bridge_destination_files_incomplete");return;}
         }
         try{
-            if(targetExists(finalName))throw new IllegalStateException("bridge_destination_exists");
+            boolean partial=Boolean.TRUE.equals(call.getBoolean("partial",false));
+            // A partial download must not masquerade as a complete folder.
+            String publishName=finalName;
+            if(partial){
+                String suffix=" (parziale)";
+                publishName=availableName(
+                    finalName.substring(0,Math.min(finalName.length(),255-suffix.length()))+
+                    suffix);
+            }
+            if(targetExists(publishName))
+                throw new IllegalStateException("bridge_destination_exists");
             Uri renamed=DocumentsContract.renameDocument(
-                getContext().getContentResolver(),staging,finalName);
+                getContext().getContentResolver(),staging,publishName);
             if(renamed==null)throw new IllegalStateException();
             staging=renamed;
             journal(renamed);
-            // SAF providers may rewrite the requested name: fail rather than
-            // claiming that an arbitrary destination was correctly named.
             try(Cursor c=getContext().getContentResolver().query(renamed,
                 new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
                 null,null,null)){
-                if(c==null||!c.moveToFirst()||!finalName.equals(c.getString(0)))
-                    throw new IllegalStateException();
+                if(c==null||!c.moveToFirst()||!publishName.equals(c.getString(0)))
+                    throw new IllegalStateException("bridge_destination_provider_renamed");
             }
             forgetJournal();
             staging=null;finalName=null;transferParent=null;
             directories.clear();files.clear();
-            call.resolve();
+            JSObject result=new JSObject();result.put("name",publishName);
+            result.put("partial",partial);
+            call.resolve(result);
         }catch(Exception error){call.reject("bridge_destination_commit_failed");}
     }
 
