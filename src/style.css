@@ -218,3 +218,9 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
   background:#243b58;color:white;border-radius:10px;font-size:14px}
 .bridge-folder-inventory-actions button:last-child{background:#d7e9ff;color:#10223a;
   font-weight:700}
+
+/* Bridge folder explorer: clear directory-first groups without more TX jobs. */
+.bridge-list-section-heading{margin:10px 0 5px;padding:4px 2px;
+  font-size:13px;font-weight:700;letter-spacing:.02em;
+  color:#536679;border-bottom:1px solid #dbe3eb}
+.bridge-list-section-heading[hidden]{display:none}
