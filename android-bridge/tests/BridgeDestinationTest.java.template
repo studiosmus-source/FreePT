@@ -25,7 +25,7 @@ public class BridgeDestinationTest {
  private static final String DIR=DocumentsContract.Document.MIME_TYPE_DIR;
  private final Map<String,Doc> docs=new LinkedHashMap<>();
  private Context context;private ContentResolver resolver;private BridgeDestinationPlugin plugin;
- private boolean permission=true,renameWrong=false,providerOffline=false;
+ private boolean permission=true,renameWrong=false,providerOffline=false,autoJpgExtension=false;
  private String returnExisting=null;
  private int serial=0;
  static class Doc {String id,parent,name,mime;File bytes;Doc(String id,String p,String n,String m,File f){this.id=id;parent=p;name=n;mime=m;bytes=f;}}
@@ -71,7 +71,9 @@ public class BridgeDestinationTest {
  private Bundle providerCall(String method,Bundle in)throws Exception{
   Uri u=in.getParcelable("uri");Doc d=doc(u);Bundle out=new Bundle();
   if(method.equals("android:createDocument")){
-   Doc n=returnExisting!=null?docs.get(returnExisting):add(d.id,in.getString("_display_name"),in.getString("mime_type"));out.putParcelable("uri",uri(n.id));
+   String name=in.getString("_display_name"),mime=in.getString("mime_type");
+   if(autoJpgExtension&&"image/jpeg".equals(mime)&&!name.endsWith(".jpg"))name+=".jpg";
+   Doc n=returnExisting!=null?docs.get(returnExisting):add(d.id,name,mime);out.putParcelable("uri",uri(n.id));
   }else if(method.equals("android:renameDocument")){
    d.name=renameWrong?"provider-renamed.bin":in.getString("_display_name");out.putParcelable("uri",uri(d.id));
   }else if(method.equals("android:deleteDocument")){
@@ -111,6 +113,20 @@ public class BridgeDestinationTest {
   List<Doc> people=docs.values().stream().filter(d->"root".equals(d.parent)).toList();assertEquals(1,people.size());
   assertEquals("Cristina",people.get(0).name);
   assertTrue(docs.values().stream().anyMatch(d->"foto (1).bin".equals(d.name)));
+ }
+ @Test public void imageStageUsesMimeExtensionAndIsRenamedOnlyAfterVerification()throws Exception{
+  // Android SAF providers may append '.jpg' when createDocument receives
+  // image/jpeg and a hidden staging name with no extension.
+  autoJpgExtension=true;
+  Call c=call(Map.of("ownerId",A,"ownerName","Cristina","name","IMG0001.jpg",
+      "size",3,"mime","image/jpeg"));
+  plugin.beginSingleFile(c.call);
+  assertNull(c.error);assertNotNull(c.result);
+  assertTrue(docs.values().stream().anyMatch(d->d.name.startsWith(".freept-partial-")&&d.name.endsWith(".jpg")));
+  assertFalse(docs.values().stream().anyMatch(d->"IMG0001.jpg".equals(d.name)));
+  finish(c.result.getString("fileId"),new byte[]{1,2,3});
+  Doc photo=docs.values().stream().filter(d->"IMG0001.jpg".equals(d.name)).findFirst().orElseThrow();
+  assertArrayEquals(new byte[]{1,2,3},Files.readAllBytes(photo.bytes.toPath()));
  }
  @Test public void homonymsNeverShareADirectory()throws Exception{
   finish(begin(A,"one.bin",0),new byte[0]);finish(begin(B,"two.bin",0),new byte[0]);
