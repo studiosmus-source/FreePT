@@ -196,3 +196,18 @@ test('thumbnail jobs back off on errors instead of flooding remote phone',()=>{
  assert.match(source,/thumbnailNextAt=Date\.now\(\)\+Math\.min\(30000/);
  assert.match(source,/if\(thumbnailRetryTimer!==null\)clearTimeout/);
 });
+
+test('failed directory page releases thumbnails while retaining a visible manual retry',()=>{
+ assert.match(source,/if\(!currentBrowse\.signal\.aborted&&offset>0\)\{/);
+ assert.match(source,/thumbnailsAllowed=true/);
+ assert.match(source,/Ricerca sottocartelle interrotta/);
+ assert.match(source,/Ricerca interrotta: file caricati conservati/);
+ assert.match(source,/finally\{\s*if\(pendingBrowse===currentBrowse\)pendingBrowse=null;\s*startVisibleThumbnail\(\)/);
+});
+
+test('remote folder download retains verified files on transient read interruption',()=>{
+ assert.match(source,/preserveCompletedOnCancel:true/);
+ assert.match(source,/preserveCompletedOnFailure:true/);
+ assert.match(source,/result\.interruptedBy==='transient_read'/);
+ assert.match(source,/Gli altri file non sono stati salvati/);
+});
