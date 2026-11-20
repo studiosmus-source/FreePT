@@ -133,3 +133,24 @@ test('remote browser preserves bounded paging, lazy loads on scroll, and cleans 
  assert.match(source,/signal:currentBrowse\.signal/);
  assert.match(source,/pendingBrowse\?\.abort\(\)/);
 });
+
+test('folder and file rows are single-column across grouped folders (not flex-wrapped cards)',()=>{
+ const styles=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ const legacy=styles.lastIndexOf('.bridge-remote-entries>div{display:flex;');
+ const fixed=styles.lastIndexOf('/* Remote file browser: columns are GROUPS');
+ assert.ok(legacy>=0&&fixed>legacy,'directory row override must follow legacy layout');
+ const override=styles.slice(fixed);
+ assert.match(override,/\.bridge-remote-entries>\.bridge-remote-folders/);
+ assert.match(override,/\.bridge-remote-entries>\.bridge-remote-files/);
+ assert.match(override,/display:block;box-sizing:border-box;width:100%/);
+ assert.match(override,/\.bridge-remote-folders>\.bridge-entry/);
+ assert.match(override,/\.bridge-remote-files>\.bridge-entry/);
+ assert.match(override,/display:flex;align-items:center;flex-wrap:nowrap/);
+});
+test('remote directory loading reports queued/sent states without infinite spinners',()=>{
+ assert.match(source,/onProgress:progress=>\{/);
+ assert.match(source,/progress\.state==='queued'/);
+ assert.match(source,/progress\.elapsedSeconds/);
+ assert.match(source,/bridge_remote_browse_timeout/);
+ assert.match(source,/Premi Aggiorna per riprovare/);
+});
