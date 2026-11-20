@@ -20,4 +20,8 @@ test('remote TX uses wide storage only after OS permission granted',()=>{
   assert.match(permissionUi,/Settings\.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION/);
   assert.match(java,/getCanonicalPath\(\)/);
   assert.match(java,/static synchronized JSObject read\(/);
+  assert.match(java,/String base=volumeRoot\.getPath\(\)/);
+  assert.match(java,/if\(!canonical\.equals\(file\.getAbsolutePath\(\)\)\)return false/);
+  assert.match(java,/directories\.put\(candidate,directory\)/);
+  assert.match(java,/Boolean\.TRUE\.equals\(directories\.get\(item\)\)/);
 });
