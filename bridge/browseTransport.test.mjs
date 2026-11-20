@@ -104,3 +104,55 @@ test('remote folder lister rejects repeated offsets rather than trapping browser
  }});
  await assert.rejects(lister({handle:'root',offset:0}),/pagination_loop/);
 });
+
+test('a timed-out browse cancels its queued server job instead of leaving TX backlog',async()=>{
+ let requests=0,cancels=0;
+ const lister=createBridgeRemoteFolderLister({
+  deviceId:DEVICE,maxPolls:3,pollMs:0,pause:async()=>{},
+  api:{
+   async requestBrowse(){requests++;return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+   async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+   async getBrowsePage(){throw Error('unexpected_page')},
+   async cancel(id){assert.equal(id,JOB);cancels++;return{jobId:JOB,state:'cancelled'}}
+  }
+ });
+ await assert.rejects(lister({handle:'root'}),/bridge_remote_browse_timeout/);
+ assert.equal(requests,1);
+ assert.equal(cancels,1);
+});
+test('cancelled directory navigation aborts status request and cancels server job',async()=>{
+ const abort=new AbortController(),seenSignals=[];
+ let cancels=0;
+ const lister=createBridgeRemoteFolderLister({
+  deviceId:DEVICE,maxPolls:2,pollMs:0,pause:async()=>{},
+  api:{
+   async requestBrowse(_id,_request,options){
+    seenSignals.push(options.signal);return {jobId:JOB,deviceId:DEVICE,state:'queued'};
+   },
+   async getStatus(_id,options){
+    seenSignals.push(options.signal);
+    abort.abort();
+    throw Error('bridge_transfer_cancelled');
+   },
+   async getBrowsePage(){throw Error('unexpected_page')},
+   async cancel(id){assert.equal(id,JOB);cancels++;return{jobId:JOB,state:'cancelled'}}
+  }
+ });
+ await assert.rejects(lister({signal:abort.signal}),/bridge_transfer_cancelled/);
+ assert.deepEqual(seenSignals,[abort.signal,abort.signal]);
+ assert.equal(cancels,1);
+});
+test('successful browse never triggers job cancellation',async()=>{
+ let cancels=0;
+ const lister=createBridgeRemoteFolderLister({
+  deviceId:DEVICE,pause:async()=>{},
+  api:{
+   async requestBrowse(){return {jobId:JOB,deviceId:DEVICE,state:'queued'}},
+   async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:'done'}},
+   async getBrowsePage(){return {jobId:JOB,entries,nextOffset:-1}},
+   async cancel(){cancels++}
+  }
+ });
+ await lister();
+ assert.equal(cancels,0);
+});
