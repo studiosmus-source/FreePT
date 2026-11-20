@@ -27,6 +27,7 @@ export function renderBridgeRemoteFiles({
   let revision=0;
   let controller=null;
   let activeDownload=false;
+  let abortActiveBrowse=()=>{};
   const previewClosers=new Set();
   let moreObserver=null;
   const stopObservingMore=()=>{moreObserver?.disconnect();moreObserver=null;};
@@ -167,6 +168,7 @@ export function renderBridgeRemoteFiles({
   };
   async function listDevices(){
     if(!alive())return;
+    abortActiveBrowse();
     const marker=++revision;
     closePreviews();
     devices.replaceChildren();browser.replaceChildren();
@@ -208,7 +210,10 @@ export function renderBridgeRemoteFiles({
     }
   }
   async function showDevice(deviceId,label){
+    abortActiveBrowse();
     const marker=++revision;
+    let pendingBrowse=null;
+    abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
     stopObservingMore();
     closePreviews();
     const stack=[{handle:'root',name:label}];
@@ -221,6 +226,9 @@ export function renderBridgeRemoteFiles({
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
       if(activeDownload){setStatus('Completa o annulla il download prima di navigare.');return;}
+      pendingBrowse?.abort();
+      const currentBrowse=new AbortController();
+      pendingBrowse=currentBrowse;
       const view=++navigation;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
@@ -228,7 +236,9 @@ export function renderBridgeRemoteFiles({
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
-        const page=cached??validateBridgeFolderPage(await lister({handle:current.handle,offset}));
+        const page=cached??validateBridgeFolderPage(await lister({
+          handle:current.handle,offset,signal:currentBrowse.signal
+        }));
         if(!alive()||marker!==revision||view!==navigation)return;
         if(!cached)folderPages.set(key,page);
         if(offset===0){
@@ -310,8 +320,11 @@ export function renderBridgeRemoteFiles({
         setStatus(cached?'Elenco già caricato.':'Elenco aggiornato. Puoi aprire o scaricare file e cartelle.');
         return true;
       }catch(error){
+        if(currentBrowse.signal.aborted)return false;
         setStatus('Elenco non disponibile: '+(error?.message||'errore remoto'));
         return false;
+      }finally{
+        if(pendingBrowse===currentBrowse)pendingBrowse=null;
       }
     }
     await display();
@@ -321,6 +334,7 @@ export function renderBridgeRemoteFiles({
   return ()=>{
     disposed=true;revision++;
     controller?.abort();
+    abortActiveBrowse();
     stopObservingMore();
     closePreviews();
   };
