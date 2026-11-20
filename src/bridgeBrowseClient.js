@@ -21,14 +21,15 @@ export function createBridgeRemoteFolderLister({
        !Number.isSafeInteger(offset)||offset<0||offset>10000)
       throw Error('bridge_remote_browse_invalid_request');
     if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-    const job=await api.requestBrowse(deviceId,{handle,offset});
+    const job=await api.requestBrowse(deviceId,{handle,offset},{signal});
     if(!UUID.test(job?.jobId)||job.deviceId!==deviceId||job.state!=='queued')
       throw Error('bridge_remote_browse_invalid_job');
+    let success=false;
     try{
       let complete=false;
       for(let attempt=0;attempt<maxPolls;attempt++){
         if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-        const status=await api.getStatus(job.jobId);
+        const status=await api.getStatus(job.jobId,{signal});
         if(status?.jobId!==job.jobId||status.deviceId!==deviceId)
           throw Error('bridge_remote_browse_job_mismatch');
         if(status.state==='done'){complete=true;break}
@@ -38,17 +39,20 @@ export function createBridgeRemoteFolderLister({
       }
       if(!complete)throw Error('bridge_remote_browse_timeout');
       if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-      const page=await api.getBrowsePage(job.jobId);
+      const page=await api.getBrowsePage(job.jobId,{signal});
       if(page?.jobId!==job.jobId||!Array.isArray(page.entries)||
          !Number.isSafeInteger(page.nextOffset))
         throw Error('bridge_remote_browse_invalid_page');
       const validated=validateBridgeFolderPage({entries:page.entries,nextOffset:page.nextOffset});
       if(validated.nextOffset!==-1&&validated.nextOffset<=offset)
         throw Error('bridge_remote_browse_pagination_loop');
+      success=true;
       return validated;
     }finally{
-      if(signal?.aborted&&typeof api.cancel==='function'){
-        try{await api.cancel(job.jobId)}catch{/* revoke or already completed */}
+      // Timed-out and interrupted jobs must not accumulate on TX's FIFO.
+      // Cancelling a completed job is unnecessary; revoked access still fails.
+      if(!success&&typeof api.cancel==='function'){
+        try{await api.cancel(job.jobId)}catch{/* already completed/revoked/offline */}
       }
     }
   };
