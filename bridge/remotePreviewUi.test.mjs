@@ -63,16 +63,28 @@ test('active file transfer prevents navigation away and defers chat polling',()=
  assert.match(main,/id='back'|getElementById\('back'\)/);
  assert.match(main,/fetchingMessages \|\| bridgeTransferActive\(\)/);
 });
-test('folder downloads show manifest progress instead of an indefinite preparation label',()=>{
- assert.match(source,/Scansione della cartella remota/);
- assert.match(source,/onScanProgress:p=>/);
- assert.match(source,/p\.foundEntries/);
- assert.match(source,/p\.pendingFolders/);
- assert.match(source,/setInterval\(\(\)=>\{/);
- assert.match(source,/clearInterval\(scanHeartbeat\)/);
- assert.match(source,/cachedFolderLister=async\(\{handle,offset,signal\}\)=>/);
- assert.match(source,/folderPages\.get\(key\)/);
- assert.match(source,/listPage:folderLister/);
+test('folder inventory is independently counted before user approval and destination writes',()=>{
+ const css=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ assert.match(source,/await inspectBridgeFolder\(\{/);
+ assert.match(source,/reviewFolderInventory\(\{/);
+ assert.match(source,/summary\.files\+' file/);
+ assert.match(source,/summary\.hidden/);
+ assert.match(source,/manifest\[shown\+\+\]/);
+ assert.match(source,/bridge-folder-inventory-scroll/);
+ assert.match(source,/const approved=await reviewFolderInventory/);
+ assert.match(source,/if\(!approved\)/);
+ assert.match(source,/await destinationReady\(\)/);
+ assert.match(source,/manifest,/);
+ assert.match(source,/preserveCompletedOnCancel:true/);
+ assert.doesNotMatch(source,/cachedFolderLister=async/);
+ assert.match(css,/\.bridge-folder-inventory-scroll/);
+});
+test('folder cancellation reports preserved complete files',()=>{
+ assert.match(source,/result\.partial/);
+ assert.match(source,/Conservati '\+result\.files/);
+ assert.match(source,/result\.savedName/);
+ assert.match(source,/clearInterval\(heartbeat\)/);
+ assert.match(source,/Conteggio: '\+p\.foundFiles/);
 });
 test('browser names dot-hidden items and distinguishes partial lists from finished pages',()=>{
  const styles=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
