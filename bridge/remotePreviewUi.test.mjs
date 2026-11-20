@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../src/bridgeRemoteFilesUi.js',import.meta.url),'utf8');
 test('remote preview is explicit and bounded',()=>{
-  assert.match(source,/PREVIEW_LIMIT=2\*1024\*1024/);
+  assert.match(source,/IMAGE_PREVIEW_LIMIT=8\*1024\*1024/);
+  assert.match(source,/PDF_PREVIEW_LIMIT=2\*1024\*1024/);
+  assert.match(source,/onProgress:p=>/);
   assert.match(source,/previewable\(item\)/);
   assert.match(source,/create\('button','Anteprima',options\)/);
   assert.match(source,/preview.onclick=\(\)=>\{menu.open=false;void showPreview\(item,deviceId\)\}/);
-  assert.match(source,/item\.size<=PREVIEW_LIMIT/);
+  assert.match(source,/item\.size<=IMAGE_PREVIEW_LIMIT/);
+  assert.match(source,/item\.size<=PDF_PREVIEW_LIMIT/);
+  assert.doesNotMatch(source,/createObjectURL\(new Blob\(parts[^)]*\)\).*for\s*\(/);
 });
 test('preview uses authorized chunk download and local blob URL',()=>{
   assert.match(source,/await downloadBridgeFile\(\{/);
