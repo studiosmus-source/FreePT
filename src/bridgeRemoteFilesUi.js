@@ -202,7 +202,7 @@ export function renderBridgeRemoteFiles({
         message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
     }
   };
-  const startDownload=async(item,deviceId,root=false)=>{
+  const startDownload=async(item,deviceId,root=false,folderLister=null)=>{
     if(activeDownload||!alive())return;
     const title=root?'Cartella condivisa':item.name;
     if(!confirm('Scaricare '+title+' nella cartella di destinazione scelta su questo telefono?'))return;
@@ -213,17 +213,44 @@ export function renderBridgeRemoteFiles({
     controller=new AbortController();
     try{
       if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
+      setStatus('Controllo cartella di destinazione…');
       await destinationReady();
-      setStatus('Preparazione download…');
       if(root||item.directory){
         const writer=createBridgeAndroidFolderDestination({plugin:bridgeDestination,name:title,ownerId,ownerName});
-        const result=await downloadBridgeFolder({
-          api:bridgeClient,deviceId,root:root?'root':item.handle,
-          destination:writer,signal:controller.signal,
-          onProgress:p=>setStatus('Scaricati '+p.completedFiles+
-            ' file. '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
-        });
-        setStatus('Cartella scaricata: '+result.files+' file.');
+        let scanInfo='Scansione della cartella remota…';
+        let phase='scanning';
+        const startedAt=Date.now();
+        // The remote inventory is transactional: show progress during the
+        // inventory phase, which can include dozens of authenticated pages.
+        const scanHeartbeat=setInterval(()=>{
+          if(phase==='scanning'||phase==='destination')
+            setStatus(scanInfo+' · '+Math.floor((Date.now()-startedAt)/1000)+' s');
+        },2000);
+        try{
+          const result=await downloadBridgeFolder({
+            api:bridgeClient,deviceId,root:root?'root':item.handle,
+            ...(folderLister?{listPage:folderLister}:{}),
+            destination:writer,signal:controller.signal,
+            onStage:stage=>{
+              phase=stage;
+              if(stage==='scanning')scanInfo='Scansione della cartella remota…';
+              else if(stage==='destination')scanInfo='Creazione cartella temporanea…';
+              else if(stage==='transfer')setStatus('Elenco completato. Avvio download dei file…');
+              else if(stage==='finalizing')setStatus('Verifica e completamento della cartella…');
+              if(stage==='scanning'||stage==='destination')setStatus(scanInfo);
+            },
+            onScanProgress:p=>{
+              scanInfo='Scansione: '+p.foundEntries+' elementi, '+p.foundFiles+
+                ' file, '+p.pendingFolders+' sottocartelle da leggere';
+              setStatus(scanInfo);
+            },
+            onProgress:p=>setStatus('Scaricati '+p.completedFiles+
+              ' file. '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
+          });
+          setStatus('Cartella scaricata: '+result.files+' file.');
+        }finally{
+          clearInterval(scanHeartbeat);
+        }
       }else{
         if(item.size<0)throw Error('Dimensione del file non disponibile.');
         await fileDownload(item,deviceId);
@@ -301,6 +328,20 @@ export function renderBridgeRemoteFiles({
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
     const folderPages=new Map();
+    // Pages returned by this session's authenticated browsing can be reused
+    // during a folder download. Every file read still goes through the backend.
+    const cachedFolderLister=async({handle,offset,signal})=>{
+      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+      if(!alive()||marker!==revision)throw Error('bridge_transfer_cancelled');
+      const key=handle+'|'+offset;
+      const cached=folderPages.get(key);
+      if(cached)return cached;
+      const page=await lister({handle,offset,signal});
+      if(signal?.aborted||!alive()||marker!==revision)
+        throw Error('bridge_transfer_cancelled');
+      folderPages.set(key,page);
+      return page;
+    };
     let navigation=0;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
@@ -336,7 +377,7 @@ export function renderBridgeRemoteFiles({
           const download=create('button','Scarica cartella',actions);
           download.onclick=()=>void startDownload(
             {name:current.name,handle:current.handle,directory:true},deviceId,
-            current.handle==='root');
+            current.handle==='root',cachedFolderLister);
           const reload=create('button','Aggiorna',actions);
           reload.onclick=()=>{
             for(const key of folderPages.keys())if(key.startsWith(current.handle+'|'))folderPages.delete(key);
@@ -353,14 +394,14 @@ export function renderBridgeRemoteFiles({
           primary.type='button';
           primary.onclick=()=>item.directory?
             (stack.push({handle:item.handle,name:item.name}),void display()):
-            (previewable(item)?void showPreview(item,deviceId):void startDownload(item,deviceId));
+            (previewable(item)?void showPreview(item,deviceId):void startDownload(item,deviceId,false,cachedFolderLister));
           const menu=create('details',undefined,line);
           menu.className='bridge-entry-menu';
           const trigger=create('summary','⋮',menu);
           trigger.setAttribute('aria-label','Opzioni per '+item.name);
           const options=create('div',undefined,menu);
           const download=create('button',item.directory?'Scarica cartella':'Scarica file',options);
-          download.onclick=()=>{menu.open=false;void startDownload(item,deviceId)};
+          download.onclick=()=>{menu.open=false;void startDownload(item,deviceId,false,cachedFolderLister)};
           if(previewable(item)){
             const preview=create('button','Anteprima',options);
             preview.onclick=()=>{menu.open=false;void showPreview(item,deviceId)};
