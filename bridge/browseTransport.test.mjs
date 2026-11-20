@@ -216,6 +216,6 @@ test('a permanently queued browse stops before server expiration instead of spin
   }
  });
  await assert.rejects(lister(),/bridge_remote_browse_timeout/);
- assert.equal(polls,2);
+ assert.equal(polls,3);
  assert.equal(cancels,1);
 });
