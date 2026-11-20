@@ -201,3 +201,20 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
   color:#334155;background:#eff4f8;border-radius:8px;overflow-wrap:anywhere}
 .bridge-entry>.bridge-hidden-label{flex:0 0 auto;font-size:10px;
   font-weight:600;color:#475569;white-space:nowrap}
+
+/* Bounded full folder inventory review: counts before any destination writes. */
+.bridge-folder-inventory-overlay{background:#0b1220}
+.bridge-folder-inventory-summary{flex:0 0 auto;margin:0;padding:12px 16px;
+  color:#e2e8f0;font-size:14px;background:#111c2e}
+.bridge-folder-inventory-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;
+  overscroll-behavior:contain;padding:6px 12px}
+.bridge-folder-inventory-entry{margin:0;padding:8px 4px;overflow-wrap:anywhere;
+  border-bottom:1px solid #ffffff20;font-size:12px;color:#edf2fa}
+.bridge-folder-inventory-more{display:block;width:100%;min-height:50px;
+  margin:8px 0;color:#fff;background:#243b58;border-radius:10px}
+.bridge-folder-inventory-actions{display:flex;flex:0 0 auto;gap:8px;
+  padding:10px 12px;background:#111c2e}
+.bridge-folder-inventory-actions button{flex:1;min-height:52px;
+  background:#243b58;color:white;border-radius:10px;font-size:14px}
+.bridge-folder-inventory-actions button:last-child{background:#d7e9ff;color:#10223a;
+  font-weight:700}
