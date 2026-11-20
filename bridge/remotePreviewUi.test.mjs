@@ -22,8 +22,12 @@ test('preview uses authorized chunk download and local blob URL',()=>{
 });
 
 
-test('remote browser uses paged user-triggered listing and releases active previews on navigation/dispose',()=>{
+test('remote browser preserves bounded paging, lazy loads on scroll, and cleans observers',()=>{
  assert.match(source,/more\.onclick=async\(\)=>/);
+ assert.match(source,/moreObserver=new IntersectionObserver/);
+ assert.match(source,/rootMargin:'0px 0px 180px 0px'/);
+ assert.match(source,/stopObservingMore\(\)/);
+ assert.match(source,/if\(more.disabled\|\|activeDownload\|\|!more.isConnected\|\|view!==navigation\)return/);
  assert.doesNotMatch(source,/await display\(page\.nextOffset\);\s*return;/);
  assert.match(source,/const previewClosers=new Set\(\)/);
  assert.match(source,/previewClosers\.add\(dismiss\)/);
