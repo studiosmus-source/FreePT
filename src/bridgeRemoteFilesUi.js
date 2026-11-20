@@ -57,6 +57,7 @@ export function renderBridgeRemoteFiles({
   let stopThumbnails=()=>{};
   let pauseThumbnails=()=>{};
   let resumeThumbnails=()=>{};
+  let resumePausedFolderScan=()=>{};
   const previewClosers=new Set();
   const setBridgeBusy=value=>{host.dataset.bridgeBusy=value?'true':'false';};
   setBridgeBusy(false);
@@ -117,6 +118,16 @@ export function renderBridgeRemoteFiles({
       return 'Connessione al Bridge temporaneamente non disponibile: riprova.';
     if(code==='bridge_request_failed')
       return 'Richiesta non riuscita. Puoi riprovare senza perdere le voci già caricate.';
+    if(code==='bridge_device_unavailable')
+      return 'Il dispositivo remoto non è momentaneamente raggiungibile.';
+    if(code==='bridge_job_already_final')
+      return 'La richiesta di trasferimento è già terminata.';
+    if(code==='bridge_resource_not_found')
+      return 'File o richiesta non più disponibile, oppure accesso non autorizzato.';
+    if(code==='bridge_invalid_remote_request')
+      return 'Richiesta rifiutata dal server: dati di trasferimento non validi.';
+    if(code?.startsWith('bridge_request_rejected_'))
+      return 'Richiesta rifiutata dal server ('+code.slice(-3)+').';
     if(code==='bridge_destination_size_mismatch')
       return 'Il file salvato non corrisponde alla dimensione attesa: download non completato.';
     return code||'errore remoto';
@@ -328,6 +339,9 @@ export function renderBridgeRemoteFiles({
     closePreviews();
     pauseThumbnails();
     activeDownload=true;setBridgeBusy(true);
+    // A folder-catalogue page already in flight must not race a full scan.
+    // Its offset is retained by showDevice and resumed after the download.
+    abortActiveBrowse();
     cancel.hidden=false;
     controller=new AbortController();
     const signal=controller.signal;
@@ -402,6 +416,7 @@ export function renderBridgeRemoteFiles({
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
+      resumePausedFolderScan();
       resumeThumbnails();
     }
   };
@@ -482,6 +497,20 @@ export function renderBridgeRemoteFiles({
     const stack=[{handle:'root',name:label}];
     const lister=createBridgeRemoteFolderLister({api:bridgeClient,deviceId});
     const folderPrefetch=createBridgeFolderPrefetch();
+    let pausedPageOffset=null;
+    let pausedPageHandle=null;
+    let pausedPageNavigation=null;
+    resumePausedFolderScan=()=>{
+      if(activeDownload||pausedPageOffset===null||marker!==revision||!alive())return;
+      const current=stack[stack.length-1];
+      if(current?.handle!==pausedPageHandle||pausedPageNavigation!==navigation){
+        pausedPageOffset=null;pausedPageHandle=null;pausedPageNavigation=null;
+        return;
+      }
+      const next=pausedPageOffset;
+      pausedPageOffset=null;pausedPageHandle=null;pausedPageNavigation=null;
+      void display(next);
+    };
     // Automatic previews run ONLY for viewport-visible images. They share the
     // authenticated Bridge read protocol and never touch remote TX settings.
     const thumbnailCache=new Map();
@@ -611,14 +640,30 @@ export function renderBridgeRemoteFiles({
     let navigation=0;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
-      if(activeDownload){setStatus('Completa o annulla il download prima di navigare.');return;}
+      if(activeDownload){
+        if(offset>0){
+          pausedPageOffset=offset;
+          pausedPageHandle=stack[stack.length-1]?.handle;
+          pausedPageNavigation=navigation;
+        }
+        setStatus('Download in corso. La ricerca cartelle riprenderà alla fine.');
+        return false;
+      }
       pendingBrowse?.abort();
       const currentBrowse=new AbortController();
       pendingBrowse=currentBrowse;
       const view=++navigation;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
-      if(offset===0){stopObservingMore();stopThumbnailRows();closePreviews();browser.replaceChildren();}
+      if(offset>0){
+        pausedPageOffset=offset;
+        pausedPageHandle=current.handle;
+        pausedPageNavigation=view;
+      }
+      if(offset===0){
+        stopObservingMore();stopThumbnailRows();closePreviews();browser.replaceChildren();
+        pausedPageOffset=null;pausedPageHandle=null;pausedPageNavigation=null;
+      }
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
@@ -682,6 +727,12 @@ export function renderBridgeRemoteFiles({
           create('div',undefined,list).className='bridge-remote-files';
         }
         const list=browser.querySelector('.bridge-remote-entries');
+        if(offset>0){
+          // A page interrupted by a download can be retried directly. Remove
+          // its old load-more action so two buttons do not remain on screen.
+          for(const previous of list.querySelectorAll('.bridge-load-more'))
+            previous.remove();
+        }
         const folders=list.querySelector('.bridge-remote-folders');
         const files=list.querySelector('.bridge-remote-files');
         for(const item of page.entries){
@@ -733,6 +784,9 @@ export function renderBridgeRemoteFiles({
         // the already loaded file rows usable while discovering folders ahead
         // of them across later pages. Do not require changes on the owner TX.
         const scan=folderPrefetch.record({handle:current.handle,offset,page});
+        pausedPageOffset=scan.autoFetch?page.nextOffset:null;
+        pausedPageHandle=scan.autoFetch?current.handle:null;
+        pausedPageNavigation=scan.autoFetch?view:null;
         thumbnailsAllowed=!scan.autoFetch;
         const folderNotice=list.querySelector('.bridge-folder-discovery-status');
         if(folderNotice){
@@ -801,7 +855,14 @@ export function renderBridgeRemoteFiles({
             : 'Altri elementi disponibili: scorri per continuare.');
         return true;
       }catch(error){
-        if(currentBrowse.signal.aborted)return false;
+        if(currentBrowse.signal.aborted){
+          if(activeDownload&&offset>0){
+            pausedPageOffset=offset;
+            pausedPageHandle=current.handle;
+            pausedPageNavigation=view;
+          }
+          return false;
+        }
         setStatus(error?.message==='bridge_remote_browse_expired'
           ?'Richiesta scaduta: nessuna risposta entro il termine. Riprova da questa schermata.'
           :error?.message==='bridge_remote_browse_timeout'
