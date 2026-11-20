@@ -52,7 +52,7 @@ test('read job passes authenticated admin enqueue, TX dispatch and chunk retriev
   const claim=await f.adapter.pollDevice({deviceId:DEVICE,sessionToken:TOKEN});
   assert.equal(claim.operation,'read');assert.equal(claim.handle,HANDLE);
   assert.deepEqual(f.calls.filter(c=>c.name.startsWith('bridge_server_claim_')).map(c=>c.name),
-    ['bridge_server_claim_browse','bridge_server_claim_read']);
+    ['bridge_server_claim_list','bridge_server_claim_read']);
   const completed=await f.tx({method:'POST',path:'/bridge/tx/chunk',
     body:{deviceId:DEVICE,sessionToken:TOKEN,jobId:JOB,chunk:CHUNK}});
   assert.equal(completed.status,200);
