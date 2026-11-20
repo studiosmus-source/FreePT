@@ -5,6 +5,7 @@
  */
 import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
 import {createBridgeFolderPrefetch} from './bridgeFolderPrefetch.js';
+import {canLoadBridgeThumbnail,fetchBridgeThumbnail,compactBridgeThumbnail} from './bridgeThumbnailClient.js';
 import {downloadBridgeFolder,inspectBridgeFolder} from './bridgeFolderDownloadClient.js';
 import {downloadBridgeFile,readBridgePreviewPrefix} from './bridgeDownloadClient.js';
 import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
@@ -53,6 +54,9 @@ export function renderBridgeRemoteFiles({
   let controller=null;
   let activeDownload=false;
   let abortActiveBrowse=()=>{};
+  let stopThumbnails=()=>{};
+  let pauseThumbnails=()=>{};
+  let resumeThumbnails=()=>{};
   const previewClosers=new Set();
   const setBridgeBusy=value=>{host.dataset.bridgeBusy=value?'true':'false';};
   setBridgeBusy(false);
@@ -139,6 +143,7 @@ export function renderBridgeRemoteFiles({
   const showPreview=async(item,deviceId)=>{
     if(activeDownload||!alive())return;
     closePreviews();
+    pauseThumbnails();
     setBridgeBusy(true);
     const priorFocus=document.activeElement;
     const panel=create('section',undefined,document.body);
@@ -170,7 +175,7 @@ export function renderBridgeRemoteFiles({
       document.removeEventListener('keydown',onKeyDown);
       panel.remove();
       previewClosers.delete(dismiss);
-      if(!activeDownload)setBridgeBusy(false);
+      if(!activeDownload){setBridgeBusy(false);resumeThumbnails();}
       if(priorFocus?.isConnected)priorFocus.focus();
     };
     const onKeyDown=event=>{
@@ -319,6 +324,7 @@ export function renderBridgeRemoteFiles({
     const isFolder=root||item.directory;
     if(!isFolder&&!confirm('Scaricare '+title+' nella cartella scelta?'))return;
     closePreviews();
+    pauseThumbnails();
     activeDownload=true;setBridgeBusy(true);
     cancel.hidden=false;
     controller=new AbortController();
@@ -394,6 +400,7 @@ export function renderBridgeRemoteFiles({
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
+      resumeThumbnails();
     }
   };
   cancel.onclick=()=>{controller?.abort();setStatus('Interruzione richiesta…')};
@@ -416,6 +423,7 @@ export function renderBridgeRemoteFiles({
   async function fetchListDevices(){
     if(!alive())return;
     abortActiveBrowse();
+    stopThumbnails();
     const marker=++revision;
     closePreviews();
     clearPreviewCache();
@@ -463,6 +471,7 @@ export function renderBridgeRemoteFiles({
     if(openingDeviceId===deviceId)return;
     openingDeviceId=deviceId;
     abortActiveBrowse();
+    stopThumbnails();
     const marker=++revision;
     let pendingBrowse=null;
     abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
@@ -471,6 +480,125 @@ export function renderBridgeRemoteFiles({
     const stack=[{handle:'root',name:label}];
     const lister=createBridgeRemoteFolderLister({api:bridgeClient,deviceId});
     const folderPrefetch=createBridgeFolderPrefetch();
+    // Automatic previews run ONLY for viewport-visible images. They share the
+    // authenticated Bridge read protocol and never touch remote TX settings.
+    const thumbnailCache=new Map();
+    let thumbnailCacheBytes=0;
+    const THUMBNAIL_CACHE_BYTES=12*1024*1024;
+    const thumbnailRows=new Map();
+    let thumbnailObserver=null;
+    let thumbnailAbort=null;
+    let thumbnailActive=null;
+    let thumbnailGeneration=0;
+    let thumbnailsAllowed=false;
+    const rememberThumbnail=(key,blob)=>{
+      if(blob.size>THUMBNAIL_CACHE_BYTES)return;
+      const previous=thumbnailCache.get(key);
+      if(previous)thumbnailCacheBytes-=previous.size;
+      thumbnailCache.delete(key);
+      while(thumbnailCacheBytes+blob.size>THUMBNAIL_CACHE_BYTES||
+            thumbnailCache.size>=40){
+        const oldest=thumbnailCache.keys().next().value;
+        if(oldest===undefined)break;
+        thumbnailCacheBytes-=thumbnailCache.get(oldest).size;
+        thumbnailCache.delete(oldest);
+      }
+      thumbnailCache.set(key,blob);
+      thumbnailCacheBytes+=blob.size;
+    };
+    const releaseThumbnail=row=>{
+      if(row.url){URL.revokeObjectURL(row.url);row.url=null;}
+      row.img.removeAttribute('src');
+      row.img.hidden=true;
+      row.icon.hidden=false;
+    };
+    const stopThumbnailRows=()=>{
+      thumbnailGeneration++;
+      thumbnailAbort?.abort();
+      thumbnailAbort=null;
+      thumbnailActive=null;
+      thumbnailObserver?.disconnect();
+      thumbnailObserver=null;
+      for(const row of thumbnailRows.values())releaseThumbnail(row);
+      thumbnailRows.clear();
+      thumbnailsAllowed=false;
+    };
+    stopThumbnails=()=>{
+      stopThumbnailRows();
+      thumbnailCache.clear();
+      thumbnailCacheBytes=0;
+    };
+    pauseThumbnails=()=>{
+      if(thumbnailActive)thumbnailActive.attempted=false;
+      thumbnailAbort?.abort();
+    };
+    const showThumbnail=(row,blob)=>{
+      if(!row.element.isConnected||!row.visible||!alive()||marker!==revision)return;
+      releaseThumbnail(row);
+      row.url=URL.createObjectURL(blob);
+      row.img.src=row.url;
+      row.img.hidden=false;
+      row.icon.hidden=true;
+    };
+    const startVisibleThumbnail=()=>{
+      if(!thumbnailsAllowed||thumbnailActive||pendingBrowse||activeDownload||
+         !alive()||marker!==revision)return;
+      const row=[...thumbnailRows.values()].find(item=>
+        item.visible&&!item.attempted&&item.element.isConnected);
+      if(!row)return;
+      row.attempted=true;
+      thumbnailActive=row;
+      const generation=thumbnailGeneration;
+      const abort=new AbortController();
+      thumbnailAbort=abort;
+      void (async()=>{
+        try{
+          let blob=thumbnailCache.get(row.key);
+          if(!blob){
+            blob=await fetchBridgeThumbnail({
+              api:bridgeClient,deviceId,item:row.item,signal:abort.signal
+            });
+            if(!blob||abort.signal.aborted||generation!==thumbnailGeneration)return;
+            blob=await compactBridgeThumbnail(blob);
+            if(abort.signal.aborted||generation!==thumbnailGeneration)return;
+            rememberThumbnail(row.key,blob);
+          }
+          if(abort.signal.aborted||generation!==thumbnailGeneration)return;
+          showThumbnail(row,blob);
+        }catch{
+          // Optional thumbnails cannot interrupt the file browser.
+        }finally{
+          if(thumbnailActive===row){
+            thumbnailActive=null;
+            thumbnailAbort=null;
+          }
+          if(generation===thumbnailGeneration)startVisibleThumbnail();
+        }
+      })();
+    };
+    resumeThumbnails=startVisibleThumbnail;
+    const trackThumbnail=(element,item,img,icon)=>{
+      if(typeof IntersectionObserver!=='function')return;
+      if(!thumbnailObserver){
+        thumbnailObserver=new IntersectionObserver(entries=>{
+          for(const entry of entries){
+            const row=thumbnailRows.get(entry.target);
+            if(!row)continue;
+            row.visible=entry.isIntersecting;
+            if(!row.visible){
+              if(thumbnailActive===row)thumbnailAbort?.abort();
+              if(row.url){releaseThumbnail(row);row.attempted=false;}
+            }
+          }
+          startVisibleThumbnail();
+        },{root:null,rootMargin:'0px 0px 60px 0px'});
+      }
+      const row={element,item,img,icon,visible:false,attempted:false,url:null,
+        key:[deviceId,item.handle,item.size,item.mime].join('|')};
+      thumbnailRows.set(element,row);
+      thumbnailObserver.observe(element);
+    };
+
     const history=()=>stack.map(x=>x.name).join(' / ');
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
@@ -488,7 +616,7 @@ export function renderBridgeRemoteFiles({
       const view=++navigation;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
-      if(offset===0){stopObservingMore();closePreviews();browser.replaceChildren();}
+      if(offset===0){stopObservingMore();stopThumbnailRows();closePreviews();browser.replaceChildren();}
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
@@ -561,9 +689,22 @@ export function renderBridgeRemoteFiles({
           line.className='bridge-entry';
           const hidden=item.name.startsWith('.');
           line.dataset.bridgeHidden=hidden?'true':'false';
-          const primary=create('button',(item.directory?'📁 ':'📄 ')+item.name,line);
+          const canThumbnail=canLoadBridgeThumbnail(item);
+          const primary=create('button',canThumbnail?undefined:
+            (item.directory?'📁 ':'📄 ')+item.name,line);
           primary.className='bridge-entry-primary';
           primary.type='button';
+          if(canThumbnail){
+            primary.classList.add('bridge-entry-photo-button');
+            const icon=create('span','🖼️',primary);
+            icon.className='bridge-entry-photo-icon';
+            const img=create('img',undefined,primary);
+            img.className='bridge-entry-photo-thumb';
+            img.alt='';img.hidden=true;
+            const name=create('span',item.name,primary);
+            name.className='bridge-entry-photo-name';
+            trackThumbnail(line,item,img,icon);
+          }
           if(hidden){
             const marker=create('small','nascosto',line);
             marker.className='bridge-hidden-label';
@@ -590,6 +731,7 @@ export function renderBridgeRemoteFiles({
         // the already loaded file rows usable while discovering folders ahead
         // of them across later pages. Do not require changes on the owner TX.
         const scan=folderPrefetch.record({handle:current.handle,offset,page});
+        thumbnailsAllowed=!scan.autoFetch;
         const folderNotice=list.querySelector('.bridge-folder-discovery-status');
         if(folderNotice){
           folderNotice.hidden=!scan.pending;
@@ -666,6 +808,7 @@ export function renderBridgeRemoteFiles({
         return false;
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
+        startVisibleThumbnail();
       }
     }
     try{await display();}
@@ -682,6 +825,7 @@ export function renderBridgeRemoteFiles({
     controller?.abort();
     abortActiveBrowse();
     stopObservingMore();
+    stopThumbnails();
     closePreviews();
     clearPreviewCache();
     setBridgeBusy(false);
