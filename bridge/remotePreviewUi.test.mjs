@@ -97,6 +97,15 @@ test('browser names dot-hidden items and distinguishes partial lists from finish
  assert.match(source,/Fine elenco trasmesso dal telefono/);
  assert.match(styles,/\.bridge-folder-completeness/);
 });
+test('repeated File tab and rapid Refresh do not create duplicate root jobs',()=>{
+ const main=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ assert.match(main,/panel\.dataset\.bridgeOwnerId===user\.id&&typeof chatFilesCleanup==='function'/);
+ assert.match(source,/if\(!alive\(\)\|\|listingDevices\)return/);
+ assert.match(source,/refresh\.disabled=true/);
+ assert.match(source,/finally\{listingDevices=false;refresh\.disabled=false;\}/);
+ assert.match(source,/if\(openingDeviceId===deviceId\)return/);
+ assert.match(source,/finally\{if\(openingDeviceId===deviceId\)openingDeviceId=null;\}/);
+});
 test('remote browser preserves bounded paging, lazy loads on scroll, and cleans observers',()=>{
  assert.match(source,/more\.onclick=async\(\)=>/);
  assert.match(source,/moreObserver=new IntersectionObserver/);
