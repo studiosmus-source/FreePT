@@ -250,24 +250,29 @@ export function renderBridgeRemoteFiles({
     scroller.className='bridge-folder-inventory-scroll';
     const list=create('div',undefined,scroller);
     list.className='bridge-folder-inventory-entries';
+    // Sort the already-verified in-memory manifest only for presentation:
+    // directories first, then files, each by full path. Transfer order is unchanged.
+    const inventoryItems=[...manifest].sort((a,b)=>
+      Number(b.directory)-Number(a.directory)||
+      a.path.join('/').localeCompare(b.path.join('/'),'it',{sensitivity:'base'}));
     const more=create('button','Mostra altre voci',scroller);
     more.type='button';more.className='bridge-folder-inventory-more';
     let shown=0,done=false;
     const showNext=()=>{
-      const finish=Math.min(shown+120,manifest.length);
+      const finish=Math.min(shown+120,inventoryItems.length);
       const fragment=document.createDocumentFragment();
       while(shown<finish){
-        const entry=manifest[shown++];
+        const entry=inventoryItems[shown++];
         const line=create('p',(entry.directory?'📁 ':'📄 ')+
           entry.path.join('/')+
           (entry.path.some(x=>x.startsWith('.'))?' · nascosto':''),fragment);
         line.className='bridge-folder-inventory-entry';
       }
       list.appendChild(fragment);
-      more.hidden=shown>=manifest.length;
+      more.hidden=shown>=inventoryItems.length;
       overview.textContent=summary.files+' file · '+summary.directories+
         ' sottocartelle · '+summary.hidden+' elementi nascosti · '+
-        shown+'/'+manifest.length+' voci visualizzate';
+        shown+'/'+inventoryItems.length+' voci visualizzate';
     };
     more.onclick=showNext;
     scroller.addEventListener('scroll',()=>{
@@ -509,11 +514,24 @@ export function renderBridgeRemoteFiles({
           };
           const completeness=create('p','',browser);
           completeness.className='bridge-folder-completeness';
-          create('div',undefined,browser).className='bridge-remote-entries';
+          const list=create('div',undefined,browser);
+          list.className='bridge-remote-entries';
+          const foldersTitle=create('h4','Cartelle',list);
+          foldersTitle.className='bridge-list-section-heading';
+          foldersTitle.hidden=true;
+          create('div',undefined,list).className='bridge-remote-folders';
+          const filesTitle=create('h4','File',list);
+          filesTitle.className='bridge-list-section-heading';
+          filesTitle.hidden=true;
+          create('div',undefined,list).className='bridge-remote-files';
         }
         const list=browser.querySelector('.bridge-remote-entries');
+        const folders=list.querySelector('.bridge-remote-folders');
+        const files=list.querySelector('.bridge-remote-files');
         for(const item of page.entries){
-          const line=create('div',undefined,list);
+          const target=item.directory?folders:files;
+          target.previousElementSibling.hidden=false;
+          const line=create('div',undefined,target);
           line.className='bridge-entry';
           const hidden=item.name.startsWith('.');
           line.dataset.bridgeHidden=hidden?'true':'false';
