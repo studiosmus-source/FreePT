@@ -134,8 +134,12 @@ public final class BridgeTxJobService extends JobService {
         connected=true;
         int idle=0,completed=0;
         boolean serviced=false;
-        // Do not abandon a folder transfer between 256 KiB requests.
-        // The worker is still bounded; Android can interrupt it normally.
+        // A burst may need time for the receiver to verify/write a file,
+        // rescan a folder, or enqueue the next 256 KiB chunk. Keep a bounded
+        // post-work window without turning idle standby into constant polling.
+        // Android remains free to stop this job at any time.
+        final long unusedWakeGraceMs=4500L;
+        final long betweenRequestsGraceMs=75000L;
         long deadline=SystemClock.elapsedRealtime()+240000;
         long lastUseful=SystemClock.elapsedRealtime();
         while(running.get()&&!Thread.currentThread().isInterrupted()&&
@@ -148,12 +152,14 @@ public final class BridgeTxJobService extends JobService {
                 lastUseful=SystemClock.elapsedRealtime();
             }else{
                 idle++;
-                // An unused wake returns promptly to protect battery.
-                // After useful work, allow inter-file writes/round trips
-                // before giving up the active authenticated connection.
-                long grace=serviced?20000L:4500L;
+                // Never burn battery waiting for requests before any job.
+                // After a real job, keep the connection available across
+                // receiver-side SAF writes and the next folder request.
+                long grace=serviced?betweenRequestsGraceMs:unusedWakeGraceMs;
                 if(SystemClock.elapsedRealtime()-lastUseful>=grace)break;
-                Thread.sleep(idle<=3?850:2000);
+                // Back off while idle instead of polling every 850 ms.
+                // A short follow-up window preserves responsiveness for chunks.
+                Thread.sleep(idle<=3?850:4000);
             }
         }
     }
