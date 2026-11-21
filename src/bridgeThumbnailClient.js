@@ -71,7 +71,12 @@ export async function fetchBridgeThumbnail({api,deviceId,item,signal}={}){
   if(!canLoadBridgeThumbnail(item)||!api||typeof deviceId!=='string')
     throw Error('bridge_thumbnail_invalid_request');
   if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-  if(typeof api.requestThumbnail==='function'&&typeof api.getThumbnail==='function'&&
+  // The existing authenticated READ transport is already exercised by
+  // manual downloads. Use it directly for small photos: avoid relying on a
+  // thumbnail-only endpoint whose queue may be unreachable on older TX builds.
+  // Big originals still use native bounded JPEG / EXIF, never a full download.
+  if(item.size>BRIDGE_AUTO_THUMB_MAX_BYTES&&
+     typeof api.requestThumbnail==='function'&&typeof api.getThumbnail==='function'&&
      typeof api.getStatus==='function'){
     try{return await nativeThumbnail({api,deviceId,item,signal});}
     catch(error){
