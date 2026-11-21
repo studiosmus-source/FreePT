@@ -7,6 +7,7 @@ on:
       - feature/bridge-chunk-receiver-20261108
       - work/unified-verified-20261119
       - fix/bridge-all-accessible-folders-20261120
+      - fix/bridge-transfer-resume-20261121
     paths:
       - 'android-bridge/**'
       - 'bridge/**'
