@@ -58,6 +58,7 @@ if any(name in source for name in ("BridgeFilesPlugin.class",
                                       "BridgeRxKeysPlugin.class",
                                       "BridgeAllFilesPlugin.class",
                                       "BridgeTxControlPlugin.class",
+                                      "BridgeWakeTokenPlugin.class",
                                       "FreePTUpdaterPlugin.class",
                                       "FreePTAdminSharePlugin.class")):
     raise SystemExit("Plugin already registered: refuse stacking patches")
@@ -78,6 +79,7 @@ source = source.replace(
     registerPlugin(BridgeRxKeysPlugin.class);
     registerPlugin(BridgeAllFilesPlugin.class);
     registerPlugin(BridgeTxControlPlugin.class);
+    registerPlugin(BridgeWakeTokenPlugin.class);
     registerPlugin(FreePTUpdaterPlugin.class);
     registerPlugin(FreePTAdminSharePlugin.class);
     registerPlugin(BridgeBootstrapPlugin.class);
@@ -91,7 +93,7 @@ required_templates = [
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
     "BridgeTxProtocol", "BridgeTxJobService", "BridgeTxMessagingService",
-    "BridgeNativeThumbnailCore",
+    "BridgeNativeThumbnailCore", "BridgeWakeTokenPlugin",
     "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"
 ]
 for name in required_templates:
@@ -162,6 +164,7 @@ manifest.write_text(xml.replace("<application", permission + "\n    <application
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
              "BridgeTxControlPlugin", "BridgeTxBootReceiver", "BridgeTxProtocol",
              "BridgeTxJobService", "BridgeTxMessagingService", "BridgeNativeThumbnailCore",
+             "BridgeWakeTokenPlugin",
              "FreePTUpdaterPlugin",
              "FreePTAdminSharePlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
