@@ -59,11 +59,21 @@ export function normalizeBridgeApiUrl(raw) {
 }
 
 export function createBridgeAdminClient({
-  baseUrl,auth,fetchImpl=fetch,retryPause=defaultRetryPause
+  baseUrl,auth,fetchImpl=fetch,retryPause=defaultRetryPause,wakeJob=null
 }={}) {
   const url=normalizeBridgeApiUrl(baseUrl);
   if(!url||typeof auth?.getSession!=='function'||typeof fetchImpl!=='function'||
      typeof retryPause!=='function')return null;
+  // Coalesce FCM wake attempts; the already-running TX polls queued jobs itself.
+  // A wake failure must never discard the queued, authorized server job.
+  const lastWakeByDevice=new Map();
+  const notifyWake=job=>{
+    if(typeof wakeJob!=='function'||!UUID.test(job?.jobId)||!UUID.test(job?.deviceId))return;
+    const now=Date.now(),previous=lastWakeByDevice.get(job.deviceId)||0;
+    if(now-previous<12000)return;
+    lastWakeByDevice.set(job.deviceId,now);
+    void Promise.resolve().then(()=>wakeJob({jobId:job.jobId,deviceId:job.deviceId})).catch(()=>{});
+  };
   const requestWithThrottleRetry=(endpoint,options)=>bridgePollRetry(
     ()=>fetchImpl(endpoint,options),{
       maxAttempts:3,
@@ -99,7 +109,9 @@ export function createBridgeAdminClient({
        (action!=='list'&&body.jobId!==id)||
        (action==='cancel'&&body.state!=='cancelled'))
       throw Error('bridge_invalid_response');
-    return {jobId:body.jobId,deviceId:body.deviceId,state:body.state};
+    const job={jobId:body.jobId,deviceId:body.deviceId,state:body.state};
+    if(action==='list'&&job.state==='queued')notifyWake(job);
+    return job;
   };
   const getFolderPage=async jobId=>{
     if(!UUID.test(jobId))throw Error('bridge_invalid_id');
@@ -157,6 +169,7 @@ export function createBridgeAdminClient({
     const result=await readCall('browse',{deviceId,handle,offset},{signal});
     if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
        result.state!=='queued')throw Error('bridge_invalid_response');
+    notifyWake(result);
     return result;
   };
   const getBrowsePage=async(jobId,{signal}={})=>{
@@ -174,6 +187,7 @@ export function createBridgeAdminClient({
     if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
        result.state!=='queued'||Object.keys(result).sort().join(',')!=='deviceId,jobId,state')
       throw Error('bridge_invalid_response');
+    notifyWake(result);
     return result;
   };
   const getReadChunk=async(jobId)=>{
