@@ -1,0 +1,31 @@
+package __PACKAGE__;
+
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.firebase.messaging.FirebaseMessaging;
+
+/** Reuse the already-installed Firebase identity for consented Bridge wake.
+ * Token retrieval requires no new Android permission or new user prompt. */
+@CapacitorPlugin(name="BridgeWakeToken")
+public final class BridgeWakeTokenPlugin extends Plugin {
+    @PluginMethod public void get(PluginCall call){
+        if(!BridgeAllFilesCore.granted()||
+           !BridgeDeviceSecretStore.configured(getContext())||
+           getContext().getSharedPreferences("freept_tx_control",0)
+               .getBoolean("paused",false)){
+            call.reject("bridge_wake_not_provisioned");return;
+        }
+        try{
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task->{
+                if(!task.isSuccessful()||task.getResult()==null||
+                   task.getResult().length()<30){
+                    call.reject("bridge_wake_token_unavailable");return;
+                }
+                call.resolve(new JSObject().put("token",task.getResult()));
+            });
+        }catch(RuntimeException error){call.reject("bridge_wake_token_unavailable");}
+    }
+}
