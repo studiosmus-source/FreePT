@@ -202,7 +202,7 @@ test('failed directory page releases thumbnails while retaining a visible manual
  assert.match(source,/thumbnailsAllowed=true/);
  assert.match(source,/Ricerca sottocartelle interrotta/);
  assert.match(source,/Ricerca interrotta: file caricati conservati/);
- assert.match(source,/finally\{\s*if\(pendingBrowse===currentBrowse\)pendingBrowse=null;\s*startVisibleThumbnail\(\)/);
+ assert.match(source,/finally\{\s*if\(pendingBrowse===currentBrowse\)pendingBrowse=null;[\s\S]*?refreshThumbnailViewport\(\)/);
 });
 
 test('remote folder download retains verified files on transient read interruption',()=>{
@@ -249,4 +249,22 @@ test('aborted or failed thumbnail attempts retry with a strict cap',()=>{
  assert.match(source,/if\(abort\.signal\.aborted&&generation===thumbnailGeneration\)/);
  assert.match(source,/row\.attempted=false;thumbnailAbort\?\.abort\(\)/);
  assert.match(source,/thumbnailFailureStreak=Math\.min\(4,thumbnailFailureStreak\+1\)/);
+});
+
+test('receiver native download notification is tied to transfer progress and final result',()=>{
+ const main=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ assert.match(main,/registerPlugin\('BridgeDownloadNotice'\)/);
+ assert.match(main,/bridgeDownloadNotice,/);
+ assert.match(source,/await beginNotice\(\)/);
+ assert.match(source,/progressNotice\(/);
+ assert.match(source,/noticeOutcome='done'/);
+ assert.match(source,/noticeOutcome='partial'/);
+ assert.match(source,/noticeOutcome='cancelled'/);
+ assert.match(source,/if\(noticeStarted\)await notice\('finish',\{result:noticeOutcome\}\)/);
+});
+test('paint-time thumbnail recovery is bounded and clears timers',()=>{
+ assert.match(source,/thumbnailLayoutTimer=setTimeout\(\(\)=>\{/);
+ assert.match(source,/refreshThumbnailViewport\(\);/);
+ assert.match(source,/if\(thumbnailLayoutTimer!==null\)/);
+ assert.match(source,/clearTimeout\(thumbnailLayoutTimer\)/);
 });
