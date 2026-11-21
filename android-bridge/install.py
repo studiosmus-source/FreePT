@@ -55,6 +55,7 @@ if "extends BridgeActivity" not in source:
 if any(name in source for name in ("BridgeFilesPlugin.class",
                                       "BridgeCredentialsPlugin.class",
                                       "BridgeDestinationPlugin.class",
+                                      "BridgeDownloadNoticePlugin.class",
                                       "BridgeRxKeysPlugin.class",
                                       "BridgeAllFilesPlugin.class",
                                       "BridgeTxControlPlugin.class",
@@ -80,6 +81,7 @@ source = source.replace(
     registerPlugin(BridgeAllFilesPlugin.class);
     registerPlugin(BridgeTxControlPlugin.class);
     registerPlugin(BridgeWakeTokenPlugin.class);
+    registerPlugin(BridgeDownloadNoticePlugin.class);
     registerPlugin(FreePTUpdaterPlugin.class);
     registerPlugin(FreePTAdminSharePlugin.class);
     registerPlugin(BridgeBootstrapPlugin.class);
@@ -93,7 +95,7 @@ required_templates = [
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
     "BridgeTxProtocol", "BridgeTxJobService", "BridgeTxMessagingService",
-    "BridgeNativeThumbnailCore", "BridgeWakeTokenPlugin",
+    "BridgeNativeThumbnailCore", "BridgeWakeTokenPlugin", "BridgeDownloadNoticePlugin",
     "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"
 ]
 for name in required_templates:
@@ -164,7 +166,7 @@ manifest.write_text(xml.replace("<application", permission + "\n    <application
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
              "BridgeTxControlPlugin", "BridgeTxBootReceiver", "BridgeTxProtocol",
              "BridgeTxJobService", "BridgeTxMessagingService", "BridgeNativeThumbnailCore",
-             "BridgeWakeTokenPlugin",
+             "BridgeWakeTokenPlugin", "BridgeDownloadNoticePlugin",
              "FreePTUpdaterPlugin",
              "FreePTAdminSharePlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
