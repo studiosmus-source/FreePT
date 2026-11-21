@@ -70,3 +70,14 @@ test('native foreground TX polls quickly after pages and bytes but limits idle r
   assert.match(service,/if\(!connectedOnce\)break/);
   assert.doesNotMatch(service,/else Thread\.sleep\(2000\)/);
 });
+
+test('pre-account bootstrap and signed 300k fixture are still executable as bounded jobs',()=>{
+ const job=read('android-bridge/BridgeTxJobService.java.template');
+ const bootstrap=read('android-bridge/BridgeBootstrapCore.java.template');
+ const plugin=read('android-bridge/BridgeBootstrapPlugin.java.template');
+ assert.match(job,/BridgeBootstrapCore\.configured\(this\)/);
+ assert.match(job,/BridgeBootstrapCore\.tick\(this\)/);
+ assert.match(bootstrap,/BridgeTxJobService\.isScheduled\(c\)/);
+ assert.match(plugin,/BridgeTxJobService\.isScheduled\(getContext\(\)\)/);
+ assert.doesNotMatch(plugin,/startForegroundService/);
+});
