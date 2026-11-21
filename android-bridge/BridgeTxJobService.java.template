@@ -19,9 +19,31 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class BridgeTxJobService extends JobService {
     static final int JOB_ID=4752;
+    static final int PERIODIC_JOB_ID=4753;
+    private static final long PERIOD_MS=15L*60L*1000L;
     private final AtomicBoolean running=new AtomicBoolean(false);
     private volatile Thread worker;
     private volatile java.net.HttpURLConnection connection;
+
+    static void schedulePeriodic(Context context){
+        if(context==null||!BridgeAllFilesCore.granted()||
+           !BridgeDeviceSecretStore.configured(context)||
+           context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))
+            return;
+        JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        if(scheduler==null||scheduler.getPendingJob(PERIODIC_JOB_ID)!=null)return;
+        try{
+            JobInfo periodic=new JobInfo.Builder(PERIODIC_JOB_ID,
+              new ComponentName(context,BridgeTxJobService.class))
+              .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+              .setPeriodic(PERIOD_MS,5L*60L*1000L)
+              .setPersisted(true)
+              .build();
+            scheduler.schedule(periodic);
+        }catch(RuntimeException ignored){
+            // The next app open, boot or FCM request can retry safely.
+        }
+    }
 
     static void schedule(Context context,boolean highPriority){
         if(context==null||!BridgeAllFilesCore.granted()||
@@ -30,6 +52,7 @@ public final class BridgeTxJobService extends JobService {
             return;
         JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if(scheduler==null)return;
+        schedulePeriodic(context);
         JobInfo.Builder request=new JobInfo.Builder(JOB_ID,
             new ComponentName(context,BridgeTxJobService.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY);
