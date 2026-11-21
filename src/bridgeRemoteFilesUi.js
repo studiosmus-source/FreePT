@@ -628,13 +628,16 @@ export function renderBridgeRemoteFiles({
           // Keep expensive read jobs secondary to navigation and downloads.
           thumbnailNextAt=Date.now()+2000;
         }catch{
-          // One remote image failure must not trigger a storm of subsequent
-          // read jobs. Back off progressively without changing TX or grants.
+          // Bound retries per visible image to avoid flooding the remote TX.
           if(!abort.signal.aborted){
+            row.failures=(row.failures||0)+1;
+            if(row.failures<3)row.attempted=false;
             thumbnailFailureStreak=Math.min(4,thumbnailFailureStreak+1);
             thumbnailNextAt=Date.now()+Math.min(30000,4000*thumbnailFailureStreak);
           }
         }finally{
+          if(abort.signal.aborted&&generation===thumbnailGeneration)
+            row.attempted=false;
           if(thumbnailActive===row){
             thumbnailActive=null;
             thumbnailAbort=null;
@@ -655,7 +658,10 @@ export function renderBridgeRemoteFiles({
         const bounds=row.element.getBoundingClientRect();
         const visible=bounds.bottom>-60&&bounds.top<height+60&&
           bounds.right>0&&bounds.left<width;
-        if(!visible&&row.url){releaseThumbnail(row);row.attempted=false;}
+        if(!visible){
+          if(thumbnailActive===row){row.attempted=false;thumbnailAbort?.abort();}
+          if(row.url){releaseThumbnail(row);row.attempted=false;}
+        }
         row.visible=visible;
       }
       startVisibleThumbnail();
@@ -675,7 +681,7 @@ export function renderBridgeRemoteFiles({
             if(!row)continue;
             row.visible=entry.isIntersecting;
             if(!row.visible){
-              if(thumbnailActive===row)thumbnailAbort?.abort();
+              if(thumbnailActive===row){row.attempted=false;thumbnailAbort?.abort();}
               if(row.url){releaseThumbnail(row);row.attempted=false;}
             }
           }
