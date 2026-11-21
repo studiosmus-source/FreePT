@@ -35,7 +35,7 @@ public class BridgeTxControlPlugin extends Plugin {
             call.reject("bridge_tx_start_failed");return;
         }
         BridgeTxJobService.schedulePeriodic(getContext());
-        BridgeTxJobService.schedule(getContext(),false);
+        BridgeTxJobService.schedule(getContext(),true);
         JSObject out=new JSObject();
         out.put("requested",BridgeTxJobService.isScheduled(getContext()));
         call.resolve(out);
