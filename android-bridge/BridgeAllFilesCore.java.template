@@ -250,4 +250,16 @@ final class BridgeAllFilesCore {
             return out;
         }
     }
+
+    /** Same verified, opaque file handle used by regular Bridge reads.
+     * Pixel decoding is isolated in BridgeNativeThumbnailCore. */
+    static synchronized File thumbnailSource(String handle)throws Exception{
+        if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
+        Entry entry=entries.get(handle);
+        if(entry==null||!currentVolume(entry)||!entry.file.isFile()||
+           !valid(entry.file,entry.volumeRoot)||!entry.file.canRead())
+            throw new SecurityException("invalid_thumbnail_handle");
+        return entry.file;
+    }
+
 }

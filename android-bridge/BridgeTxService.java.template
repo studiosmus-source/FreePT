@@ -49,6 +49,7 @@ public final class BridgeTxService extends Service {
             if(!validEndpoint(endpoint)){stopSelf();return START_NOT_STICKY;}
         }catch(Exception error){stopSelf();return START_NOT_STICKY;}
         showForeground();
+        BridgeTxJobService.schedulePeriodic(this);
         if(running.compareAndSet(false,true)){
             worker=new Thread(this::runWorker,"freept-bridge-tx");
             worker.start();
@@ -95,85 +96,13 @@ public final class BridgeTxService extends Service {
             "bridge_endpoint","string",getPackageName()));
     }
     private JSONObject post(String route,JSONObject body)throws Exception{
-        HttpURLConnection conn=(HttpURLConnection)new URL(endpoint()+route).openConnection();
-        connection=conn;
-        try{
-            conn.setRequestMethod("POST");
-            conn.setConnectTimeout(12000);conn.setReadTimeout(32000);
-            conn.setInstanceFollowRedirects(false);
-            conn.setDoOutput(true);
-            conn.setRequestProperty("Content-Type","application/json");
-            conn.setRequestProperty("Accept","application/json");
-            byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);
-            if(bytes.length>("/bridge/tx/chunk".equals(route)?360000:48000))throw new IllegalArgumentException("payload_too_large");
-            try(OutputStream out=conn.getOutputStream()){out.write(bytes);}
-            int code=conn.getResponseCode();
-            if(code==401||code==403)throw new SecurityException("tx_denied");
-            if(code<200||code>=300){
-                // Preserve the HTTP category for diagnostics without exposing response bodies.
-                Log.w("FreePTBridgeTX","request_failed route="+route+" status="+code);
-                throw new java.io.IOException("backend_http_"+code);
-            }
-            try(BufferedReader reader=new BufferedReader(new InputStreamReader(
-                    conn.getInputStream(),StandardCharsets.UTF_8))){
-                char[] block=new char[2048];
-                StringBuilder result=new StringBuilder();
-                int count;
-                while((count=reader.read(block))!=-1){
-                    if(result.length()+count>65536)throw new java.io.IOException("response_too_large");
-                    result.append(block,0,count);
-                }
-                return new JSONObject(result.toString());
-            }
-        }finally{
-            connection=null;
-            conn.disconnect();
-        }
+        return BridgeTxProtocol.post(endpoint(),route,body,conn->connection=conn);
     }
     private JSONObject payload(String deviceId,String sessionToken)throws Exception{
-        return new JSONObject().put("deviceId",deviceId)
-            .put("sessionToken",sessionToken);
+        return BridgeTxProtocol.payload(deviceId,sessionToken);
     }
     private void executeJob(JSONObject item,String id,String session)throws Exception{
-        String op=item.optString("operation","");
-        String jobId=item.optString("jobId","");
-        if(!jobId.matches("(?i)^[0-9a-f-]{36}$")||
-           !id.equals(item.optString("deviceId")))throw new SecurityException("wrong_device");
-        JSONObject result=payload(id,session).put("jobId",jobId);
-        String route;
-        switch(op){
-            case "list":{
-                JSONObject page=BridgeAllFilesCore.list("root",0);
-                if(page.getInt("nextOffset")!=-1)
-                    throw new IllegalStateException("catalogue_page_required");
-                route="/bridge/tx/folder";
-                result.put("entries",page.getJSONArray("entries"));
-                break;
-            }
-            case "browse":{
-                String handle=item.getString("handle");
-                int offset=item.getInt("offset");
-                JSONObject page=BridgeAllFilesCore.list(handle,offset);
-                result.put("entries",page.getJSONArray("entries"));
-                result.put("nextOffset",page.getInt("nextOffset"));
-                route="/bridge/tx/browse";
-                break;
-            }
-            case "read":{
-                String handle=item.getString("handle");
-                long offset=item.getLong("offset");
-                int length=item.getInt("length");
-                result.put("chunk",BridgeAllFilesCore.read(handle,offset,length));
-                route="/bridge/tx/chunk";
-                break;
-            }
-            default: throw new SecurityException("invalid_job");
-        }
-        JSONObject response=post(route,result);
-        if(!jobId.equals(response.optString("jobId"))||
-           !id.equals(response.optString("deviceId"))||
-           !"done".equals(response.optString("state")))
-            throw new java.io.IOException("invalid_job_ack");
+        BridgeTxProtocol.executeJob(this::post,item,id,session);
     }
     private void runWorker(){
         // This is an explicitly enabled foreground dataSync service. Directory
@@ -257,6 +186,8 @@ public final class BridgeTxService extends Service {
         active=false;
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf(startId);
+        // The dataSync foreground budget is exhausted: use bounded jobs instead.
+        BridgeTxJobService.schedule(this,false);
     }
     @Override public void onDestroy(){
         running.set(false);

@@ -5,14 +5,87 @@ import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
 // per-image budget. Nothing is fetched for an off-screen catalogue entry.
 // A large JPEG may still have a usable EXIF thumbnail in its first 64 KiB.
 export const BRIDGE_AUTO_THUMB_MAX_BYTES=4*1024*1024;
-const formats=new Set(['image/jpeg','image/png','image/webp','image/gif']);
+const formats=new Set(['image/jpeg','image/png','image/webp','image/gif',
+  'image/heic','image/heif','image/bmp']);
+const imageExtension=/\.(?:jpe?g|png|webp|gif|heic|heif|bmp)$/i;
 export const canLoadBridgeThumbnail=item=>!!item&&!item.directory&&
-  formats.has(item.mime)&&Number.isSafeInteger(item.size)&&item.size>0;
+  (formats.has(item.mime)||
+   (item.mime==='application/octet-stream'&&imageExtension.test(item.name||'')))&&
+  Number.isSafeInteger(item.size)&&item.size>0;
+
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Backend/API errors in the thumbnail-only lane must not disable the existing
+// authorized read path for small images. Never downgrade on auth revocation.
+const THUMBNAIL_FALLBACK_ERRORS=new Set([
+  'bridge_resource_not_found','bridge_request_rejected_404',
+  'bridge_backend_unavailable','bridge_network_unavailable',
+  'bridge_request_failed','bridge_invalid_response',
+  'bridge_thumbnail_unavailable','bridge_thumbnail_timeout',
+  'bridge_thumbnail_invalid_result','bridge_thumbnail_invalid_response',
+  'bridge_invalid_remote_request','bridge_request_throttled'
+]);
+
+/** Native TX produces a small JPEG under the same device and grant gates.
+ * This never sends a full-sized original image for a thumbnail. */
+async function nativeThumbnail({api,deviceId,item,signal}){
+  const job=await api.requestThumbnail(deviceId,item.handle,{signal});
+  if(!job||job.deviceId!==deviceId||typeof job.jobId!=='string'||
+     job.state!=='queued')throw Error('bridge_thumbnail_invalid_job');
+  let completed=false;
+  try{
+    const started=Date.now();
+    // Native JPEG is preferred, but an unresponsive thumbnail lane must not
+    // hide otherwise readable images for a full minute. Small images have
+    // an existing size-verified read fallback under the 4 MiB ceiling.
+    const budgetMs=item.size<=BRIDGE_AUTO_THUMB_MAX_BYTES?8000:25000;
+    for(let i=0;i<26&&Date.now()-started<budgetMs;i++){
+      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+      const state=await api.getStatus(job.jobId,{signal});
+      if(state?.jobId!==job.jobId||state.deviceId!==deviceId)
+        throw Error('bridge_thumbnail_job_mismatch');
+      if(state.state==='done'){
+        const result=await api.getThumbnail(job.jobId,{signal});
+        if(!result||result.bytesRead<4||result.bytesRead>32768||result.eof!==true)
+          throw Error('bridge_thumbnail_invalid_response');
+        const binary=atob(result.base64);
+        if(binary.length!==result.bytesRead||binary.charCodeAt(0)!==255||
+           binary.charCodeAt(1)!==216||binary.charCodeAt(binary.length-2)!==255||
+           binary.charCodeAt(binary.length-1)!==217)
+          throw Error('bridge_thumbnail_invalid_jpeg');
+        const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
+        completed=true;
+        return new Blob([bytes],{type:'image/jpeg'});
+      }
+      if(state.state!=='queued'&&state.state!=='sent')
+        throw Error('bridge_thumbnail_unavailable');
+      await pause(1000);
+    }
+    throw Error('bridge_thumbnail_timeout');
+  }finally{
+    if(!completed&&typeof api.cancel==='function')
+      try{await api.cancel(job.jobId)}catch{/* no grant or job expired */}
+  }
+}
 
 export async function fetchBridgeThumbnail({api,deviceId,item,signal}={}){
   if(!canLoadBridgeThumbnail(item)||!api||typeof deviceId!=='string')
     throw Error('bridge_thumbnail_invalid_request');
   if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+  // The existing authenticated READ transport is already exercised by
+  // manual downloads. Use it directly for small photos: avoid relying on a
+  // thumbnail-only endpoint whose queue may be unreachable on older TX builds.
+  // Big originals still use native bounded JPEG / EXIF, never a full download.
+  if(item.size>BRIDGE_AUTO_THUMB_MAX_BYTES&&
+     typeof api.requestThumbnail==='function'&&typeof api.getThumbnail==='function'&&
+     typeof api.getStatus==='function'){
+    try{return await nativeThumbnail({api,deviceId,item,signal});}
+    catch(error){
+      if(signal?.aborted||error?.message==='bridge_transfer_cancelled'||
+         !THUMBNAIL_FALLBACK_ERRORS.has(error?.message))throw error;
+      // The existing, authenticated file-read protocol remains a bounded
+      // recovery path. Never request a full image above 4 MiB.
+    }
+  }
   if(item.size>BRIDGE_AUTO_THUMB_MAX_BYTES){
     if(item.mime!=='image/jpeg')return null;
     const prefix=await readBridgePreviewPrefix({

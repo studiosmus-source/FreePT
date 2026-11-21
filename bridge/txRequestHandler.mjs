@@ -14,6 +14,7 @@ const ROUTES = {
   '/bridge/tx/folder': ['deviceId', 'sessionToken', 'jobId', 'entries'],
   '/bridge/tx/chunk': ['deviceId', 'sessionToken', 'jobId', 'chunk'],
   '/bridge/tx/browse': ['deviceId','sessionToken','jobId','entries','nextOffset'],
+  '/bridge/tx/thumbnail': ['deviceId','sessionToken','jobId','chunk'],
   '/bridge/tx/disconnect': ['deviceId', 'sessionToken']
 };
 const fail = (status, code) => ({status, body:{error:code}});
@@ -73,6 +74,8 @@ export function createBridgeTxRequestHandler({
         typeof service.closeDeviceSession !== 'function') ||
         (request.path === '/bridge/tx/browse' &&
         typeof service.completeBrowsePage !== 'function') ||
+        (request.path === '/bridge/tx/thumbnail' &&
+        typeof service.completeThumbnail !== 'function') ||
         (request.path === '/bridge/tx/chunk' &&
         typeof service.completeRead !== 'function') ||
         (request.path === '/bridge/tx/folder' &&
@@ -93,6 +96,15 @@ export function createBridgeTxRequestHandler({
     if(request.path === '/bridge/tx/folder') {
       try{validateBridgeFolderPage({entries:body.entries,nextOffset:-1});}
       catch{return fail(400,'invalid_request');}
+    }
+    if(request.path === '/bridge/tx/thumbnail'){
+      try{
+        const chunk=body.chunk;
+        if(!chunk||!Number.isSafeInteger(chunk.bytesRead)||
+           chunk.bytesRead<4||chunk.bytesRead>32768||chunk.eof!==true)
+          return fail(400,'invalid_request');
+        validateBridgeFileChunk(chunk,chunk.bytesRead);
+      }catch{return fail(400,'invalid_request');}
     }
     if(request.path === '/bridge/tx/chunk'){
       try{
@@ -136,6 +148,11 @@ export function createBridgeTxRequestHandler({
         return {status:200,body:await service.completeBrowsePage({
           deviceId:body.deviceId,sessionToken:body.sessionToken,jobId:body.jobId,
           entries:body.entries,nextOffset:body.nextOffset
+        })};
+      if(request.path === '/bridge/tx/thumbnail')
+        return {status:200,body:await service.completeThumbnail({
+          deviceId:body.deviceId,sessionToken:body.sessionToken,
+          jobId:body.jobId,chunk:body.chunk
         })};
       if(request.path === '/bridge/tx/chunk')
         return {status:200,body:await service.completeRead({

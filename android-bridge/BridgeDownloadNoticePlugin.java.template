@@ -1,0 +1,83 @@
+package __PACKAGE__;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+
+/** Receiver-only local download status. Never starts a foreground TX service,
+ * stores any file metadata, or asks Android for an additional permission. */
+@CapacitorPlugin(name="BridgeDownloadNotice")
+public final class BridgeDownloadNoticePlugin extends Plugin {
+    private static final String CHANNEL="freept_downloads";
+    private static final int NOTIFICATION=4791;
+    private NotificationManager manager(){
+        return (NotificationManager)getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+    }
+    private boolean allowed(){
+        return Build.VERSION.SDK_INT<33||
+          getContext().checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+             ==PackageManager.PERMISSION_GRANTED;
+    }
+    private void channel(){
+        if(Build.VERSION.SDK_INT>=26){
+            NotificationChannel item=new NotificationChannel(CHANNEL,
+                "Download FreePT",NotificationManager.IMPORTANCE_LOW);
+            manager().createNotificationChannel(item);
+        }
+    }
+    private Notification.Builder base(String title,String message){
+        Notification.Builder builder=Build.VERSION.SDK_INT>=26?
+           new Notification.Builder(getContext(),CHANNEL):
+           new Notification.Builder(getContext());
+        int icon=getContext().getApplicationInfo().icon;
+        if(icon==0)icon=android.R.drawable.stat_sys_download;
+        builder.setSmallIcon(icon)
+           .setContentTitle(title).setContentText(message)
+           .setOnlyAlertOnce(true).setVisibility(Notification.VISIBILITY_PRIVATE);
+        return builder;
+    }
+    private void show(Notification notification){
+        if(allowed())manager().notify(NOTIFICATION,notification);
+    }
+    @PluginMethod public void begin(PluginCall call){
+        if(allowed()){
+            channel();
+            show(base("Download FreePT","Preparazione trasferimento…")
+                .setProgress(0,0,true).setOngoing(true).build());
+        }
+        call.resolve(new JSObject().put("shown",allowed()));
+    }
+    @PluginMethod public void progress(PluginCall call){
+        int percent=call.getInt("percent",-1);
+        if(percent<0||percent>100){call.reject("download_progress_invalid");return;}
+        if(allowed()){
+            channel();
+            show(base("Download FreePT",percent+"% completato")
+                .setProgress(100,percent,false).setOngoing(true).build());
+        }
+        call.resolve();
+    }
+    @PluginMethod public void finish(PluginCall call){
+        String result=call.getString("result","");
+        if(!"done".equals(result)&&!"partial".equals(result)&&
+           !"cancelled".equals(result)&&!"failed".equals(result)){
+            call.reject("download_result_invalid");return;
+        }
+        if(allowed()){
+            channel();
+            String label="done".equals(result)?"Download completato":
+                "partial".equals(result)?"Download parziale":
+                "cancelled".equals(result)?"Download interrotto":"Download non riuscito";
+            show(base("FreePT",label).setAutoCancel(true).setOngoing(false).build());
+        }else manager().cancel(NOTIFICATION);
+        call.resolve();
+    }
+}

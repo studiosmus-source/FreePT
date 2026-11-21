@@ -171,3 +171,30 @@ test('logout while permission is pending allows safe same-account re-login',asyn
   await push.init();
   assert.equal(registers,1,'fresh login should register');
 });
+
+test('native Bridge wake token survives denied chat permission without any new prompt',async()=>{
+  let user={id:'user-a'},writes=[],deletes=[],notifications=0,wakeCalls=0;
+  const push=createPushRegistration({
+    plugin:{
+      addListener:async()=>{},
+      checkPermissions:async()=>({receive:'denied'}),
+      requestPermissions:async()=>{throw Error('unexpected_new_permission_prompt')},
+      register:async()=>{notifications++}
+    },
+    wakeToken:{get:async()=>{wakeCalls++;return {token:'consented-fcm-token-for-bridge'}}},
+    db:{from:()=>({
+      upsert:async row=>{writes.push(row);return {error:null}},
+      delete:()=>({eq:(key,value)=>({eq:async(key2,value2)=>{
+        deletes.push([key,value,key2,value2]);return {error:null};
+      }})})
+    })},getApprovedUser:()=>user,onMessage:()=>{}
+  });
+  await push.init();
+  assert.equal(wakeCalls,1);
+  assert.equal(notifications,0,'normal chat notification registration stays disabled');
+  assert.equal(writes.length,1);
+  assert.equal(writes[0].token,'consented-fcm-token-for-bridge');
+  assert.equal(writes[0].user_id,'user-a');
+  await push.clear(user.id);
+  assert.deepEqual(deletes,[['token','consented-fcm-token-for-bridge','user_id','user-a']]);
+});

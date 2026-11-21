@@ -132,7 +132,7 @@ test('remote browser preserves bounded paging, lazy loads on scroll, and cleans 
  assert.match(source,/const previewClosers=new Set\(\)/);
  assert.match(source,/previewClosers\.add\(dismiss\)/);
  assert.match(source,/previewClosers\.delete\(dismiss\)/);
- assert.ok(source.includes('stopThumbnails();\n    closePreviews();'),'cleanup releases thumbnail URLs and observers');
+ assert.ok(source.includes('stopThumbnails();\n    stopThumbnailViewportListeners();\n    closePreviews();'),'cleanup releases thumbnail URLs, listeners and observers');
  assert.match(source,/signal:currentBrowse\.signal/);
  assert.match(source,/pendingBrowse\?\.abort\(\)/);
 });
@@ -158,7 +158,7 @@ test('remote directory loading reports queued/sent states without infinite spinn
  assert.match(source,/Riprova da questa schermata/);
 });
 
-test('browser requests thumbnails only for visible rows, after folder discovery',()=>{
+test('browser prioritizes visible rows and primes a bounded first batch after folder discovery',()=>{
  assert.match(source,/canLoadBridgeThumbnail\(item\)/);
  assert.match(source,/trackThumbnail\(line,item,img,icon\)/);
  assert.match(source,/thumbnailObserver=new IntersectionObserver/);
@@ -202,7 +202,7 @@ test('failed directory page releases thumbnails while retaining a visible manual
  assert.match(source,/thumbnailsAllowed=true/);
  assert.match(source,/Ricerca sottocartelle interrotta/);
  assert.match(source,/Ricerca interrotta: file caricati conservati/);
- assert.match(source,/finally\{\s*if\(pendingBrowse===currentBrowse\)pendingBrowse=null;\s*startVisibleThumbnail\(\)/);
+ assert.match(source,/finally\{\s*if\(pendingBrowse===currentBrowse\)pendingBrowse=null;[\s\S]*?refreshThumbnailViewport\(\)/);
 });
 
 test('remote folder download retains verified files on transient read interruption',()=>{
@@ -210,4 +210,76 @@ test('remote folder download retains verified files on transient read interrupti
  assert.match(source,/preserveCompletedOnFailure:true/);
  assert.match(source,/result\.interruptedBy==='transient_read'/);
  assert.match(source,/Gli altri file non sono stati salvati/);
+});
+
+test('folder-first discovery continues automatically after early directories, with no 16-page UI cap',()=>{
+ assert.match(source,/const scan=folderPrefetch\.record\(\{handle:current\.handle,offset,page\}\)/);
+ assert.match(source,/if\(scan\.autoFetch\)\{/);
+ assert.match(source,/void more\.onclick\(\)/);
+ assert.doesNotMatch(source,/maxAutomaticPages|pagesRead\s*[<>]=?\s*16/);
+ assert.match(source,/const directoriesFound=folders\.querySelectorAll\('\.bridge-entry'\)\.length/);
+ assert.match(source,/Cartelle: '\+directoriesFound/);
+ assert.match(source,/Ricerca di tutte le sottocartelle/);
+ assert.match(source,/Fine elenco trasmesso dal telefono \(cartella completa\)/);
+ assert.match(source,/Elenco non completo: limite di navigazione/);
+});
+
+test('remote pagination safety limit and errors do not pretend all folders were discovered',()=>{
+ assert.match(source,/offset>=10000/);
+ assert.match(source,/Elenco incompleto: il Bridge remoto supera il limite tecnico di paginazione/);
+ assert.match(source,/Ricerca sottocartelle interrotta/);
+ assert.match(source,/Carica altri file e cartelle/);
+});
+
+test('Android WebView reconciles visible photo rows after the folder paints',()=>{
+ assert.match(source,/const refreshThumbnailViewport=\(\)=>\{/);
+ assert.match(source,/row\.element\.getBoundingClientRect\(\)/);
+ assert.match(source,/const scheduleThumbnailViewport=\(\)=>\{/);
+ assert.match(source,/requestAnimationFrame\(\(\)=>\{/);
+ assert.match(source,/thumbnailObserver\?\.observe\(element\)/);
+ assert.match(source,/thumbnailRows\.set\(element,row\)/);
+ assert.match(source,/scheduleThumbnailViewport\(\);/);
+ assert.match(source,/stopThumbnailViewportListeners\(\)/);
+ assert.match(source,/window\.removeEventListener\('scroll',scheduleThumbnailViewport,true\)/);
+ assert.match(source,/cancelAnimationFrame\(thumbnailVisibilityFrame\)/);
+});
+
+test('aborted or failed thumbnail attempts retry with a strict cap',()=>{
+ assert.match(source,/if\(row\.failures<3\)row\.attempted=false/);
+ assert.match(source,/if\(abort\.signal\.aborted&&generation===thumbnailGeneration\)/);
+ assert.match(source,/if\(row\.failures<3\)row\.attempted=false/);
+ assert.doesNotMatch(source,/if\(!visible\)\{\s*if\(thumbnailActive===row\)/);
+ assert.match(source,/thumbnailFailureStreak=Math\.min\(4,thumbnailFailureStreak\+1\)/);
+});
+
+test('receiver native download notification is tied to transfer progress and final result',()=>{
+ const main=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ assert.match(main,/registerPlugin\('BridgeDownloadNotice'\)/);
+ assert.match(main,/bridgeDownloadNotice,/);
+ assert.match(source,/await beginNotice\(\)/);
+ assert.match(source,/progressNotice\(/);
+ assert.match(source,/noticeOutcome='done'/);
+ assert.match(source,/noticeOutcome='partial'/);
+ assert.match(source,/noticeOutcome='cancelled'/);
+ assert.match(source,/if\(noticeStarted\)await notice\('finish',\{result:noticeOutcome\}\)/);
+});
+test('paint-time thumbnail recovery is bounded and clears timers',()=>{
+ assert.match(source,/thumbnailLayoutTimer=setTimeout\(\(\)=>\{/);
+ assert.match(source,/refreshThumbnailViewport\(\);/);
+ assert.match(source,/if\(thumbnailLayoutTimer!==null\)/);
+ assert.match(source,/clearTimeout\(thumbnailLayoutTimer\)/);
+});
+
+test('first four photo previews start even without a WebView intersection event',()=>{
+ assert.match(source,/const INITIAL_THUMBNAILS=4/);
+ assert.match(source,/const initial=entries\.slice\(0,INITIAL_THUMBNAILS\)/);
+ assert.match(source,/initial\.find\(item=>!item\.attempted&&item\.element\.isConnected\)/);
+ assert.match(source,/if\(pendingBrowse===currentBrowse\)pendingBrowse=null;[\s\S]*?startVisibleThumbnail\(\)/);
+ assert.match(source,/if\(!row\.element\.isConnected\|\|!alive\(\)\|\|marker!==revision\)return/);
+ assert.doesNotMatch(source,/if\(!row\.element\.isConnected\|\|!row\.visible/);
+});
+test('scrolling preserves previously loaded image thumbnails',()=>{
+ assert.match(source,/row\.visible=visible/);
+ assert.doesNotMatch(source,/if\(!visible\)\{\s*if\(thumbnailActive===row\)/);
+ assert.match(source,/row\.element\.dataset\.thumbnailState='ready'/);
 });

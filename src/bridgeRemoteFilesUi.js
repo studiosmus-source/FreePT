@@ -44,7 +44,8 @@ function create(node,label,parent){
 }
 
 export function renderBridgeRemoteFiles({
-  host,db,bridgeClient,bridgeDestination,adminId,ownerId=null,ownerName=null,isAuthorized
+  host,db,bridgeClient,bridgeDestination,bridgeDownloadNotice=null,
+  adminId,ownerId=null,ownerName=null,isAuthorized
 }={}){
   if(!host||typeof db?.from!=='function'||typeof isAuthorized!=='function')
     throw Error('bridge_remote_ui_invalid_options');
@@ -55,6 +56,7 @@ export function renderBridgeRemoteFiles({
   let activeDownload=false;
   let abortActiveBrowse=()=>{};
   let stopThumbnails=()=>{};
+  let stopThumbnailViewportListeners=()=>{};
   let pauseThumbnails=()=>{};
   let resumeThumbnails=()=>{};
   let resumePausedFolderScan=()=>{};
@@ -132,7 +134,7 @@ export function renderBridgeRemoteFiles({
       return 'Il file salvato non corrisponde alla dimensione attesa: download non completato.';
     return code||'errore remoto';
   };
-  const fileDownload=async(item,deviceId)=>{
+  const fileDownload=async(item,deviceId,onNoticeProgress=()=>{})=>{
     const writer=await createBridgeAndroidSingleFileWriter({
       plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime,
       ownerId,ownerName
@@ -140,7 +142,10 @@ export function renderBridgeRemoteFiles({
     await downloadBridgeFile({
       api:bridgeClient,deviceId,handle:item.handle,size:item.size,
       destination:writer,signal:controller.signal,
-      onProgress:p=>setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte')
+      onProgress:p=>{
+        setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte');
+        if(p.totalBytes>0)onNoticeProgress(100*p.receivedBytes/p.totalBytes);
+      }
     });
   };
   // Explicit, bounded previews use the same authorized Bridge read path as downloads.
@@ -345,6 +350,30 @@ export function renderBridgeRemoteFiles({
     cancel.hidden=false;
     controller=new AbortController();
     const signal=controller.signal;
+    let noticeStarted=false,noticeOutcome='failed',lastNoticeAt=0,lastNoticePercent=-1;
+    // Keep notification updates ordered: a late progress update must never
+    // overwrite the final "completed"/"failed" result.
+    let noticeQueue=Promise.resolve();
+    const notice=(method,args={})=>{
+      noticeQueue=noticeQueue.then(async()=>{
+        if(!bridgeDownloadNotice||typeof bridgeDownloadNotice[method]!=='function')return;
+        try{await bridgeDownloadNotice[method](args);}
+        catch{/* Never block file transfer. */}
+      });
+      return noticeQueue;
+    };
+    const beginNotice=async()=>{
+      noticeStarted=true;
+      await notice('begin');
+    };
+    const progressNotice=percent=>{
+      if(!noticeStarted||!Number.isFinite(percent))return;
+      const next=Math.max(0,Math.min(100,Math.floor(percent)));
+      const now=Date.now();
+      if(next===lastNoticePercent||(next<100&&now-lastNoticeAt<1000))return;
+      lastNoticePercent=next;lastNoticeAt=now;
+      void notice('progress',{percent:next});
+    };
     try{
       if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
       if(isFolder){
@@ -382,6 +411,7 @@ export function renderBridgeRemoteFiles({
         setStatus('Controllo cartella di destinazione…');
         await destinationReady();
         if(signal.aborted)throw Error('bridge_transfer_cancelled');
+        await beginNotice();
         const writer=createBridgeAndroidFolderDestination({
           plugin:bridgeDestination,name:title,ownerId,ownerName
         });
@@ -395,30 +425,40 @@ export function renderBridgeRemoteFiles({
             else if(stage==='finalizing')setStatus('Verifica finale della cartella…');
             else if(stage==='preserving')setStatus('Salvataggio dei file completi già scaricati…');
           },
-          onProgress:p=>setStatus('Completati '+p.completedFiles+'/'+summary.files+
-            ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
+          onProgress:p=>{
+            setStatus('Completati '+p.completedFiles+'/'+summary.files+
+              ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte');
+            const fraction=p.fileTotalBytes>0?p.fileBytes/p.fileTotalBytes:0;
+            progressNotice(summary.files>0?
+              100*(p.completedFiles+fraction)/summary.files:100);
+          }
         });
         if(result.partial){
+          noticeOutcome='partial';
           setStatus((result.interruptedBy==='transient_read'
             ?'Download interrotto per un errore di comunicazione. '
             :'Download annullato. ')+
             'Conservati '+result.files+'/'+summary.files+' file completi in '+
             (result.savedName||'cartella (parziale)')+
             '. Gli altri file non sono stati salvati.');
-        }else setStatus('Cartella scaricata: '+result.files+' file.');
+        }else{noticeOutcome='done';progressNotice(100);setStatus('Cartella scaricata: '+result.files+' file.');}
       }else{
         setStatus('Controllo cartella di destinazione…');
         await destinationReady();
         if(signal.aborted)throw Error('bridge_transfer_cancelled');
         if(item.size<0)throw Error('Dimensione del file non disponibile.');
-        await fileDownload(item,deviceId);
+        await beginNotice();
+        await fileDownload(item,deviceId,progressNotice);
+        noticeOutcome='done';progressNotice(100);
         setStatus('File scaricato: '+item.name);
       }
     }catch(error){
-      if(error?.message==='bridge_transfer_cancelled')
+      if(error?.message==='bridge_transfer_cancelled'){
+        noticeOutcome='cancelled';
         setStatus('Download interrotto. Se nessun file era completo, nessuna cartella è stata salvata.');
-      else setStatus('Download non riuscito: '+remoteErrorText(error));
+      }else setStatus('Download non riuscito: '+remoteErrorText(error));
     }finally{
+      if(noticeStarted)await notice('finish',{result:noticeOutcome});
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
       resumePausedFolderScan();
@@ -494,6 +534,7 @@ export function renderBridgeRemoteFiles({
     openingDeviceId=deviceId;
     abortActiveBrowse();
     stopThumbnails();
+    stopThumbnailViewportListeners();
     const marker=++revision;
     let pendingBrowse=null;
     abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
@@ -523,6 +564,8 @@ export function renderBridgeRemoteFiles({
     const THUMBNAIL_CACHE_BYTES=12*1024*1024;
     const thumbnailRows=new Map();
     let thumbnailObserver=null;
+    let thumbnailVisibilityFrame=null;
+    let thumbnailLayoutTimer=null;
     let thumbnailAbort=null;
     let thumbnailActive=null;
     let thumbnailGeneration=0;
@@ -530,6 +573,9 @@ export function renderBridgeRemoteFiles({
     let thumbnailRetryTimer=null;
     let thumbnailNextAt=0;
     let thumbnailFailureStreak=0;
+    // Initial page thumbnails must not depend on Android WebView scroll or
+    // IntersectionObserver delivery. Fetch a small, bounded initial batch.
+    const INITIAL_THUMBNAILS=4;
     const rememberThumbnail=(key,blob)=>{
       if(blob.size>THUMBNAIL_CACHE_BYTES)return;
       const previous=thumbnailCache.get(key);
@@ -562,6 +608,14 @@ export function renderBridgeRemoteFiles({
       thumbnailFailureStreak=0;
       thumbnailObserver?.disconnect();
       thumbnailObserver=null;
+      if(thumbnailVisibilityFrame!==null){
+        cancelAnimationFrame(thumbnailVisibilityFrame);
+        thumbnailVisibilityFrame=null;
+      }
+      if(thumbnailLayoutTimer!==null){
+        clearTimeout(thumbnailLayoutTimer);
+        thumbnailLayoutTimer=null;
+      }
       for(const row of thumbnailRows.values())releaseThumbnail(row);
       thumbnailRows.clear();
       thumbnailsAllowed=false;
@@ -577,7 +631,7 @@ export function renderBridgeRemoteFiles({
       if(thumbnailRetryTimer!==null){clearTimeout(thumbnailRetryTimer);thumbnailRetryTimer=null;}
     };
     const showThumbnail=(row,blob)=>{
-      if(!row.element.isConnected||!row.visible||!alive()||marker!==revision)return;
+      if(!row.element.isConnected||!alive()||marker!==revision)return;
       releaseThumbnail(row);
       row.url=URL.createObjectURL(blob);
       row.img.src=row.url;
@@ -595,8 +649,11 @@ export function renderBridgeRemoteFiles({
         },waitMs);
         return;
       }
-      const row=[...thumbnailRows.values()].find(item=>
-        item.visible&&!item.attempted&&item.element.isConnected);
+      const entries=[...thumbnailRows.values()];
+      const initial=entries.slice(0,INITIAL_THUMBNAILS);
+      const row=entries.find(item=>
+        item.visible&&!item.attempted&&item.element.isConnected)||
+        initial.find(item=>!item.attempted&&item.element.isConnected);
       if(!row)return;
       row.attempted=true;
       thumbnailActive=row;
@@ -617,17 +674,29 @@ export function renderBridgeRemoteFiles({
           }
           if(abort.signal.aborted||generation!==thumbnailGeneration)return;
           showThumbnail(row,blob);
+          row.element.dataset.thumbnailState='ready';
+          row.element.removeAttribute('title');
           thumbnailFailureStreak=0;
           // Keep expensive read jobs secondary to navigation and downloads.
           thumbnailNextAt=Date.now()+2000;
-        }catch{
-          // One remote image failure must not trigger a storm of subsequent
-          // read jobs. Back off progressively without changing TX or grants.
+        }catch(error){
+          // Expose a non-sensitive, localized failure on this row instead of
+          // silently leaving an unchanging generic icon after all retries.
+          if(!abort.signal.aborted&&row.element.isConnected){
+            row.element.dataset.thumbnailState='failed';
+            row.element.title='Miniatura non disponibile ('+
+              String(error?.message||'errore').replace(/[^a-z0-9_-]/gi,'').slice(0,48)+')';
+          }
+          // Bound retries per visible image to avoid flooding the remote TX.
           if(!abort.signal.aborted){
+            row.failures=(row.failures||0)+1;
+            if(row.failures<3)row.attempted=false;
             thumbnailFailureStreak=Math.min(4,thumbnailFailureStreak+1);
             thumbnailNextAt=Date.now()+Math.min(30000,4000*thumbnailFailureStreak);
           }
         }finally{
+          if(abort.signal.aborted&&generation===thumbnailGeneration)
+            row.attempted=false;
           if(thumbnailActive===row){
             thumbnailActive=null;
             thumbnailAbort=null;
@@ -637,18 +706,39 @@ export function renderBridgeRemoteFiles({
       })();
     };
     resumeThumbnails=startVisibleThumbnail;
+    // The browser must not depend solely on IntersectionObserver callbacks:
+    // some embedded Android WebViews defer them while the folder list is
+    // being replaced. Reconcile on the next paint, before starting a job.
+    const refreshThumbnailViewport=()=>{
+      const height=window.innerHeight||document.documentElement.clientHeight;
+      const width=window.innerWidth||document.documentElement.clientWidth;
+      for(const row of thumbnailRows.values()){
+        if(!row.element.isConnected)continue;
+        const bounds=row.element.getBoundingClientRect();
+        const visible=bounds.bottom>-60&&bounds.top<height+60&&
+          bounds.right>0&&bounds.left<width;
+        // Keep thumbnails cached and visible after a scroll: hiding a row
+        // must not delete its already-loaded preview or cancel initial priming.
+        row.visible=visible;
+      }
+      startVisibleThumbnail();
+    };
+    const scheduleThumbnailViewport=()=>{
+      if(thumbnailVisibilityFrame!==null||!alive())return;
+      thumbnailVisibilityFrame=requestAnimationFrame(()=>{
+        thumbnailVisibilityFrame=null;
+        if(alive()&&marker===revision)refreshThumbnailViewport();
+      });
+    };
     const trackThumbnail=(element,item,img,icon)=>{
-      if(typeof IntersectionObserver!=='function')return;
-      if(!thumbnailObserver){
+      if(!thumbnailObserver&&typeof IntersectionObserver==='function'){
         thumbnailObserver=new IntersectionObserver(entries=>{
           for(const entry of entries){
             const row=thumbnailRows.get(entry.target);
             if(!row)continue;
             row.visible=entry.isIntersecting;
-            if(!row.visible){
-              if(thumbnailActive===row)thumbnailAbort?.abort();
-              if(row.url){releaseThumbnail(row);row.attempted=false;}
-            }
+            // Only scheduling priority changes with visibility. A completed
+            // thumbnail remains present; scrolling never destroys it.
           }
           startVisibleThumbnail();
         },{root:null,rootMargin:'0px 0px 60px 0px'});
@@ -656,9 +746,23 @@ export function renderBridgeRemoteFiles({
       const row={element,item,img,icon,visible:false,attempted:false,url:null,
         key:[deviceId,item.handle,item.size,item.mime].join('|')};
       thumbnailRows.set(element,row);
-      thumbnailObserver.observe(element);
+      thumbnailObserver?.observe(element);
+      scheduleThumbnailViewport();
+      // Android WebView may delay paint/observer delivery while the DOM is
+      // replaced. One bounded post-layout retry; never an ongoing poller.
+      if(thumbnailLayoutTimer===null)thumbnailLayoutTimer=setTimeout(()=>{
+        thumbnailLayoutTimer=null;
+        if(alive()&&marker===revision)refreshThumbnailViewport();
+      },180);
     };
 
+    // Capture nested scrolling containers without new controls or polling.
+    window.addEventListener('scroll',scheduleThumbnailViewport,{passive:true,capture:true});
+    window.addEventListener('resize',scheduleThumbnailViewport,{passive:true});
+    stopThumbnailViewportListeners=()=>{
+      window.removeEventListener('scroll',scheduleThumbnailViewport,true);
+      window.removeEventListener('resize',scheduleThumbnailViewport);
+    };
     const history=()=>stack.map(x=>x.name).join(' / ');
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
@@ -813,6 +917,7 @@ export function renderBridgeRemoteFiles({
         // the already loaded file rows usable while discovering folders ahead
         // of them across later pages. Do not require changes on the owner TX.
         const scan=folderPrefetch.record({handle:current.handle,offset,page});
+        const directoriesFound=folders.querySelectorAll('.bridge-entry').length;
         pausedPageOffset=scan.autoFetch?page.nextOffset:null;
         pausedPageHandle=scan.autoFetch?current.handle:null;
         pausedPageNavigation=scan.autoFetch?view:null;
@@ -823,8 +928,10 @@ export function renderBridgeRemoteFiles({
           if(scan.pending){
             folders.previousElementSibling.hidden=false;
             folderNotice.textContent=scan.atLimit
-              ? 'Altre sottocartelle potrebbero trovarsi nelle pagine successive. Premi Carica altri file e cartelle per continuare.'
-              : 'Ricerca sottocartelle nelle pagine successive… ('+scan.pagesRead+' pagine caricate)';
+              ? 'Limite di navigazione raggiunto: elenco NON completo. Cartelle trovate: '+
+                directoriesFound+'.'
+              : 'Ricerca di tutte le sottocartelle… '+directoriesFound+
+                ' trovate · '+scan.pagesRead+' pagine verificate.';
           }else if(!folders.children.length){
             folders.previousElementSibling.hidden=true;
           }
@@ -869,14 +976,18 @@ export function renderBridgeRemoteFiles({
         const hiddenRows=list.querySelectorAll('.bridge-entry[data-bridge-hidden="true"]');
         const completeness=browser.querySelector('.bridge-folder-completeness');
         if(completeness)completeness.textContent=
-          'Elementi caricati: '+rows.length+' · Nascosti: '+hiddenRows.length+
+          'Elementi caricati: '+rows.length+' · Cartelle: '+directoriesFound+
+          ' · Nascosti: '+hiddenRows.length+
           (page.nextOffset===-1
-            ? ' · Fine elenco trasmesso dal telefono'
-            :scan.autoFetch
-              ? ' · Ricerca automatica delle sottocartelle in corso'
-              : ' · Elenco parziale: carica le altre pagine');
+            ? ' · Fine elenco trasmesso dal telefono (cartella completa)'
+            :scan.atLimit
+              ? ' · Elenco non completo: limite di navigazione'
+              :scan.autoFetch
+                ? ' · Ricerca automatica delle sottocartelle in corso'
+                : ' · Elenco parziale: carica le altre pagine');
         setStatus(scan.autoFetch
-          ? 'Ricerca delle sottocartelle nelle pagine successive…'
+          ? 'Ricerca completa delle sottocartelle: pagina '+scan.pagesRead+
+            ', trovate '+directoriesFound+' cartelle…'
           :cached&&current.handle==='root'&&offset===0
             ? 'Elenco principale recente (in memoria). Premi Aggiorna per verificarlo sul telefono.'
           :page.nextOffset===-1
@@ -905,7 +1016,10 @@ export function renderBridgeRemoteFiles({
           }
           return false;
         }
-        setStatus(error?.message==='bridge_remote_browse_expired'
+        setStatus(offset>=10000&&
+          ['bridge_file_page_invalid','bridge_remote_browse_invalid_page'].includes(error?.message)
+          ?'Elenco incompleto: il Bridge remoto supera il limite tecnico di paginazione. Le cartelle già trovate restano disponibili.'
+          :error?.message==='bridge_remote_browse_expired'
           ?'Richiesta scaduta: nessuna risposta entro il termine. Riprova da questa schermata.'
           :error?.message==='bridge_remote_browse_timeout'
             ?'Il telefono remoto non ha risposto entro il limite di attesa. Riprova da questa schermata.'
@@ -913,7 +1027,14 @@ export function renderBridgeRemoteFiles({
         return false;
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
+        // The catalogue is fully mounted here. Detect the actual visible
+        // images synchronously; do not rely on an observer/animation frame
+        // that an embedded WebView can defer until the next interaction.
+        refreshThumbnailViewport();
+        // A completed listing primes the first few image rows even when
+        // Android WebView has not reported their intersection yet.
         startVisibleThumbnail();
+        scheduleThumbnailViewport();
       }
     }
     try{await display();}
@@ -931,6 +1052,7 @@ export function renderBridgeRemoteFiles({
     abortActiveBrowse();
     stopObservingMore();
     stopThumbnails();
+    stopThumbnailViewportListeners();
     closePreviews();
     clearPreviewCache();
     setBridgeBusy(false);

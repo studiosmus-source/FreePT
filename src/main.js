@@ -38,8 +38,10 @@ const bridgeFiles = Capacitor.isNativePlatform() && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
 const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
+const bridgeWakeToken = bridgeFiles ? registerPlugin('BridgeWakeToken') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
+const bridgeDownloadNotice=bridgeFiles?registerPlugin('BridgeDownloadNotice'):null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
 const bootstrapEnabled=import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'&&import.meta.env.VITE_BRIDGE_BOOTSTRAP_ENABLED==='true';
 const bridgeBootstrap=bootstrapEnabled&&bridgeFiles?registerPlugin('BridgeBootstrap'):null;
@@ -76,7 +78,13 @@ const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
 }):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
-  baseUrl:bridgeRuntime.baseUrl,auth:db.auth
+  baseUrl:bridgeRuntime.baseUrl,auth:db.auth,
+  // Authenticated, metadata-only wake. No device key, path or permission in FCM.
+  // This never blocks queued jobs or requires family actions.
+  wakeJob:async ({jobId})=>{
+    const response=await db.functions.invoke('freept-bridge-wake',{body:{jobId}});
+    if(response.error)throw response.error;
+  }
 });
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
@@ -107,7 +115,7 @@ async function startProvisionedTxWhenAllowed(){
 const el = document.getElementById('app');
 // Both native APK identities register push only after Firebase configuration is installed.
 const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
-  plugin:PushNotifications,db,
+  plugin:PushNotifications,db,wakeToken:bridgeWakeToken,
   getApprovedUser:()=>profile?.status==='approved'&&me?me:null,
   onMessage:()=>{
     if(profile?.role==='admin'&&!adminUnlocked)return;
@@ -895,7 +903,8 @@ function renderLayout(){
       const ownerId=user.id;
       panel.dataset.bridgeOwnerId=ownerId;
       chatFilesCleanup=renderBridgeRemoteFiles({
-        host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
+        host:panel,db,bridgeClient,bridgeDestination,bridgeDownloadNotice,
+        adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
         isAuthorized:()=>panel.isConnected&&selected===ownerId&&
           me?.id&&profile?.role==='admin'&&adminUnlocked
       });

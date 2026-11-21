@@ -45,7 +45,7 @@ public class BridgeBootstrapPlugin extends Plugin {
  @PluginMethod public void claim(PluginCall call){work(call,"claim");}
  @PluginMethod public void cancel(PluginCall call){work(call,"cancel");}
  @PluginMethod public void close(PluginCall call){
-  if(!BridgeBootstrapCore.verified)getContext().stopService(new Intent(getContext(),BridgeTxService.class));
+  // Closing the onboarding screen does not revoke the owner's existing consent.
   call.resolve();getActivity().finish();
  }
  @PluginMethod public void resetUnboundTest(PluginCall call){
@@ -94,7 +94,7 @@ public class BridgeBootstrapPlugin extends Plugin {
   JSObject report=new JSObject();report.put("schema",2);report.put("sdk",Build.VERSION.SDK_INT);
   report.put("manufacturer",Build.MANUFACTURER);report.put("model",Build.MODEL);
   report.put("colorOs","non verificabile");report.put("error",lastError);
-  report.put("serviceActive",BridgeTxService.active);report.put("allFiles",BridgeAllFilesCore.granted());
+  report.put("serviceActive",BridgeTxJobService.isScheduled(getContext()));report.put("allFiles",BridgeAllFilesCore.granted());
   report.put("battery",batteryStatus());
   report.put("bridgeVerifiedInProcess",BridgeBootstrapCore.verified);
   report.put("bootstrapInitialized",BridgeBootstrapCore.configured(getContext())||BridgeBootstrapCore.bound(getContext()));

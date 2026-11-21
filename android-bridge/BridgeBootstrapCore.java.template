@@ -119,7 +119,7 @@ final class BridgeBootstrapCore {
  static JSONObject status(Context c)throws Exception{
   JSONObject r=post(c,"status",new JSONObject(),null);
   String hash=c.getSharedPreferences(PREFS,0).getString("fixtureHash","");
-  boolean ready=BridgeTxService.active&&BridgeAllFilesCore.granted()&&("verified".equals(r.optString("state"))||"bound".equals(r.optString("state")))&&hash.length()==64&&hash.equals(r.optString("sha256"));
+  boolean ready=BridgeTxJobService.isScheduled(c)&&BridgeAllFilesCore.granted()&&("verified".equals(r.optString("state"))||"bound".equals(r.optString("state")))&&hash.length()==64&&hash.equals(r.optString("sha256"));
   verified=ready;
   return new JSONObject().put("verified",ready).put("state",r.getString("state"));
  }

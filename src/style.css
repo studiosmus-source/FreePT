@@ -266,3 +266,105 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
   display:block;flex:1 1 auto;min-width:0;
   overflow-wrap:anywhere;word-break:normal;
 }
+
+/* FreePT visual refresh v3: CSS-only, reduced risk.
+   Existing markup, IDs, JS, request texts and Android Bridge unchanged.
+   No :has selectors, no hiding of existing page areas or controls. */
+:root{color-scheme:light;--fp-ink:#19374a;--fp-muted:#62798b;--fp-line:#d6e5ec;--fp-accent:#187e88}
+body{background:linear-gradient(160deg,#e3edf4 0%,#f5f9fb 55%,#e9f3f2 100%);color:var(--fp-ink)}
+.shell{background:linear-gradient(180deg,#ffffff,#f9fcfd);box-shadow:0 0 25px rgba(27,60,81,.09)}
+.top{
+  background:linear-gradient(117deg,#0f263d 0%,#184660 48%,#1d7380 100%);
+  border-bottom:3px solid #20ad9e;
+  box-shadow:0 4px 12px rgba(22,52,74,.12)
+}
+.top h1{font-weight:750;letter-spacing:.02em}
+.top button{border-radius:14px;background:linear-gradient(135deg,#ffffff21,#ffffff0d);border:1px solid #ffffff40;padding:9px 12px}
+button{font-weight:650;border-radius:12px;background:linear-gradient(125deg,#1b6586,#14838b)}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #36b5b4;outline-offset:2px}
+.panel h2{color:#1b4962}
+.small,.hint,.chat-preview{color:var(--fp-muted)}
+.admin-people-tools{background:linear-gradient(160deg,#f9fcfd,#ebf5f8);border-color:var(--fp-line)}
+.admin-people-tools input,.admin-people-tools select{border-color:#cbdfe9}
+.person{border-bottom-color:#e6eef2;padding-block:13px}
+.person:hover{background:linear-gradient(105deg,#ebf8f8,#f8fcfd)}
+.toolbar{background:linear-gradient(105deg,#ffffff 0%,#f2f9fb 100%);border-bottom:1px solid var(--fp-line);box-shadow:0 3px 9px rgba(28,62,81,.045)}
+.toolbar strong{color:#1c455c;font-weight:750}
+.toolbar button{color:#235a76;background:linear-gradient(140deg,#f4f9fc,#e5f1f5);border:1px solid #dce9ef;border-radius:12px;font-size:13px;font-weight:650}
+.feed{background:linear-gradient(165deg,#eaf4f7 0%,#f5fafb 50%,#fefefe 100%);gap:10px}
+.bubble{background:linear-gradient(145deg,#fff,#f8fbfd);border:1px solid #e3edf1;box-shadow:0 2px 8px #1c3c5010;border-radius:17px 17px 17px 5px;line-height:1.45;padding:11px 14px}
+.bubble.mine{background:linear-gradient(145deg,#d5f4e8,#e1f5ec);border-color:#c4e8db;border-radius:17px 17px 5px 17px}
+.compose{background:linear-gradient(100deg,#ffffff,#f5fafb);border-top:1px solid var(--fp-line)}
+.compose textarea{background:#f8fbfc;border-radius:13px}
+.compose .attach{background:linear-gradient(140deg,#fff,#eaf5f9);border-color:#cee1e9;border-radius:12px}
+.compose #sendBtn{background:linear-gradient(115deg,#14818f,#159d92)}
+.bridge-admin-panel,.chat-actions-box{background:linear-gradient(155deg,#fff,#f7fbfc);border:1px solid #e3edf1;box-shadow:0 22px 50px #16354d30}
+.bridge-admin-panel h2{color:#1d4b63}
+.bridge-admin-panel nav button[aria-pressed=true]{background:linear-gradient(110deg,#176b87,#189b91)}
+
+/* Conversation screen: compact two-line arrangement only at narrow widths. */
+@media(max-width:699px){
+  .top{padding-inline:14px}
+  .shell{box-shadow:none}
+  #chat .toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px}
+  #chat .toolbar .mobileBack{flex:0 0 38px;width:38px;min-width:38px;height:40px;padding:5px}
+  #chat .toolbar #chatTitle{flex:1 1 calc(100% - 55px);min-width:0;font-size:18px}
+  #chat .toolbar #chatMessagesView,
+  #chat .toolbar #chatRemoteFilesView{
+    flex:1 1 44%;min-height:44px;white-space:normal;padding:9px 8px;
+    font-size:13px;line-height:1.3
+  }
+  .feed{padding:13px}
+}
+#chatRemoteFilesPanel{
+  background:linear-gradient(160deg,#e9f3f8 0%,#f6fafc 44%,#f2f9f6 100%);
+  padding:14px 12px 24px;
+  border-top:0
+}
+#chatRemoteFilesPanel>p:first-child{
+  margin:0 0 14px;padding:17px 17px 17px 20px;
+  background:linear-gradient(125deg,#ffffff,#eef8f9);border:1px solid #dbe9ee;
+  border-left:4px solid #20a99c;border-radius:15px;
+  box-shadow:0 4px 16px #183f5810;
+  font-size:14px;line-height:1.48;color:#28475a
+}
+#chatRemoteFilesPanel>div:first-of-type{
+  display:flex;flex-wrap:wrap;gap:10px;
+  margin:0 0 14px
+}
+#chatRemoteFilesPanel>div:first-of-type>button{
+  flex:1 1 140px;min-width:0;min-height:65px;
+  padding:12px 10px;white-space:normal;
+  border-radius:15px;font-size:13px;line-height:1.4;
+  text-align:center;font-weight:750
+}
+#chatRemoteFilesPanel>div:first-of-type>button:first-child{
+  color:#fff;background:linear-gradient(125deg,#164b74 0%,#18788a 54%,#16a193 100%);
+  box-shadow:0 5px 14px #176a8424
+}
+#chatRemoteFilesPanel>div:first-of-type>button:nth-child(2){
+  background:linear-gradient(140deg,#ffffff,#e8f3f8);color:#235d75;border:1px solid #d4e6ee;
+  box-shadow:0 3px 10px #18435b0b
+}
+#chatRemoteFilesPanel>div:first-of-type>button[hidden]{display:none!important}
+#chatRemoteFilesPanel>p[role="status"]{
+  margin:0 0 14px;padding:13px 15px;
+  background:linear-gradient(115deg,#e4f1f8,#eaf8f5);border:1px solid #d1e6ed;border-radius:13px;
+  color:#285671;font-size:13px;line-height:1.48;font-weight:650
+}
+#chatRemoteFilesPanel>p[role="status"]:empty{display:none}
+#chatRemoteFilesPanel>section:not(:empty){
+  margin:10px 0 0;background:linear-gradient(150deg,#fff,#f7fbfc);
+  border:1px solid #e0ebf0;border-radius:14px;padding:12px
+}
+.bridge-list-section-heading{color:#2d647a;border-color:#d8e8ee}
+.bridge-breadcrumbs button{color:#1c5b77;background:linear-gradient(110deg,#eff9fa,#e2f0f5);border:1px solid #d9eaf0}
+.bridge-folder-actions button{background:linear-gradient(115deg,#1c6687,#188e8d);border-radius:11px}
+.bridge-remote-folders>.bridge-entry,.bridge-remote-files>.bridge-entry{
+  background:linear-gradient(115deg,#ffffff,#f5fafc);border:1px solid #e2edf2;border-radius:12px;
+  margin:5px 0;padding:2px 5px
+}
+.bridge-entry-photo-icon,.bridge-entry-photo-thumb{border-radius:10px}
+.bridge-folder-completeness{background:linear-gradient(110deg,#edf7fa,#e9f8f4);border:1px solid #daeaee;border-radius:10px}
+.update-banner{background:linear-gradient(110deg,#e5f8f7,#eef5fc);border-color:#d3e9e8;color:#255f70}
+.update-banner button,.attach-download{background:linear-gradient(115deg,#1c6e8a,#15998f)}
