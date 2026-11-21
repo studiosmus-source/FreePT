@@ -91,6 +91,7 @@ required_templates = [
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
     "BridgeTxProtocol", "BridgeTxJobService", "BridgeTxMessagingService",
+    "BridgeNativeThumbnailCore",
     "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"
 ]
 for name in required_templates:
@@ -160,7 +161,8 @@ if xml.count("<application") != 1:
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
              "BridgeTxControlPlugin", "BridgeTxBootReceiver", "BridgeTxProtocol",
-             "BridgeTxJobService", "BridgeTxMessagingService", "FreePTUpdaterPlugin",
+             "BridgeTxJobService", "BridgeTxMessagingService", "BridgeNativeThumbnailCore",
+             "FreePTUpdaterPlugin",
              "FreePTAdminSharePlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
     template = template_path.read_text()
