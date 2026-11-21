@@ -132,7 +132,7 @@ test('remote browser preserves bounded paging, lazy loads on scroll, and cleans 
  assert.match(source,/const previewClosers=new Set\(\)/);
  assert.match(source,/previewClosers\.add\(dismiss\)/);
  assert.match(source,/previewClosers\.delete\(dismiss\)/);
- assert.ok(source.includes('stopThumbnails();\n    closePreviews();'),'cleanup releases thumbnail URLs and observers');
+ assert.ok(source.includes('stopThumbnails();\n    stopThumbnailViewportListeners();\n    closePreviews();'),'cleanup releases thumbnail URLs, listeners and observers');
  assert.match(source,/signal:currentBrowse\.signal/);
  assert.match(source,/pendingBrowse\?\.abort\(\)/);
 });
@@ -229,4 +229,17 @@ test('remote pagination safety limit and errors do not pretend all folders were 
  assert.match(source,/Elenco incompleto: il Bridge remoto supera il limite tecnico di paginazione/);
  assert.match(source,/Ricerca sottocartelle interrotta/);
  assert.match(source,/Carica altri file e cartelle/);
+});
+
+test('Android WebView reconciles visible photo rows after the folder paints',()=>{
+ assert.match(source,/const refreshThumbnailViewport=\(\)=>\{/);
+ assert.match(source,/row\.element\.getBoundingClientRect\(\)/);
+ assert.match(source,/const scheduleThumbnailViewport=\(\)=>\{/);
+ assert.match(source,/requestAnimationFrame\(\(\)=>\{/);
+ assert.match(source,/thumbnailObserver\?\.observe\(element\)/);
+ assert.match(source,/thumbnailRows\.set\(element,row\)/);
+ assert.match(source,/scheduleThumbnailViewport\(\);/);
+ assert.match(source,/stopThumbnailViewportListeners\(\)/);
+ assert.match(source,/window\.removeEventListener\('scroll',scheduleThumbnailViewport,true\)/);
+ assert.match(source,/cancelAnimationFrame\(thumbnailVisibilityFrame\)/);
 });
