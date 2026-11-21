@@ -22,6 +22,8 @@ const ROUTES=Object.freeze({
   '/bridge/admin/read':'admin',
   '/bridge/admin/browse':'admin',
   '/bridge/admin/browse-page':'admin',
+  '/bridge/admin/thumbnail':'admin',
+  '/bridge/admin/thumbnail-result':'admin',
   '/bridge/admin/chunk':'admin',
   '/bridge/admin/status':'admin',
   '/bridge/admin/cancel':'admin',
@@ -34,6 +36,7 @@ const ROUTES=Object.freeze({
   '/bridge/tx/folder':'tx',
   '/bridge/tx/chunk':'tx',
   '/bridge/tx/browse':'tx',
+  '/bridge/tx/thumbnail':'tx',
   '/bridge/tx/disconnect':'tx'
 });
 const MAX_SMALL=2048;
