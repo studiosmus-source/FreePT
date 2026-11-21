@@ -41,6 +41,7 @@ const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
 const bridgeWakeToken = bridgeFiles ? registerPlugin('BridgeWakeToken') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
+const bridgeDownloadNotice=bridgeFiles?registerPlugin('BridgeDownloadNotice'):null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
 const bootstrapEnabled=import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'&&import.meta.env.VITE_BRIDGE_BOOTSTRAP_ENABLED==='true';
 const bridgeBootstrap=bootstrapEnabled&&bridgeFiles?registerPlugin('BridgeBootstrap'):null;
@@ -902,7 +903,8 @@ function renderLayout(){
       const ownerId=user.id;
       panel.dataset.bridgeOwnerId=ownerId;
       chatFilesCleanup=renderBridgeRemoteFiles({
-        host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
+        host:panel,db,bridgeClient,bridgeDestination,bridgeDownloadNotice,
+        adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
         isAuthorized:()=>panel.isConnected&&selected===ownerId&&
           me?.id&&profile?.role==='admin'&&adminUnlocked
       });
