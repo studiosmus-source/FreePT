@@ -50,7 +50,26 @@ public class BridgeDestinationPlugin extends Plugin {
         final long expected;
         long written=0;
         boolean completed=false;
+        FileOutputStream output=null;
         FileEntry(Uri uri,long expected){this.uri=uri;this.expected=expected;}
+    }
+
+    // Keep a single SAF descriptor open for the entire file. Reopening a
+    // document for each chunk can truncate or replace the previous write on
+    // some providers; only a closed descriptor is eligible for verification.
+    private static void closeOutput(FileEntry file)throws Exception {
+        FileOutputStream output=file.output;
+        file.output=null;
+        if(output!=null)output.close();
+    }
+
+    private void closeAllOutputs(){
+        for(FileEntry file:files.values()){
+            try{closeOutput(file);}
+            catch(Exception error){
+                android.util.Log.w("FreePTBridgeDestination","staging_close_failed");
+            }
+        }
     }
 
     private boolean validName(String name){
@@ -453,15 +472,19 @@ public class BridgeDestinationPlugin extends Plugin {
             if(bytes.length<1||bytes.length>MAX_CHUNK||
                 file.written>file.expected-bytes.length)
                 throw new IllegalArgumentException();
-            try(ParcelFileDescriptor fd=getContext().getContentResolver()
-                    .openFileDescriptor(file.uri,"rw")){
+            if(file.output==null){
+                ParcelFileDescriptor fd=getContext().getContentResolver()
+                    .openFileDescriptor(file.uri,"rw");
                 if(fd==null)throw new IllegalStateException();
-                try(FileOutputStream out=new FileOutputStream(fd.getFileDescriptor())){
-                    FileChannel channel=out.getChannel();
-                    channel.position(offset);
-                    ByteBuffer input=ByteBuffer.wrap(bytes);
-                    while(input.hasRemaining())channel.write(input);
-                }
+                // This stream owns and closes the ParcelFileDescriptor once,
+                // avoiding a second provider write transaction per chunk.
+                file.output=new ParcelFileDescriptor.AutoCloseOutputStream(fd);
+            }
+            FileChannel channel=file.output.getChannel();
+            channel.position(offset);
+            ByteBuffer input=ByteBuffer.wrap(bytes);
+            while(input.hasRemaining()){
+                if(channel.write(input)<=0)throw new java.io.IOException("no_write_progress");
             }
             file.written+=bytes.length;
             JSObject result=new JSObject();result.put("written",file.written);
@@ -477,6 +500,9 @@ public class BridgeDestinationPlugin extends Plugin {
             call.reject("bridge_destination_file_incomplete");return;
         }
         try{
+            // Close the provider write transaction before querying metadata
+            // or reading back bytes. An incomplete close must fail closed.
+            closeOutput(file);
             if(!verifiedDocumentLength(file.uri,file.expected)){
                 call.reject("bridge_destination_size_mismatch");return;
             }
@@ -491,6 +517,7 @@ public class BridgeDestinationPlugin extends Plugin {
         FileEntry file=files.get(id);
         if((staging==null&&singleStaging==null)||file==null){call.reject("bridge_destination_file_missing");return;}
         try{
+            closeOutput(file);
             if(!DocumentsContract.deleteDocument(
                 getContext().getContentResolver(),file.uri))
                 throw new IllegalStateException();
@@ -577,6 +604,7 @@ public class BridgeDestinationPlugin extends Plugin {
     @PluginMethod
     public synchronized void discardSingleFile(PluginCall call){
         if(singleStaging==null){call.resolve();return;}
+        closeAllOutputs();
         try{
             if(!DocumentsContract.deleteDocument(
                 getContext().getContentResolver(),singleStaging))
@@ -628,6 +656,7 @@ public class BridgeDestinationPlugin extends Plugin {
     @PluginMethod
     public synchronized void discardFolder(PluginCall call){
         if(staging==null){call.resolve();return;}
+        closeAllOutputs();
         try{
             if(!DocumentsContract.deleteDocument(getContext().getContentResolver(),staging))
                 throw new IllegalStateException();
