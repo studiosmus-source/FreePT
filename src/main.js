@@ -90,6 +90,7 @@ const bridgeClient=createBridgeAdminClient({
 const bridgePendingJobs=new Map();
 let bridgePendingOwnerId=null;
 let bridgeTxStartupInProgress=false;
+let lastNativeTxKick=0;
 async function startProvisionedTxWhenAllowed(){
   if(bridgeTxStartupInProgress||!bridgeTxControl||!bridgeOwnerControls||
      profile?.status!=='approved'||profile?.role!=='user'||!me?.id)return;
@@ -101,13 +102,17 @@ async function startProvisionedTxWhenAllowed(){
     ]);
     if(me?.id!==owner||profile?.status!=='approved'||state?.paused||
        state?.running||!state?.configured||!permission?.granted||
-       !device?.provisioned)return;
+       !device?.provisioned||Date.now()-lastNativeTxKick<120000)return;
     const [setting,grants]=await Promise.all([
       bridgeOwnerControls.device(device.deviceId),
       bridgeOwnerControls.recipients(device.deviceId)
     ]);
-    if(me?.id===owner&&setting?.enabled&&grants.some(x=>x.active))
+    if(me?.id===owner&&setting?.enabled&&grants.some(x=>x.active)){
+      // Opening the app must request a real expedited native connection.
+      // Avoid rescheduling JobScheduler every 20 seconds while it is pending.
+      lastNativeTxKick=Date.now();
       await bridgeTxControl.start();
+    }
   }catch{
     // Failed closed on expired login, missing staging backend or permissions.
   }finally{bridgeTxStartupInProgress=false;}
@@ -401,6 +406,7 @@ async function refreshOnVisible(){
       return;
     }
     try {
+      if(profile?.role==='user')lastNativeTxKick=0;
       if(me && profile?.status==='pending'){
         await loadProfile();
         if(profile.status==='approved'){await renderWorkspace();return}if(profile.status==='blocked'){requestScreen(true);return}
