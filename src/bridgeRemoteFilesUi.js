@@ -412,8 +412,15 @@ export function renderBridgeRemoteFiles({
         await destinationReady();
         if(signal.aborted)throw Error('bridge_transfer_cancelled');
         await beginNotice();
+        // Re-enumeration on re-entry uses the current authenticated remote
+        // grant; the native receiver matches a previous partial folder only
+        // by this stable device + logical path identity, never by display name.
+        const sourceKey=JSON.stringify([
+          ownerId,deviceId,...stack.slice(1).map(part=>part.name),
+          root?'root':title
+        ]);
         const writer=createBridgeAndroidFolderDestination({
-          plugin:bridgeDestination,name:title,ownerId,ownerName
+          plugin:bridgeDestination,name:title,ownerId,ownerName,sourceKey
         });
         const result=await downloadBridgeFolder({
           api:bridgeClient,deviceId,manifest,
