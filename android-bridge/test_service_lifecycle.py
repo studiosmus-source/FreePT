@@ -28,6 +28,30 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn("BridgeDeviceSecretStore.configured(getContext())", source)
         self.assertIn("startForegroundService", source)
 
+    def test_fcm_wake_and_bounded_job_are_consent_checked(self):
+        installer=(ROOT / "install.py").read_text()
+        fcm=(ROOT / "BridgeTxMessagingService.java.template").read_text()
+        job=(ROOT / "BridgeTxJobService.java.template").read_text()
+        service=(ROOT / "BridgeTxService.java.template").read_text()
+        protocol=(ROOT / "BridgeTxProtocol.java.template").read_text()
+        self.assertIn("BridgeTxJobService", installer)
+        self.assertIn("com.google.firebase.MESSAGING_EVENT", installer)
+        self.assertIn('tools:node="remove"', installer)
+        self.assertIn("super.onMessageReceived(message)", fcm)
+        self.assertIn('get("kind")', fcm)
+        self.assertIn('BridgeTxJobService.schedule', fcm)
+        self.assertIn("BridgeAllFilesCore.granted()", job)
+        self.assertIn("BridgeDeviceSecretStore.configured", job)
+        self.assertIn('getBoolean("paused",false)', job)
+        self.assertIn("jobFinished(params,retry)", job)
+        self.assertIn("BridgeTxProtocol.executeJob", job)
+        self.assertIn("BridgeTxJobService.schedule(this,false)", service)
+        self.assertIn('case "thumbnail":', protocol)
+        self.assertIn("BridgeNativeThumbnailCore.thumbnail", protocol)
+        # No extra uses-permission is added for the wake/recovery feature.
+        self.assertNotIn("android.permission.ACCESS_", fcm)
+        self.assertNotIn("android.permission.ACCESS_", job)
+
     def test_foreground_notification_remains_visible(self):
         source = (ROOT / "BridgeTxService.java.template").read_text()
         self.assertIn('setContentTitle("Servizio attivo")', source)
