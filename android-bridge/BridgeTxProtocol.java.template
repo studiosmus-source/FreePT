@@ -80,7 +80,7 @@ final class BridgeTxProtocol {
                 route="/bridge/tx/chunk";break;
             }
             case "thumbnail":{
-                result.put("chunk",BridgeAllFilesCore.thumbnail(item.getString("handle")));
+                result.put("chunk",BridgeNativeThumbnailCore.thumbnail(item.getString("handle")));
                 route="/bridge/tx/thumbnail";break;
             }
             default:throw new SecurityException("invalid_job");
