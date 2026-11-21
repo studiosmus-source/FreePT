@@ -44,14 +44,15 @@ export function createBridgeAndroidFolderDestination({plugin,name,ownerId,ownerN
       'discardFile','commitFolder','discardFolder'].some(k=>typeof plugin[k]!=='function'))
     throw Error('bridge_destination_invalid_options');
   ownerArguments(ownerId,ownerName);
-  if(typeof sourceKey!=='string'||sourceKey.length<5||sourceKey.length>2048)
+  if(sourceKey!==undefined&&
+     (typeof sourceKey!=='string'||sourceKey.length<5||sourceKey.length>2048))
     throw Error('bridge_destination_invalid_source');
   let active=false;
   return Object.freeze({
     async begin(){
       if(active)throw Error('bridge_destination_already_started');
       const result=await plugin.beginFolder({
-        name,sourceKey,...ownerArguments(ownerId,ownerName)
+        name,...(sourceKey===undefined?{}:{sourceKey}),...ownerArguments(ownerId,ownerName)
       });
       if(result?.started!==true)throw Error('bridge_destination_begin_invalid');
       active=true;
