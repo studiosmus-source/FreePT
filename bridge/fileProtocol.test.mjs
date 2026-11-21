@@ -46,6 +46,10 @@ test('job/device must be explicit valid identities',()=>{
 // Pagination must not silently stop at the former 10,000-entry ceiling.
 test('accepts pagination offsets beyond ten thousand entries',()=>{
   assert.equal(BRIDGE_FILE_LIMITS.maxTotalEntries,2147483647);
-  assert.equal(validateBridgeFolderPage({entries:[],nextOffset:20000}).nextOffset,20000);
+  const entries=Array.from({length:100},(_,i)=>({
+    handle:`00000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,
+    name:`file-${i}.txt`,directory:false,size:1,mime:'text/plain'
+  }));
+  assert.equal(validateBridgeFolderPage({entries,nextOffset:20000}).nextOffset,20000);
   assert.throws(()=>validateBridgeFolderPage({entries:[],nextOffset:-2}));
 });
