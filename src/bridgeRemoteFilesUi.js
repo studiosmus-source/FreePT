@@ -523,6 +523,7 @@ export function renderBridgeRemoteFiles({
     const THUMBNAIL_CACHE_BYTES=12*1024*1024;
     const thumbnailRows=new Map();
     let thumbnailObserver=null;
+    let thumbnailVisibilityFrame=null;
     let thumbnailAbort=null;
     let thumbnailActive=null;
     let thumbnailGeneration=0;
@@ -562,6 +563,10 @@ export function renderBridgeRemoteFiles({
       thumbnailFailureStreak=0;
       thumbnailObserver?.disconnect();
       thumbnailObserver=null;
+      if(thumbnailVisibilityFrame!==null){
+        cancelAnimationFrame(thumbnailVisibilityFrame);
+        thumbnailVisibilityFrame=null;
+      }
       for(const row of thumbnailRows.values())releaseThumbnail(row);
       thumbnailRows.clear();
       thumbnailsAllowed=false;
@@ -637,9 +642,31 @@ export function renderBridgeRemoteFiles({
       })();
     };
     resumeThumbnails=startVisibleThumbnail;
+    // The browser must not depend solely on IntersectionObserver callbacks:
+    // some embedded Android WebViews defer them while the folder list is
+    // being replaced. Reconcile on the next paint, before starting a job.
+    const refreshThumbnailViewport=()=>{
+      const height=window.innerHeight||document.documentElement.clientHeight;
+      const width=window.innerWidth||document.documentElement.clientWidth;
+      for(const row of thumbnailRows.values()){
+        if(!row.element.isConnected)continue;
+        const bounds=row.element.getBoundingClientRect();
+        const visible=bounds.bottom>-60&&bounds.top<height+60&&
+          bounds.right>0&&bounds.left<width;
+        if(!visible&&row.url){releaseThumbnail(row);row.attempted=false;}
+        row.visible=visible;
+      }
+      startVisibleThumbnail();
+    };
+    const scheduleThumbnailViewport=()=>{
+      if(thumbnailVisibilityFrame!==null||!alive())return;
+      thumbnailVisibilityFrame=requestAnimationFrame(()=>{
+        thumbnailVisibilityFrame=null;
+        if(alive()&&marker===revision)refreshThumbnailViewport();
+      });
+    };
     const trackThumbnail=(element,item,img,icon)=>{
-      if(typeof IntersectionObserver!=='function')return;
-      if(!thumbnailObserver){
+      if(!thumbnailObserver&&typeof IntersectionObserver==='function'){
         thumbnailObserver=new IntersectionObserver(entries=>{
           for(const entry of entries){
             const row=thumbnailRows.get(entry.target);
@@ -656,9 +683,13 @@ export function renderBridgeRemoteFiles({
       const row={element,item,img,icon,visible:false,attempted:false,url:null,
         key:[deviceId,item.handle,item.size,item.mime].join('|')};
       thumbnailRows.set(element,row);
-      thumbnailObserver.observe(element);
+      thumbnailObserver?.observe(element);
+      scheduleThumbnailViewport();
     };
 
+    // Capture nested scrolling containers without new controls or polling.
+    window.addEventListener('scroll',scheduleThumbnailViewport,{passive:true,capture:true});
+    window.addEventListener('resize',scheduleThumbnailViewport,{passive:true});
     const history=()=>stack.map(x=>x.name).join(' / ');
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
@@ -924,6 +955,7 @@ export function renderBridgeRemoteFiles({
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
         startVisibleThumbnail();
+        scheduleThumbnailViewport();
       }
     }
     try{await display();}
@@ -941,6 +973,8 @@ export function renderBridgeRemoteFiles({
     abortActiveBrowse();
     stopObservingMore();
     stopThumbnails();
+    window.removeEventListener('scroll',scheduleThumbnailViewport,true);
+    window.removeEventListener('resize',scheduleThumbnailViewport);
     closePreviews();
     clearPreviewCache();
     setBridgeBusy(false);
