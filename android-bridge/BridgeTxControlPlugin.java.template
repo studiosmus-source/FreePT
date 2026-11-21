@@ -34,13 +34,21 @@ public class BridgeTxControlPlugin extends Plugin {
                 .edit().putBoolean("paused",false).commit();
             Intent intent=new Intent(getContext(),BridgeTxService.class);
             androidx.core.content.ContextCompat.startForegroundService(getContext(),intent);
+            BridgeTxJobService.schedule(getContext(),false);
             JSObject out=new JSObject();out.put("requested",true);call.resolve(out);
-        }catch(Exception error){call.reject("bridge_tx_cannot_start");}
+        }catch(Exception error){
+            // Existing consent remains valid even if Android forbids starting FGS.
+            BridgeTxJobService.schedule(getContext(),false);
+            call.resolve(new JSObject().put("requested",true));
+        }
     }
     @PluginMethod public void stop(PluginCall call){
         getContext().getSharedPreferences("freept_tx_control",0)
             .edit().putBoolean("paused",true).apply();
         getContext().stopService(new Intent(getContext(),BridgeTxService.class));
+        android.app.job.JobScheduler scheduler=(android.app.job.JobScheduler)
+            getContext().getSystemService(android.content.Context.JOB_SCHEDULER_SERVICE);
+        if(scheduler!=null)scheduler.cancel(BridgeTxJobService.JOB_ID);
         JSObject out=new JSObject();out.put("requested",true);call.resolve(out);
     }
 }
