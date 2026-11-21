@@ -24,6 +24,12 @@ public final class BridgeTxJobService extends JobService {
     private final AtomicBoolean running=new AtomicBoolean(false);
     private volatile Thread worker;
     private volatile java.net.HttpURLConnection connection;
+    static boolean isScheduled(Context context){
+        if(context==null)return false;
+        JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        return scheduler!=null&&(scheduler.getPendingJob(PERIODIC_JOB_ID)!=null||
+            scheduler.getPendingJob(JOB_ID)!=null);
+    }
 
     static void schedulePeriodic(Context context){
         if(context==null||!BridgeAllFilesCore.granted()||
