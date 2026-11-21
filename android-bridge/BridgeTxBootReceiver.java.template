@@ -9,6 +9,7 @@ import android.os.Build;
 public final class BridgeTxBootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
         if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
+        BridgeTxJobService.schedulePeriodic(context);
         if (Build.VERSION.SDK_INT >= 35) {
             BridgeTxJobService.schedule(context,false);
             return; // Android 15 forbids dataSync FGS from BOOT_COMPLETED.
