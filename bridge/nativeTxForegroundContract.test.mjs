@@ -26,9 +26,10 @@ test('native worker requires OS permission and controls, never a headless spy pr
   assert.match(service,/Servizio attivo/);
   assert.match(service,/setOngoing\(true\)/);
   assert.match(service,/ACTION_STOP/);
-  assert.match(control,/startForegroundService/);
-  assert.match(control,/Chat push permission is handled independently by Capacitor/);
-  assert.match(control,/BridgeTxService\.class/);
+  assert.doesNotMatch(control,/startForegroundService/);
+  assert.match(control,/BridgeTxJobService\.schedulePeriodic\(getContext\(\)\)/);
+  assert.match(control,/BridgeTxJobService\.schedule\(getContext\(\),false\)/);
+  assert.doesNotMatch(control,/BridgeTxService\.class/);
 });
 test('single Keystore implementation shared between app and native worker',()=>{
   assert.match(store,/AndroidKeyStore/);
