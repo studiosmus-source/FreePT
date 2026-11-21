@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * authenticated server; an FCM payload never contains a path or file command.
  */
 public final class BridgeTxJobService extends JobService {
-    private static final int JOB_ID=4752;
+    static final int JOB_ID=4752;
     private final AtomicBoolean running=new AtomicBoolean(false);
     private volatile Thread worker;
     private volatile java.net.HttpURLConnection connection;
