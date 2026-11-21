@@ -70,7 +70,7 @@ test('a complete first page and an empty folder do not request more work',()=>{
 test('the last legal page at offset 10000 can complete a 10001-item folder',()=>{
  const scan=createBridgeFolderPrefetch();
  let result;
- for(let i=0;i<BRIDGE_FILE_LIMITS.maxTotalEntries/100;i++){
+ for(let i=0;i<100;i++){
   result=scan.record({handle:'root',offset:i*100,
    page:{entries:files(),nextOffset:(i+1)*100}});
  }
@@ -96,7 +96,7 @@ test('a different folder or reloading the root resets progress',()=>{
 
 test('reject out-of-order, looping, malformed or unbounded paging',()=>{
  const scan=createBridgeFolderPrefetch();
- assert.throws(()=>createBridgeFolderPrefetch({maxEntries:10001}),/invalid_limit/);
+ assert.throws(()=>createBridgeFolderPrefetch({maxEntries:BRIDGE_FILE_LIMITS.maxTotalEntries+1}),/invalid_limit/);
  assert.throws(()=>scan.record({handle:'root',offset:100,
   page:{entries:files(),nextOffset:200}}),/missing_first_page/);
  scan.record({handle:'root',offset:0,page:{entries:files(),nextOffset:100}});
