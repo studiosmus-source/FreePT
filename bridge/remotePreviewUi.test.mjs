@@ -158,7 +158,7 @@ test('remote directory loading reports queued/sent states without infinite spinn
  assert.match(source,/Riprova da questa schermata/);
 });
 
-test('browser requests thumbnails only for visible rows, after folder discovery',()=>{
+test('browser prioritizes visible rows and primes a bounded first batch after folder discovery',()=>{
  assert.match(source,/canLoadBridgeThumbnail\(item\)/);
  assert.match(source,/trackThumbnail\(line,item,img,icon\)/);
  assert.match(source,/thumbnailObserver=new IntersectionObserver/);
@@ -267,4 +267,18 @@ test('paint-time thumbnail recovery is bounded and clears timers',()=>{
  assert.match(source,/refreshThumbnailViewport\(\);/);
  assert.match(source,/if\(thumbnailLayoutTimer!==null\)/);
  assert.match(source,/clearTimeout\(thumbnailLayoutTimer\)/);
+});
+
+test('first four photo previews start even without a WebView intersection event',()=>{
+ assert.match(source,/const INITIAL_THUMBNAILS=4/);
+ assert.match(source,/const initial=entries\.slice\(0,INITIAL_THUMBNAILS\)/);
+ assert.match(source,/initial\.find\(item=>!item\.attempted&&item\.element\.isConnected\)/);
+ assert.match(source,/if\(pendingBrowse===currentBrowse\)pendingBrowse=null;[\s\S]*?startVisibleThumbnail\(\)/);
+ assert.match(source,/if\(!row\.element\.isConnected\|\|!alive\(\)\|\|marker!==revision\)return/);
+ assert.doesNotMatch(source,/if\(!row\.element\.isConnected\|\|!row\.visible/);
+});
+test('scrolling preserves previously loaded image thumbnails',()=>{
+ assert.match(source,/row\.visible=visible/);
+ assert.doesNotMatch(source,/if\(!visible\)\{\s*if\(thumbnailActive===row\)/);
+ assert.match(source,/row\.element\.dataset\.thumbnailState='ready'/);
 });
