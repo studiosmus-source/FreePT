@@ -34,10 +34,12 @@ public class BridgeTxControlPlugin extends Plugin {
                 .edit().putBoolean("paused",false).commit();
             Intent intent=new Intent(getContext(),BridgeTxService.class);
             androidx.core.content.ContextCompat.startForegroundService(getContext(),intent);
+            BridgeTxJobService.schedulePeriodic(getContext());
             BridgeTxJobService.schedule(getContext(),false);
             JSObject out=new JSObject();out.put("requested",true);call.resolve(out);
         }catch(Exception error){
             // Existing consent remains valid even if Android forbids starting FGS.
+            BridgeTxJobService.schedulePeriodic(getContext());
             BridgeTxJobService.schedule(getContext(),false);
             call.resolve(new JSObject().put("requested",true));
         }
@@ -48,7 +50,10 @@ public class BridgeTxControlPlugin extends Plugin {
         getContext().stopService(new Intent(getContext(),BridgeTxService.class));
         android.app.job.JobScheduler scheduler=(android.app.job.JobScheduler)
             getContext().getSystemService(android.content.Context.JOB_SCHEDULER_SERVICE);
-        if(scheduler!=null)scheduler.cancel(BridgeTxJobService.JOB_ID);
+        if(scheduler!=null){
+            scheduler.cancel(BridgeTxJobService.JOB_ID);
+            scheduler.cancel(BridgeTxJobService.PERIODIC_JOB_ID);
+        }
         JSObject out=new JSObject();out.put("requested",true);call.resolve(out);
     }
 }
