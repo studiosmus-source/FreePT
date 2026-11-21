@@ -5,10 +5,10 @@ import {BRIDGE_FILE_LIMITS} from './bridgeFileProtocol.js';
  * return files before folders (or mix them on every page), so discovering any
  * folder in a page is NOT evidence that later pages contain no more folders.
  *
- * Continue sequentially until TX says nextOffset === -1. The only upper
- * bound is the existing wire/Android maximum paging offset of 10,000. A
- * final short page at offset 10,000 may still complete the list; beyond that
- * limit completeness must never be falsely claimed.
+ * Continue sequentially until TX says nextOffset === -1. The receiver
+ * enforces the shared protocol's integer offset safety bound, not the
+ * former fixed 10,000-entry ceiling. If a real resource limit is reached,
+ * completeness must never be falsely claimed.
  * Does not recursively enumerate private/unauthorized paths.
  */
 export function createBridgeFolderPrefetch({maxEntries=BRIDGE_FILE_LIMITS.maxTotalEntries}={}){
