@@ -161,6 +161,11 @@ jobs:
           a=app.read_text()
           if 'com.google.gms.google-services' not in a:
               a+="\napply plugin: 'com.google.gms.google-services'\n"
+          # Native wake service subclasses Firebase Messaging directly; make
+          # that compile dependency explicit in the generated TEST app.
+          anchor="dependencies {"
+          if a.count(anchor)!=1: raise SystemExit('Unexpected app dependencies')
+          a=a.replace(anchor,anchor+"\n    implementation 'com.google.firebase:firebase-messaging:24.1.1'",1)
           app.write_text(a)
           print('Bridge Firebase client and Android Gradle integration validated')
           PY
