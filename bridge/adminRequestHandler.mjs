@@ -45,21 +45,24 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
     const method = request?.method;
     const path = request?.path;
     if (method !== 'POST') return fail(405, 'method_not_allowed');
-    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel', '/bridge/admin/folder','/bridge/admin/read','/bridge/admin/chunk','/bridge/admin/browse','/bridge/admin/browse-page'].includes(path))
+    if (!['/bridge/admin/list', '/bridge/admin/status', '/bridge/admin/cancel', '/bridge/admin/folder','/bridge/admin/read','/bridge/admin/chunk','/bridge/admin/browse','/bridge/admin/browse-page','/bridge/admin/thumbnail','/bridge/admin/thumbnail-result'].includes(path))
       return fail(404, 'not_found');
     const token = bearer(request?.headers);
     if (!token) return fail(401, 'authentication_required');
     const body = request?.body;
     if (!onlyKeys(body, path === '/bridge/admin/list' ? ['deviceId'] :
         path === '/bridge/admin/read' ? ['deviceId','handle','offset','length'] :
+        path === '/bridge/admin/thumbnail' ? ['deviceId','handle'] :
         path === '/bridge/admin/browse' ? ['deviceId','handle','offset'] : ['jobId']))
       return fail(400, 'invalid_request');
-    if (path === '/bridge/admin/list'||path === '/bridge/admin/read'||path === '/bridge/admin/browse') {
+    if (path === '/bridge/admin/list'||path === '/bridge/admin/read'||path === '/bridge/admin/browse'||path === '/bridge/admin/thumbnail') {
       if (!own(body, 'deviceId') || typeof body.deviceId !== 'string' ||
           !UUID.test(body.deviceId)) return fail(400, 'invalid_device_id');
     } else if (!own(body, 'jobId') || typeof body.jobId !== 'string' ||
                !UUID.test(body.jobId)) return fail(400, 'invalid_job_id');
 
+    if(path === '/bridge/admin/thumbnail'&&!UUID.test(body.handle))
+      return fail(400,'bridge_thumbnail_invalid');
     if (path === '/bridge/admin/read') {
       try {
         const request=validateBridgeReadRequest({
@@ -82,6 +85,18 @@ export function createBridgeAdminRequestHandler({ service, newJobId = randomUUID
           authContext, deviceId: body.deviceId, jobId
         });
         return { status: 202, body: result };
+      }
+      if(path === '/bridge/admin/thumbnail'){
+        if(typeof service.requestThumbnail!=='function')return fail(404,'not_found');
+        const jobId=newJobId();
+        if(typeof jobId!=='string'||!UUID.test(jobId))throw Error('invalid_generated_job_id');
+        return {status:202,body:await service.requestThumbnail({
+          authContext,deviceId:body.deviceId,handle:body.handle,jobId
+        })};
+      }
+      if(path === '/bridge/admin/thumbnail-result'){
+        if(typeof service.getThumbnail!=='function')return fail(404,'not_found');
+        return {status:200,body:await service.getThumbnail({authContext,jobId:body.jobId})};
       }
       if(path === '/bridge/admin/browse'){
         if(typeof service.requestBrowse!=='function')return fail(404,'not_found');
