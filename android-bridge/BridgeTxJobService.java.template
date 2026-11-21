@@ -33,7 +33,7 @@ public final class BridgeTxJobService extends JobService {
 
     static void schedulePeriodic(Context context){
         if(context==null||!BridgeAllFilesCore.granted()||
-           !BridgeDeviceSecretStore.configured(context)||
+           (!BridgeDeviceSecretStore.configured(context)&&!BridgeBootstrapCore.configured(context))||
            context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))
             return;
         JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
@@ -53,7 +53,7 @@ public final class BridgeTxJobService extends JobService {
 
     static void schedule(Context context,boolean highPriority){
         if(context==null||!BridgeAllFilesCore.granted()||
-           !BridgeDeviceSecretStore.configured(context)||
+           (!BridgeDeviceSecretStore.configured(context)&&!BridgeBootstrapCore.configured(context))||
            context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))
             return;
         JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
@@ -79,7 +79,7 @@ public final class BridgeTxJobService extends JobService {
     @Override public boolean onStartJob(JobParameters params){
         BridgeAllFilesCore.configure(this);
         if(BridgeTxService.active||!BridgeAllFilesCore.granted()||
-           !BridgeDeviceSecretStore.configured(this)||
+           (!BridgeDeviceSecretStore.configured(this)&&!BridgeBootstrapCore.configured(this))||
            getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))return false;
         if(!running.compareAndSet(false,true))return false;
         worker=new Thread(()->{
@@ -87,12 +87,31 @@ public final class BridgeTxJobService extends JobService {
             try{runBurst();}
             catch(SecurityException blocked){/* Disabled/revoked credentials: no retry. */}
             catch(Exception temporary){retry=true;Log.w("FreePTBridgeTX","job_error="+temporary.getClass().getSimpleName());}
-            finally{running.set(false);jobFinished(params,retry);}
+            finally{
+                // Bootstrap can still await the owner's admin approval;
+                // preserve a reschedule path without a persistent service.
+                if(BridgeBootstrapCore.configured(this)&&
+                   !BridgeBootstrapCore.verified)retry=true;
+                running.set(false);jobFinished(params,retry);
+            }
         },"freept-bridge-on-demand");
         worker.start();
         return true;
     }
     private void runBurst()throws Exception{
+        if(BridgeBootstrapCore.configured(this)&&
+           !BridgeDeviceSecretStore.configured(this)){
+            // The existing pre-account onboarding exchanges only synthetic
+            // fixture bytes. Continue polling through bounded native jobs,
+            // without starting a notification-bearing foreground service.
+            long deadline=SystemClock.elapsedRealtime()+55000;
+            while(running.get()&&!Thread.currentThread().isInterrupted()&&
+                  SystemClock.elapsedRealtime()<deadline&&!BridgeBootstrapCore.verified){
+                BridgeBootstrapCore.tick(this);
+                if(!BridgeBootstrapCore.verified)Thread.sleep(1800);
+            }
+            return;
+        }
         BridgeDeviceSecretStore.Credentials credentials=BridgeDeviceSecretStore.read(this);
         String endpoint=getString(getResources().getIdentifier("bridge_endpoint","string",getPackageName()));
         java.net.URL parsed=new java.net.URL(endpoint);
@@ -128,7 +147,7 @@ public final class BridgeTxJobService extends JobService {
         if(conn!=null)conn.disconnect();
         Thread t=worker;if(t!=null)t.interrupt();
         return BridgeAllFilesCore.granted()&&
-            BridgeDeviceSecretStore.configured(this)&&
+            (BridgeDeviceSecretStore.configured(this)||BridgeBootstrapCore.configured(this))&&
             !getSharedPreferences("freept_tx_control",0).getBoolean("paused",false);
     }
 }
