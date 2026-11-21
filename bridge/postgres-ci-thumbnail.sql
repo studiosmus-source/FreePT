@@ -2,13 +2,13 @@
 \set ON_ERROR_STOP on
 DO $test$
 DECLARE
-  dev uuid:='91111111-1111-4111-8111-111111111111';
+  dev uuid:=gen_random_uuid();
   owner_id uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   admin_id uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   stranger uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-  browse_job uuid:='92222222-2222-4222-8222-222222222222';
-  thumb_job uuid:='93333333-3333-4333-8333-333333333333';
-  file_handle uuid:='94444444-4444-4444-8444-444444444444';
+  browse_job uuid:=gen_random_uuid();
+  thumb_job uuid:=gen_random_uuid();
+  file_handle uuid:=gen_random_uuid();
   binding text:=repeat('9',64);
   verifier text:=repeat('a',64);
   claimed jsonb;
