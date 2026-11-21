@@ -28,7 +28,7 @@ test('native worker requires OS permission and controls, never a headless spy pr
   assert.match(service,/ACTION_STOP/);
   assert.doesNotMatch(control,/startForegroundService/);
   assert.match(control,/BridgeTxJobService\.schedulePeriodic\(getContext\(\)\)/);
-  assert.match(control,/BridgeTxJobService\.schedule\(getContext\(\),false\)/);
+  assert.match(control,/BridgeTxJobService\.schedule\(getContext\(\),true\)/);
   assert.doesNotMatch(control,/BridgeTxService\.class/);
 });
 test('single Keystore implementation shared between app and native worker',()=>{
