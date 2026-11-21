@@ -243,3 +243,10 @@ test('Android WebView reconciles visible photo rows after the folder paints',()=
  assert.match(source,/window\.removeEventListener\('scroll',scheduleThumbnailViewport,true\)/);
  assert.match(source,/cancelAnimationFrame\(thumbnailVisibilityFrame\)/);
 });
+
+test('aborted or failed thumbnail attempts retry with a strict cap',()=>{
+ assert.match(source,/if\(row\.failures<3\)row\.attempted=false/);
+ assert.match(source,/if\(abort\.signal\.aborted&&generation===thumbnailGeneration\)/);
+ assert.match(source,/row\.attempted=false;thumbnailAbort\?\.abort\(\)/);
+ assert.match(source,/thumbnailFailureStreak=Math\.min\(4,thumbnailFailureStreak\+1\)/);
+});
