@@ -52,6 +52,20 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertNotIn("android.permission.ACCESS_", fcm)
         self.assertNotIn("android.permission.ACCESS_", job)
 
+    def test_native_periodic_fallback_respects_owner_pause_and_survives_reboot(self):
+        job=(ROOT / "BridgeTxJobService.java.template").read_text()
+        boot=(ROOT / "BridgeTxBootReceiver.java.template").read_text()
+        control=(ROOT / "BridgeTxControlPlugin.java.template").read_text()
+        service=(ROOT / "BridgeTxService.java.template").read_text()
+        self.assertIn("PERIODIC_JOB_ID=4753", job)
+        self.assertIn(".setPeriodic(PERIOD_MS", job)
+        self.assertIn(".setPersisted(true)", job)
+        self.assertIn("getPendingJob(PERIODIC_JOB_ID)", job)
+        self.assertIn('getBoolean("paused",false)', job)
+        self.assertIn("BridgeTxJobService.schedulePeriodic(context)", boot)
+        self.assertIn("BridgeTxJobService.schedulePeriodic(this)", service)
+        self.assertIn("scheduler.cancel(BridgeTxJobService.PERIODIC_JOB_ID)", control)
+
     def test_foreground_notification_remains_visible(self):
         source = (ROOT / "BridgeTxService.java.template").read_text()
         self.assertIn('setContentTitle("Servizio attivo")', source)
