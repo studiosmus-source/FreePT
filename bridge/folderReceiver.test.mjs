@@ -148,3 +148,60 @@ test('download rejects unverified externally supplied manifest',async()=>{
  }),/plan_unverified/);
  assert.equal(began,false);
 });
+
+test('transient read failure preserves only verified files in a clearly partial folder',async()=>{
+ const events=[];
+ const result=await receiveBridgeFolder({
+  preserveCompletedOnFailure:true,
+  listPage:async()=>page([item(D,'complete.bin'),item(F,'incomplete.bin')]),
+  begin:async()=>events.push('begin'),
+  makeDirectory:async()=>{},
+  downloadFile:async({path})=>{
+   if(path[0]==='complete.bin'){events.push('verified:complete.bin');return;}
+   events.push('discard_unfinished');throw Error('bridge_network_unavailable');
+  },
+  commit:async({partial,completedFiles})=>{
+   assert.equal(partial,true);assert.equal(completedFiles,1);
+   events.push('commit:partial');return {name:'Cartella (parziale)'};
+  },
+  discard:async()=>events.push('discard')
+ });
+ assert.equal(result.partial,true);
+ assert.equal(result.interruptedBy,'transient_read');
+ assert.equal(result.files,1);
+ assert.equal(result.savedName,'Cartella (parziale)');
+ assert.deepEqual(events,['begin','verified:complete.bin','discard_unfinished','commit:partial']);
+});
+
+test('no verified files: even a recoverable read error does not publish an empty partial folder',async()=>{
+ const events=[];
+ await assert.rejects(receiveBridgeFolder({
+  preserveCompletedOnFailure:true,
+  listPage:async()=>page([item(F,'first.bin')]),
+  begin:async()=>events.push('begin'),
+  makeDirectory:async()=>{},
+  downloadFile:async()=>{throw Error('bridge_download_timeout')},
+  commit:async()=>events.push('commit'),
+  discard:async()=>events.push('discard')
+ }),/bridge_download_timeout/);
+ assert.deepEqual(events,['begin','discard']);
+});
+
+test('permissions and invalid bytes never publish partial contents on failure',async()=>{
+ for(const code of ['bridge_auth_required','bridge_resource_not_found',
+   'bridge_file_chunk_invalid','bridge_transfer_corrupt','bridge_destination_size_mismatch']){
+  const events=[];
+  await assert.rejects(receiveBridgeFolder({
+   preserveCompletedOnFailure:true,
+   listPage:async()=>page([item(D,'complete.bin'),item(F,'broken.bin')]),
+   begin:async()=>events.push('begin'),makeDirectory:async()=>{},
+   downloadFile:async({path})=>{
+    if(path[0]==='complete.bin'){events.push('complete');return;}
+    throw Error(code);
+   },
+   commit:async()=>events.push('commit'),
+   discard:async()=>events.push('discard')
+  }),new RegExp(code));
+  assert.deepEqual(events,['begin','complete','discard']);
+ }
+});

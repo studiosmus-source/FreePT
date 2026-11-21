@@ -83,3 +83,45 @@ test('cancellation discards staged output',async()=>{
   destination:f.destination,signal:ctl.signal,pause:async()=>{}}),/cancelled/);
  assert.equal(f.discarded,1);assert.equal(f.committed,0);
 });
+
+test('transient status and completed-chunk transport errors retry same job only',async()=>{
+ const f=fixture(Buffer.from([17,18,19]));
+ let statusCalls=0,chunkCalls=0,waits=[];
+ f.api.getStatus=async()=>{
+  if(++statusCalls<=2)throw Error('bridge_network_unavailable');
+  return {jobId:JOB,deviceId:DEVICE,state:'done'};
+ };
+ f.api.getReadChunk=async()=>{
+  if(++chunkCalls<=2)throw Error('bridge_backend_unavailable');
+  return {base64:'ERIT',bytesRead:3,eof:true};
+ };
+ const result=await downloadBridgeFile({
+  api:f.api,deviceId:DEVICE,handle:HANDLE,size:3,destination:f.destination,
+  pause:async ms=>waits.push(ms),pollMs:700
+ });
+ assert.equal(result.bytesReceived,3);
+ assert.equal(f.requests.length,1,'never enqueue duplicate read on ambiguous GET failure');
+ assert.equal(statusCalls,3);assert.equal(chunkCalls,3);
+ assert.deepEqual(waits,[700,1400,700,1400]);
+ assert.equal(f.committed,1);assert.equal(f.discarded,0);
+});
+
+test('permanent authorization failure is never retried as a transient status error',async()=>{
+ const f=fixture(Buffer.from([1,2,3]));
+ let statusCalls=0;
+ f.api.getStatus=async()=>{statusCalls++;throw Error('bridge_auth_required')};
+ await assert.rejects(downloadBridgeFile({
+  api:f.api,deviceId:DEVICE,handle:HANDLE,size:3,destination:f.destination,
+  pause:async()=>{}
+ }),/bridge_auth_required/);
+ assert.equal(statusCalls,1);assert.equal(f.requests.length,1);
+ assert.equal(f.committed,0);assert.equal(f.discarded,1);
+});
+
+test('an explicitly expired read job requeues only the same byte range',async()=>{
+ const f=fixture(Buffer.from([3,4,5]),['expired','done']);
+ await downloadBridgeFile({api:f.api,deviceId:DEVICE,handle:HANDLE,size:3,
+  destination:f.destination,pause:async()=>{}});
+ assert.deepEqual(f.requests.map(r=>[r.offset,r.length]),[[0,3],[0,3]]);
+ assert.equal(f.committed,1);
+});

@@ -4,6 +4,8 @@
  * This UI never embeds device credentials, raw paths or server-role keys.
  */
 import {createBridgeRemoteFolderLister} from './bridgeBrowseClient.js';
+import {createBridgeFolderPrefetch} from './bridgeFolderPrefetch.js';
+import {canLoadBridgeThumbnail,fetchBridgeThumbnail,compactBridgeThumbnail} from './bridgeThumbnailClient.js';
 import {downloadBridgeFolder,inspectBridgeFolder} from './bridgeFolderDownloadClient.js';
 import {downloadBridgeFile,readBridgePreviewPrefix} from './bridgeDownloadClient.js';
 import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
@@ -52,6 +54,10 @@ export function renderBridgeRemoteFiles({
   let controller=null;
   let activeDownload=false;
   let abortActiveBrowse=()=>{};
+  let stopThumbnails=()=>{};
+  let pauseThumbnails=()=>{};
+  let resumeThumbnails=()=>{};
+  let resumePausedFolderScan=()=>{};
   const previewClosers=new Set();
   const setBridgeBusy=value=>{host.dataset.bridgeBusy=value?'true':'false';};
   setBridgeBusy(false);
@@ -104,6 +110,28 @@ export function renderBridgeRemoteFiles({
     if(!alive())throw Error('Download non autorizzato');
   };
   const setStatus=value=>{if(alive())status.textContent=value};
+  const remoteErrorText=error=>{
+    const code=error?.message;
+    if(code==='bridge_request_throttled')
+      return 'Troppe richieste al server: riprova tra pochi secondi.';
+    if(code==='bridge_backend_unavailable'||code==='bridge_network_unavailable')
+      return 'Connessione al Bridge temporaneamente non disponibile: riprova.';
+    if(code==='bridge_request_failed')
+      return 'Richiesta non riuscita. Puoi riprovare senza perdere le voci già caricate.';
+    if(code==='bridge_device_unavailable')
+      return 'Il dispositivo remoto non è momentaneamente raggiungibile.';
+    if(code==='bridge_job_already_final')
+      return 'La richiesta di trasferimento è già terminata.';
+    if(code==='bridge_resource_not_found')
+      return 'File o richiesta non più disponibile, oppure accesso non autorizzato.';
+    if(code==='bridge_invalid_remote_request')
+      return 'Richiesta rifiutata dal server: dati di trasferimento non validi.';
+    if(code?.startsWith('bridge_request_rejected_'))
+      return 'Richiesta rifiutata dal server ('+code.slice(-3)+').';
+    if(code==='bridge_destination_size_mismatch')
+      return 'Il file salvato non corrisponde alla dimensione attesa: download non completato.';
+    return code||'errore remoto';
+  };
   const fileDownload=async(item,deviceId)=>{
     const writer=await createBridgeAndroidSingleFileWriter({
       plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime,
@@ -128,6 +156,7 @@ export function renderBridgeRemoteFiles({
   const showPreview=async(item,deviceId)=>{
     if(activeDownload||!alive())return;
     closePreviews();
+    pauseThumbnails();
     setBridgeBusy(true);
     const priorFocus=document.activeElement;
     const panel=create('section',undefined,document.body);
@@ -159,7 +188,7 @@ export function renderBridgeRemoteFiles({
       document.removeEventListener('keydown',onKeyDown);
       panel.remove();
       previewClosers.delete(dismiss);
-      if(!activeDownload)setBridgeBusy(false);
+      if(!activeDownload){setBridgeBusy(false);resumeThumbnails();}
       if(priorFocus?.isConnected)priorFocus.focus();
     };
     const onKeyDown=event=>{
@@ -222,7 +251,7 @@ export function renderBridgeRemoteFiles({
       publishPreview(new Blob(parts,{type:item.mime}));
     }catch(error){
       if(!closed&&!abort.signal.aborted)
-        message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
+        message.textContent='Anteprima non disponibile: '+remoteErrorText(error);
     }
   };
   /**
@@ -308,7 +337,11 @@ export function renderBridgeRemoteFiles({
     const isFolder=root||item.directory;
     if(!isFolder&&!confirm('Scaricare '+title+' nella cartella scelta?'))return;
     closePreviews();
+    pauseThumbnails();
     activeDownload=true;setBridgeBusy(true);
+    // A folder-catalogue page already in flight must not race a full scan.
+    // Its offset is retained by showDevice and resumed after the download.
+    abortActiveBrowse();
     cancel.hidden=false;
     controller=new AbortController();
     const signal=controller.signal;
@@ -355,6 +388,7 @@ export function renderBridgeRemoteFiles({
         const result=await downloadBridgeFolder({
           api:bridgeClient,deviceId,manifest,
           destination:writer,signal,preserveCompletedOnCancel:true,
+          preserveCompletedOnFailure:true,
           onStage:stage=>{
             if(stage==='destination')setStatus('Creazione cartella temporanea…');
             else if(stage==='transfer')setStatus('Scaricamento dei '+summary.files+' file…');
@@ -365,8 +399,12 @@ export function renderBridgeRemoteFiles({
             ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
         });
         if(result.partial){
-          setStatus('Annullato. Conservati '+result.files+' file completi in '+
-            (result.savedName||'cartella (parziale)')+'.');
+          setStatus((result.interruptedBy==='transient_read'
+            ?'Download interrotto per un errore di comunicazione. '
+            :'Download annullato. ')+
+            'Conservati '+result.files+'/'+summary.files+' file completi in '+
+            (result.savedName||'cartella (parziale)')+
+            '. Gli altri file non sono stati salvati.');
         }else setStatus('Cartella scaricata: '+result.files+' file.');
       }else{
         setStatus('Controllo cartella di destinazione…');
@@ -379,10 +417,12 @@ export function renderBridgeRemoteFiles({
     }catch(error){
       if(error?.message==='bridge_transfer_cancelled')
         setStatus('Download interrotto. Se nessun file era completo, nessuna cartella è stata salvata.');
-      else setStatus(error?.message||'Download non riuscito.');
+      else setStatus('Download non riuscito: '+remoteErrorText(error));
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
+      resumePausedFolderScan();
+      resumeThumbnails();
     }
   };
   cancel.onclick=()=>{controller?.abort();setStatus('Interruzione richiesta…')};
@@ -405,6 +445,7 @@ export function renderBridgeRemoteFiles({
   async function fetchListDevices(){
     if(!alive())return;
     abortActiveBrowse();
+    stopThumbnails();
     const marker=++revision;
     closePreviews();
     clearPreviewCache();
@@ -452,6 +493,7 @@ export function renderBridgeRemoteFiles({
     if(openingDeviceId===deviceId)return;
     openingDeviceId=deviceId;
     abortActiveBrowse();
+    stopThumbnails();
     const marker=++revision;
     let pendingBrowse=null;
     abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
@@ -459,6 +501,164 @@ export function renderBridgeRemoteFiles({
     closePreviews();
     const stack=[{handle:'root',name:label}];
     const lister=createBridgeRemoteFolderLister({api:bridgeClient,deviceId});
+    const folderPrefetch=createBridgeFolderPrefetch();
+    let pausedPageOffset=null;
+    let pausedPageHandle=null;
+    let pausedPageNavigation=null;
+    resumePausedFolderScan=()=>{
+      if(activeDownload||pausedPageOffset===null||marker!==revision||!alive())return;
+      const current=stack[stack.length-1];
+      if(current?.handle!==pausedPageHandle||pausedPageNavigation!==navigation){
+        pausedPageOffset=null;pausedPageHandle=null;pausedPageNavigation=null;
+        return;
+      }
+      const next=pausedPageOffset;
+      pausedPageOffset=null;pausedPageHandle=null;pausedPageNavigation=null;
+      void display(next);
+    };
+    // Automatic previews run ONLY for viewport-visible images. They share the
+    // authenticated Bridge read protocol and never touch remote TX settings.
+    const thumbnailCache=new Map();
+    let thumbnailCacheBytes=0;
+    const THUMBNAIL_CACHE_BYTES=12*1024*1024;
+    const thumbnailRows=new Map();
+    let thumbnailObserver=null;
+    let thumbnailAbort=null;
+    let thumbnailActive=null;
+    let thumbnailGeneration=0;
+    let thumbnailsAllowed=false;
+    let thumbnailRetryTimer=null;
+    let thumbnailNextAt=0;
+    let thumbnailFailureStreak=0;
+    const rememberThumbnail=(key,blob)=>{
+      if(blob.size>THUMBNAIL_CACHE_BYTES)return;
+      const previous=thumbnailCache.get(key);
+      if(previous)thumbnailCacheBytes-=previous.size;
+      thumbnailCache.delete(key);
+      while(thumbnailCacheBytes+blob.size>THUMBNAIL_CACHE_BYTES||
+            thumbnailCache.size>=40){
+        const oldest=thumbnailCache.keys().next().value;
+        if(oldest===undefined)break;
+        thumbnailCacheBytes-=thumbnailCache.get(oldest).size;
+        thumbnailCache.delete(oldest);
+      }
+      thumbnailCache.set(key,blob);
+      thumbnailCacheBytes+=blob.size;
+    };
+    const releaseThumbnail=row=>{
+      if(row.url){URL.revokeObjectURL(row.url);row.url=null;}
+      row.img.removeAttribute('src');
+      row.img.hidden=true;
+      row.icon.hidden=false;
+    };
+    const stopThumbnailRows=()=>{
+      thumbnailGeneration++;
+      thumbnailAbort?.abort();
+      thumbnailAbort=null;
+      thumbnailActive=null;
+      if(thumbnailRetryTimer!==null)clearTimeout(thumbnailRetryTimer);
+      thumbnailRetryTimer=null;
+      thumbnailNextAt=0;
+      thumbnailFailureStreak=0;
+      thumbnailObserver?.disconnect();
+      thumbnailObserver=null;
+      for(const row of thumbnailRows.values())releaseThumbnail(row);
+      thumbnailRows.clear();
+      thumbnailsAllowed=false;
+    };
+    stopThumbnails=()=>{
+      stopThumbnailRows();
+      thumbnailCache.clear();
+      thumbnailCacheBytes=0;
+    };
+    pauseThumbnails=()=>{
+      if(thumbnailActive)thumbnailActive.attempted=false;
+      thumbnailAbort?.abort();
+      if(thumbnailRetryTimer!==null){clearTimeout(thumbnailRetryTimer);thumbnailRetryTimer=null;}
+    };
+    const showThumbnail=(row,blob)=>{
+      if(!row.element.isConnected||!row.visible||!alive()||marker!==revision)return;
+      releaseThumbnail(row);
+      row.url=URL.createObjectURL(blob);
+      row.img.src=row.url;
+      row.img.hidden=false;
+      row.icon.hidden=true;
+    };
+    const startVisibleThumbnail=()=>{
+      if(!thumbnailsAllowed||thumbnailActive||pendingBrowse||activeDownload||
+         previewClosers.size>0||!alive()||marker!==revision)return;
+      const waitMs=thumbnailNextAt-Date.now();
+      if(waitMs>0){
+        if(thumbnailRetryTimer===null)thumbnailRetryTimer=setTimeout(()=>{
+          thumbnailRetryTimer=null;
+          startVisibleThumbnail();
+        },waitMs);
+        return;
+      }
+      const row=[...thumbnailRows.values()].find(item=>
+        item.visible&&!item.attempted&&item.element.isConnected);
+      if(!row)return;
+      row.attempted=true;
+      thumbnailActive=row;
+      const generation=thumbnailGeneration;
+      const abort=new AbortController();
+      thumbnailAbort=abort;
+      void (async()=>{
+        try{
+          let blob=thumbnailCache.get(row.key);
+          if(!blob){
+            blob=await fetchBridgeThumbnail({
+              api:bridgeClient,deviceId,item:row.item,signal:abort.signal
+            });
+            if(!blob||abort.signal.aborted||generation!==thumbnailGeneration)return;
+            blob=await compactBridgeThumbnail(blob);
+            if(abort.signal.aborted||generation!==thumbnailGeneration)return;
+            rememberThumbnail(row.key,blob);
+          }
+          if(abort.signal.aborted||generation!==thumbnailGeneration)return;
+          showThumbnail(row,blob);
+          thumbnailFailureStreak=0;
+          // Keep expensive read jobs secondary to navigation and downloads.
+          thumbnailNextAt=Date.now()+2000;
+        }catch{
+          // One remote image failure must not trigger a storm of subsequent
+          // read jobs. Back off progressively without changing TX or grants.
+          if(!abort.signal.aborted){
+            thumbnailFailureStreak=Math.min(4,thumbnailFailureStreak+1);
+            thumbnailNextAt=Date.now()+Math.min(30000,4000*thumbnailFailureStreak);
+          }
+        }finally{
+          if(thumbnailActive===row){
+            thumbnailActive=null;
+            thumbnailAbort=null;
+          }
+          if(generation===thumbnailGeneration)startVisibleThumbnail();
+        }
+      })();
+    };
+    resumeThumbnails=startVisibleThumbnail;
+    const trackThumbnail=(element,item,img,icon)=>{
+      if(typeof IntersectionObserver!=='function')return;
+      if(!thumbnailObserver){
+        thumbnailObserver=new IntersectionObserver(entries=>{
+          for(const entry of entries){
+            const row=thumbnailRows.get(entry.target);
+            if(!row)continue;
+            row.visible=entry.isIntersecting;
+            if(!row.visible){
+              if(thumbnailActive===row)thumbnailAbort?.abort();
+              if(row.url){releaseThumbnail(row);row.attempted=false;}
+            }
+          }
+          startVisibleThumbnail();
+        },{root:null,rootMargin:'0px 0px 60px 0px'});
+      }
+      const row={element,item,img,icon,visible:false,attempted:false,url:null,
+        key:[deviceId,item.handle,item.size,item.mime].join('|')};
+      thumbnailRows.set(element,row);
+      thumbnailObserver.observe(element);
+    };
+
     const history=()=>stack.map(x=>x.name).join(' / ');
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
@@ -469,14 +669,30 @@ export function renderBridgeRemoteFiles({
     let navigation=0;
     async function display(offset=0){
       if(!alive()||marker!==revision)return;
-      if(activeDownload){setStatus('Completa o annulla il download prima di navigare.');return;}
+      if(activeDownload){
+        if(offset>0){
+          pausedPageOffset=offset;
+          pausedPageHandle=stack[stack.length-1]?.handle;
+          pausedPageNavigation=navigation;
+        }
+        setStatus('Download in corso. La ricerca cartelle riprenderà alla fine.');
+        return false;
+      }
       pendingBrowse?.abort();
       const currentBrowse=new AbortController();
       pendingBrowse=currentBrowse;
       const view=++navigation;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
-      if(offset===0){stopObservingMore();closePreviews();browser.replaceChildren();}
+      if(offset>0){
+        pausedPageOffset=offset;
+        pausedPageHandle=current.handle;
+        pausedPageNavigation=view;
+      }
+      if(offset===0){
+        stopObservingMore();stopThumbnailRows();closePreviews();browser.replaceChildren();
+        pausedPageOffset=null;pausedPageHandle=null;pausedPageNavigation=null;
+      }
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
@@ -531,12 +747,21 @@ export function renderBridgeRemoteFiles({
           foldersTitle.className='bridge-list-section-heading';
           foldersTitle.hidden=true;
           create('div',undefined,list).className='bridge-remote-folders';
+          const folderDiscovery=create('p','',list);
+          folderDiscovery.className='bridge-folder-discovery-status';
+          folderDiscovery.hidden=true;
           const filesTitle=create('h4','File',list);
           filesTitle.className='bridge-list-section-heading';
           filesTitle.hidden=true;
           create('div',undefined,list).className='bridge-remote-files';
         }
         const list=browser.querySelector('.bridge-remote-entries');
+        if(offset>0){
+          // A page interrupted by a download can be retried directly. Remove
+          // its old load-more action so two buttons do not remain on screen.
+          for(const previous of list.querySelectorAll('.bridge-load-more'))
+            previous.remove();
+        }
         const folders=list.querySelector('.bridge-remote-folders');
         const files=list.querySelector('.bridge-remote-files');
         for(const item of page.entries){
@@ -546,9 +771,22 @@ export function renderBridgeRemoteFiles({
           line.className='bridge-entry';
           const hidden=item.name.startsWith('.');
           line.dataset.bridgeHidden=hidden?'true':'false';
-          const primary=create('button',(item.directory?'📁 ':'📄 ')+item.name,line);
+          const canThumbnail=canLoadBridgeThumbnail(item);
+          const primary=create('button',canThumbnail?undefined:
+            (item.directory?'📁 ':'📄 ')+item.name,line);
           primary.className='bridge-entry-primary';
           primary.type='button';
+          if(canThumbnail){
+            primary.classList.add('bridge-entry-photo-button');
+            const icon=create('span','🖼️',primary);
+            icon.className='bridge-entry-photo-icon';
+            const img=create('img',undefined,primary);
+            img.className='bridge-entry-photo-thumb';
+            img.alt='';img.hidden=true;
+            const name=create('span',item.name,primary);
+            name.className='bridge-entry-photo-name';
+            trackThumbnail(line,item,img,icon);
+          }
           if(hidden){
             const marker=create('small','nascosto',line);
             marker.className='bridge-hidden-label';
@@ -571,10 +809,33 @@ export function renderBridgeRemoteFiles({
             const details=create('small',item.size+' byte · '+item.mime,options);
           }
         }
+        // Pages can arrive file-first from older remote Bridge builds. Keep
+        // the already loaded file rows usable while discovering folders ahead
+        // of them across later pages. Do not require changes on the owner TX.
+        const scan=folderPrefetch.record({handle:current.handle,offset,page});
+        pausedPageOffset=scan.autoFetch?page.nextOffset:null;
+        pausedPageHandle=scan.autoFetch?current.handle:null;
+        pausedPageNavigation=scan.autoFetch?view:null;
+        thumbnailsAllowed=!scan.autoFetch;
+        const folderNotice=list.querySelector('.bridge-folder-discovery-status');
+        if(folderNotice){
+          folderNotice.hidden=!scan.pending;
+          if(scan.pending){
+            folders.previousElementSibling.hidden=false;
+            folderNotice.textContent=scan.atLimit
+              ? 'Altre sottocartelle potrebbero trovarsi nelle pagine successive. Premi Carica altri file e cartelle per continuare.'
+              : 'Ricerca sottocartelle nelle pagine successive… ('+scan.pagesRead+' pagine caricate)';
+          }else if(!folders.children.length){
+            folders.previousElementSibling.hidden=true;
+          }
+        }
         if(page.nextOffset!==-1){
           const more=create('button','Carica altri file e cartelle',list);
           more.className='bridge-load-more';
-          // Load subsequent pages only on demand. Large folders must stay
+          // Keep the retry button near the directory heading when scanning:
+          // file-first catalogues may have hundreds of entries below it.
+          if(scan.pending)list.insertBefore(more,files.previousElementSibling);
+          // Load subsequent pages one at a time; never enqueue in parallel. Large folders must stay
           // navigable while earlier entries are available, even on a slow TX.
           // Keep the retry control if an individual page request fails.
           more.onclick=async()=>{
@@ -585,9 +846,15 @@ export function renderBridgeRemoteFiles({
             if(loaded)more.remove();
             else if(more.isConnected)more.disabled=false;
           };
-          // Load the next bounded page only as the reader nears the bottom.
-          // Keep the manual button as fallback; never flood TX with all pages.
-          if(typeof IntersectionObserver==='function'){
+          // Legacy TX sometimes sends ALL files before two directories in
+          // its final page. Scan ahead in a bounded sequential batch while
+          // preserving existing rows and an explicit retry on any failure.
+          if(scan.autoFetch){
+            void Promise.resolve().then(()=>{
+              if(more.isConnected&&!more.disabled&&view===navigation)
+                void more.onclick();
+            });
+          }else if(!scan.atLimit&&typeof IntersectionObserver==='function'){
             moreObserver=new IntersectionObserver(entries=>{
               if(entries.some(entry=>entry.isIntersecting)&&more.isConnected&&
                  !more.disabled&&view===navigation){
@@ -605,23 +872,48 @@ export function renderBridgeRemoteFiles({
           'Elementi caricati: '+rows.length+' · Nascosti: '+hiddenRows.length+
           (page.nextOffset===-1
             ? ' · Fine elenco trasmesso dal telefono'
-            : ' · Elenco parziale: scorri per caricare le altre pagine');
-        setStatus(cached&&current.handle==='root'&&offset===0
-          ? 'Elenco principale recente (in memoria). Premi Aggiorna per verificarlo sul telefono.'
+            :scan.autoFetch
+              ? ' · Ricerca automatica delle sottocartelle in corso'
+              : ' · Elenco parziale: carica le altre pagine');
+        setStatus(scan.autoFetch
+          ? 'Ricerca delle sottocartelle nelle pagine successive…'
+          :cached&&current.handle==='root'&&offset===0
+            ? 'Elenco principale recente (in memoria). Premi Aggiorna per verificarlo sul telefono.'
           :page.nextOffset===-1
             ? 'Fine elenco trasmesso dal telefono.'
             : 'Altri elementi disponibili: scorri per continuare.');
         return true;
       }catch(error){
-        if(currentBrowse.signal.aborted)return false;
+        if(!currentBrowse.signal.aborted&&offset>0){
+          // A failed catalogue page must not permanently block existing
+          // viewport thumbnails. Keep manual page retry and loaded rows.
+          thumbnailsAllowed=true;
+          const interrupted=browser.querySelector('.bridge-folder-discovery-status');
+          if(interrupted&&!interrupted.hidden)
+            interrupted.textContent='Ricerca sottocartelle interrotta. '+
+              'Usa Carica altri file e cartelle per riprendere.';
+          const summary=browser.querySelector('.bridge-folder-completeness');
+          if(summary)summary.textContent=summary.textContent.replace(
+            'Ricerca automatica delle sottocartelle in corso',
+            'Ricerca interrotta: file caricati conservati');
+        }
+        if(currentBrowse.signal.aborted){
+          if(activeDownload&&offset>0){
+            pausedPageOffset=offset;
+            pausedPageHandle=current.handle;
+            pausedPageNavigation=view;
+          }
+          return false;
+        }
         setStatus(error?.message==='bridge_remote_browse_expired'
-          ?'Richiesta scaduta: il telefono remoto non ha ritirato o completato il lavoro. Controlla il Bridge sul telefono e premi Aggiorna.'
+          ?'Richiesta scaduta: nessuna risposta entro il termine. Riprova da questa schermata.'
           :error?.message==='bridge_remote_browse_timeout'
-            ?'Il telefono remoto non ha risposto entro il limite di attesa. Controlla il Bridge sul telefono. Premi Aggiorna per riprovare.'
-            :'Elenco non disponibile: '+(error?.message||'errore remoto'));
+            ?'Il telefono remoto non ha risposto entro il limite di attesa. Riprova da questa schermata.'
+            :'Elenco non disponibile: '+remoteErrorText(error));
         return false;
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
+        startVisibleThumbnail();
       }
     }
     try{await display();}
@@ -638,6 +930,7 @@ export function renderBridgeRemoteFiles({
     controller?.abort();
     abortActiveBrowse();
     stopObservingMore();
+    stopThumbnails();
     closePreviews();
     clearPreviewCache();
     setBridgeBusy(false);

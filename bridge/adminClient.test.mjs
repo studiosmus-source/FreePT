@@ -102,3 +102,95 @@ test('expired job status is accepted but never mistaken for a successful cancell
  assert.equal((await f.client.getStatus(JOB)).state,'expired');
  await assert.rejects(()=>f.client.cancel(JOB),/bridge_invalid_response/);
 });
+
+test('admin browse retries only a gateway-rejected 429 and never duplicates successful enqueue',async()=>{
+ let attempts=0;
+ const waits=[];
+ const auth={async getSession(){return {data:{session:{access_token:token}}}}};
+ const api=createBridgeAdminClient({baseUrl:endpoint,auth,
+  retryPause:async ms=>{waits.push(ms)},
+  fetchImpl:async(url,opts)=>{
+   assert.equal(url,endpoint+'/bridge/admin/browse');
+   assert.deepEqual(JSON.parse(opts.body),{deviceId:DEVICE,handle:'root',offset:0});
+   attempts++;
+   return attempts<=2
+     ? {ok:false,status:429}
+     : {ok:true,status:202,json:async()=>({jobId:JOB,deviceId:DEVICE,state:'queued'})};
+  }
+ });
+ assert.equal((await api.requestBrowse(DEVICE)).state,'queued');
+ assert.equal(attempts,3);
+ assert.deepEqual(waits,[1200,2400]);
+});
+
+test('Bridge admin refuses ambiguous 5xx retries after possible enqueue',async()=>{
+ let attempts=0;
+ const api=createBridgeAdminClient({
+  baseUrl:endpoint,
+  auth:{async getSession(){return {data:{session:{access_token:token}}}}},
+  retryPause:async()=>{throw Error('should_not_retry')},
+  fetchImpl:async()=>{attempts++;return {ok:false,status:503};}
+ });
+ await assert.rejects(()=>api.requestBrowse(DEVICE),/bridge_backend_unavailable/);
+ assert.equal(attempts,1);
+});
+
+test('persistent gateway 429 is bounded and reported as throttling',async()=>{
+ let attempts=0;
+ const api=createBridgeAdminClient({
+  baseUrl:endpoint,
+  auth:{async getSession(){return {data:{session:{access_token:token}}}}},
+  retryPause:async()=>{},
+  fetchImpl:async()=>{attempts++;return {ok:false,status:429};}
+ });
+ await assert.rejects(()=>api.getStatus(JOB),/bridge_request_throttled/);
+ assert.equal(attempts,3);
+});
+
+test('aborting after a 429 stops retry before sending another browse request',async()=>{
+ const controller=new AbortController();
+ let attempts=0;
+ const api=createBridgeAdminClient({
+  baseUrl:endpoint,
+  auth:{async getSession(){return {data:{session:{access_token:token}}}}},
+  fetchImpl:async()=>{attempts++;controller.abort();return {ok:false,status:429};}
+ });
+ await assert.rejects(()=>api.requestBrowse(DEVICE,{handle:'root'},{signal:controller.signal}),
+  /bridge_transfer_cancelled/);
+ assert.equal(attempts,1);
+});
+
+test('Bridge admin distinguishes server 409 offline and final job without exposing untrusted messages',async()=>{
+ const cases=[
+  [409,'device_unavailable','bridge_device_unavailable'],
+  [409,'job_already_final','bridge_job_already_final'],
+  [404,'not_found','bridge_resource_not_found'],
+  [400,'invalid_request','bridge_invalid_remote_request'],
+  [409,'private_file_name_must_not_leak','bridge_request_rejected_409']
+ ];
+ for(const [status,code,expected] of cases){
+  const api=createBridgeAdminClient({
+   baseUrl:endpoint,
+   auth:{async getSession(){return {data:{session:{access_token:token}}}}},
+   fetchImpl:async()=>({ok:false,status,json:async()=>({error:code})})
+  });
+  await assert.rejects(()=>api.requestRead(DEVICE,{
+   handle:JOB,offset:0,length:100
+  }),error=>{
+   assert.equal(error.message,expected);
+   assert.ok(!error.message.includes('private_file_name'));
+   return true;
+  });
+ }
+});
+test('Bridge admin distinguishes 5xx without replaying unsafe writes',async()=>{
+ let calls=0;
+ const api=createBridgeAdminClient({
+  baseUrl:endpoint,
+  auth:{async getSession(){return {data:{session:{access_token:token}}}}},
+  fetchImpl:async()=>{calls++;return {ok:false,status:500}},
+ });
+ await assert.rejects(()=>api.requestRead(DEVICE,{handle:JOB,offset:0,length:100}),
+  /bridge_backend_unavailable/);
+ assert.equal(calls,1);
+});

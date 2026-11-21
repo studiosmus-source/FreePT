@@ -6,9 +6,47 @@
  * Backend hosting/TLS is NOT supplied by this client.
  */
 import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from './bridgeFileProtocol.js';
+import {bridgePollRetry} from './bridgePollRetry.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATES=new Set(['queued','sent','done','cancelled','expired']);
 const PROD='cpopqsvzzxfjgnlawlvc.supabase.co';
+// The HTTPS gateway rejects 429 BEFORE dispatching any operation. Only such
+// explicit throttling is replayable; network errors and 5xx are ambiguous.
+const httpFailure=async response=>{
+  const status=response?.status;
+  if(status===401||status===403)return 'bridge_auth_required';
+  if(status===429)return 'bridge_request_throttled';
+  if([500,502,503,504].includes(status))return 'bridge_backend_unavailable';
+  // The gateway returns stable error codes, not paths or file names.
+  // Whitelist only known errors. Never expose arbitrary backend response text.
+  if(status===409||status===404||status===400){
+    let error=null;
+    try{error=(await response.json())?.error}catch{/* no structured error */}
+    if(status===409&&error==='device_unavailable')
+      return 'bridge_device_unavailable';
+    if(status===409&&error==='job_already_final')
+      return 'bridge_job_already_final';
+    if(status===404&&error==='not_found')
+      return 'bridge_resource_not_found';
+    if(status===400)return 'bridge_invalid_remote_request';
+    return 'bridge_request_rejected_'+status;
+  }
+  return 'bridge_request_failed';
+};
+const defaultRetryPause=(ms,signal)=>new Promise((resolve,reject)=>{
+  if(signal?.aborted){reject(Error('bridge_transfer_cancelled'));return;}
+  let timer;
+  const aborted=()=>{
+    clearTimeout(timer);
+    signal?.removeEventListener('abort',aborted);
+    reject(Error('bridge_transfer_cancelled'));
+  };
+  timer=setTimeout(()=>{
+    signal?.removeEventListener('abort',aborted);
+    resolve();
+  },ms);
+  signal?.addEventListener('abort',aborted,{once:true});
+});
 
 export function normalizeBridgeApiUrl(raw) {
   if (typeof raw!=='string' || !raw) return null;
@@ -20,10 +58,17 @@ export function normalizeBridgeApiUrl(raw) {
   return url.origin;
 }
 
-export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
+export function createBridgeAdminClient({
+  baseUrl,auth,fetchImpl=fetch,retryPause=defaultRetryPause
+}={}) {
   const url=normalizeBridgeApiUrl(baseUrl);
-  if(!url||typeof auth?.getSession!=='function'||typeof fetchImpl!=='function')
-    return null;
+  if(!url||typeof auth?.getSession!=='function'||typeof fetchImpl!=='function'||
+     typeof retryPause!=='function')return null;
+  const requestWithThrottleRetry=(endpoint,options)=>bridgePollRetry(
+    ()=>fetchImpl(endpoint,options),{
+      maxAttempts:3,
+      pause:ms=>retryPause(ms,options.signal)
+    });
   const perform=async(action,id,{signal}={})=>{
     if(!UUID.test(id))throw Error('bridge_invalid_id');
     const {data,error}=await auth.getSession();
@@ -34,7 +79,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     const field=action==='list'?'deviceId':'jobId';
     let response;
     try {
-      response=await fetchImpl(url+'/bridge/admin/'+action,{
+      response=await requestWithThrottleRetry(url+'/bridge/admin/'+action,{
         method:'POST',
         headers:{'content-type':'application/json',authorization:'Bearer '+token},
         body:JSON.stringify({[field]:id}),
@@ -45,9 +90,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
       if(signal?.aborted)throw Error('bridge_transfer_cancelled');
       throw Error('bridge_network_unavailable');
     }
-    if(!response||!response.ok)
-      throw Error(response?.status===401||response?.status===403
-        ?'bridge_auth_required':'bridge_request_failed');
+    if(!response||!response.ok)throw Error(await httpFailure(response));
     let body;
     try{body=await response.json()}catch{throw Error('bridge_invalid_response');}
     if(!body||!UUID.test(body.jobId)||!UUID.test(body.deviceId)||
@@ -66,16 +109,14 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
       throw Error('bridge_auth_required');
     let response;
     try{
-      response=await fetchImpl(url+'/bridge/admin/folder',{
+      response=await requestWithThrottleRetry(url+'/bridge/admin/folder',{
         method:'POST',
         headers:{'content-type':'application/json',authorization:'Bearer '+token},
         body:JSON.stringify({jobId}),
         cache:'no-store',redirect:'error'
       });
     }catch{throw Error('bridge_network_unavailable');}
-    if(!response||!response.ok)
-      throw Error(response?.status===401||response?.status===403
-        ?'bridge_auth_required':'bridge_request_failed');
+    if(!response||!response.ok)throw Error(await httpFailure(response));
     let payload;
     try{payload=await response.json()}catch{throw Error('bridge_invalid_response');}
     if(!payload||Object.keys(payload).sort().join(',')!=='entries,jobId,nextOffset'||
@@ -96,7 +137,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     if(signal?.aborted)throw Error('bridge_transfer_cancelled');
     let response;
     try{
-      response=await fetchImpl(url+'/bridge/admin/'+action,{
+      response=await requestWithThrottleRetry(url+'/bridge/admin/'+action,{
         method:'POST',headers:{'content-type':'application/json',
           authorization:'Bearer '+token},
         body:JSON.stringify(body),cache:'no-store',redirect:'error',signal
@@ -105,9 +146,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
       if(signal?.aborted)throw Error('bridge_transfer_cancelled');
       throw Error('bridge_network_unavailable');
     }
-    if(!response?.ok)
-      throw Error(response?.status===401||response?.status===403?
-        'bridge_auth_required':'bridge_request_failed');
+    if(!response?.ok)throw Error(await httpFailure(response));
     try{return await response.json()}
     catch{throw Error('bridge_invalid_response');}
   };

@@ -16,6 +16,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.HashMap;
@@ -110,6 +111,29 @@ public class BridgeDestinationPlugin extends Plugin {
             if(c==null)throw new IllegalStateException("bridge_destination_provider_unavailable");
             return c.moveToFirst()&&(mime==null||mime.equals(c.getString(0)))&&
                 (size==null||(!c.isNull(1)&&c.getLong(1)==size));
+        }
+    }
+
+    /**
+     * Some SAF providers expose a stale or null COLUMN_SIZE just after
+     * closing a write descriptor. Only in that case, read the staged
+     * document back and count bytes before accepting it. This is NOT a
+     * size-check bypass: truncated or oversized data still fails closed.
+     * Read a bounded buffer; do not retain the file contents in memory.
+     */
+    private boolean verifiedDocumentLength(Uri uri,long expected)throws Exception {
+        if(expected<0||expected>MAX_FILE_BYTES)return false;
+        if(documentMatches(uri,null,expected))return true;
+        try(InputStream input=getContext().getContentResolver().openInputStream(uri)){
+            if(input==null)return false;
+            byte[] buffer=new byte[32768];
+            long count=0;
+            for(int received;(received=input.read(buffer))!=-1;){
+                if(received==0)continue;
+                count+=received;
+                if(count>expected)return false;
+            }
+            return count==expected;
         }
     }
 
@@ -453,7 +477,7 @@ public class BridgeDestinationPlugin extends Plugin {
             call.reject("bridge_destination_file_incomplete");return;
         }
         try{
-            if(!documentMatches(file.uri,null,file.expected)){
+            if(!verifiedDocumentLength(file.uri,file.expected)){
                 call.reject("bridge_destination_size_mismatch");return;
             }
         }catch(Exception error){call.reject("bridge_destination_verify_failed");return;}
@@ -542,7 +566,7 @@ public class BridgeDestinationPlugin extends Plugin {
                     !singleName.equals(cursor.getString(0)))
                     throw new IllegalStateException();
             }
-            if(!documentMatches(renamed,null,files.values().iterator().next().expected))
+            if(!verifiedDocumentLength(renamed,files.values().iterator().next().expected))
                 throw new IllegalStateException("bridge_destination_size_mismatch");
             forgetJournal();
             singleStaging=null;singleName=null;transferParent=null;files.clear();

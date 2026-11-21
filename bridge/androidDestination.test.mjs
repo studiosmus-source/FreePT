@@ -163,3 +163,15 @@ test('deep nested folder destination accepts protocol depth 32, rejects 33 befor
  assert.match(native,/array\.length\(\)>32/);
  await destination.discard();
 });
+
+test('SAF provider metadata mismatch is accepted only after exact byte readback',()=>{
+ const java=readFileSync(new URL('../android-bridge/BridgeDestinationPlugin.java.template',import.meta.url),'utf8');
+ assert.match(java,/private boolean verifiedDocumentLength\(Uri uri,long expected\)/);
+ assert.match(java,/if\(documentMatches\(uri,null,expected\)\)return true/);
+ assert.match(java,/getContentResolver\(\)\.openInputStream\(uri\)/);
+ assert.match(java,/if\(count>expected\)return false/);
+ assert.match(java,/return count==expected/);
+ assert.match(java,/file\.written!=file\.expected/);
+ assert.match(java,/if\(!verifiedDocumentLength\(file\.uri,file\.expected\)\)/);
+ assert.match(java,/if\(!verifiedDocumentLength\(renamed,files\.values\(\)\.iterator\(\)\.next\(\)\.expected\)\)/);
+});

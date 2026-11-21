@@ -93,7 +93,7 @@ test('browser names dot-hidden items and distinguishes partial lists from finish
  assert.match(source,/create\('small','nascosto',line\)/);
  assert.match(source,/bridge-folder-completeness/);
  assert.match(source,/querySelectorAll\('\.bridge-entry\[data-bridge-hidden="true"\]'\)/);
- assert.match(source,/Elenco parziale: scorri per caricare le altre pagine/);
+ assert.match(source,/Elenco parziale: carica le altre pagine/);
  assert.match(source,/Fine elenco trasmesso dal telefono/);
  assert.match(styles,/\.bridge-folder-completeness/);
 });
@@ -106,13 +106,16 @@ test('repeated File tab and rapid Refresh do not create duplicate root jobs',()=
  assert.match(source,/if\(openingDeviceId===deviceId\)return/);
  assert.match(source,/finally\{if\(openingDeviceId===deviceId\)openingDeviceId=null;\}/);
 });
-test('folders display before files across paginated pages, without new browsing requests',()=>{
+test('folders display above file groups and discover legacy file-first pages sequentially',()=>{
  const styles=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
  assert.match(source,/create\('h4','Cartelle',list\)/);
  assert.match(source,/create\('h4','File',list\)/);
  assert.match(source,/className='bridge-remote-folders'/);
  assert.match(source,/className='bridge-remote-files'/);
  assert.match(source,/const target=item\.directory\?folders:files/);
+ assert.match(source,/folderPrefetch\.record\(\{handle:current\.handle,offset,page\}\)/);
+ assert.match(source,/if\(scan\.autoFetch\)/);
+ assert.match(source,/void more\.onclick\(\)/);
  assert.match(source,/const line=create\('div',undefined,target\)/);
  assert.match(source,/target\.previousElementSibling\.hidden=false/);
  assert.match(source,/inventoryItems=\[\.\.\.manifest\]\.sort\(/);
@@ -129,7 +132,7 @@ test('remote browser preserves bounded paging, lazy loads on scroll, and cleans 
  assert.match(source,/const previewClosers=new Set\(\)/);
  assert.match(source,/previewClosers\.add\(dismiss\)/);
  assert.match(source,/previewClosers\.delete\(dismiss\)/);
- assert.match(source,/controller\?\.abort\(\);\s*abortActiveBrowse\(\);\s*stopObservingMore\(\);\s*closePreviews\(\)/);
+ assert.ok(source.includes('stopThumbnails();\n    closePreviews();'),'cleanup releases thumbnail URLs and observers');
  assert.match(source,/signal:currentBrowse\.signal/);
  assert.match(source,/pendingBrowse\?\.abort\(\)/);
 });
@@ -152,5 +155,59 @@ test('remote directory loading reports queued/sent states without infinite spinn
  assert.match(source,/progress\.state==='queued'/);
  assert.match(source,/progress\.elapsedSeconds/);
  assert.match(source,/bridge_remote_browse_timeout/);
- assert.match(source,/Premi Aggiorna per riprovare/);
+ assert.match(source,/Riprova da questa schermata/);
+});
+
+test('browser requests thumbnails only for visible rows, after folder discovery',()=>{
+ assert.match(source,/canLoadBridgeThumbnail\(item\)/);
+ assert.match(source,/trackThumbnail\(line,item,img,icon\)/);
+ assert.match(source,/thumbnailObserver=new IntersectionObserver/);
+ assert.match(source,/thumbnailsAllowed=!scan\.autoFetch/);
+ assert.match(source,/if\(!thumbnailsAllowed\|\|thumbnailActive\|\|pendingBrowse\|\|activeDownload/);
+ assert.match(source,/fetchBridgeThumbnail\(\{/);
+ assert.match(source,/compactBridgeThumbnail\(blob\)/);
+ assert.ok(source.includes('thumbnailCacheBytes+blob.size>THUMBNAIL_CACHE_BYTES'));
+ assert.match(source,/thumbnailAbort\?\.abort\(\)/);
+ const css=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ assert.match(css,/\.bridge-entry-photo-thumb\[hidden\]/);
+ assert.match(css,/object-fit:cover/);
+});
+
+test('SAF download reports size mismatch without pretending a file was saved',()=>{
+ assert.match(source,/bridge_destination_size_mismatch/);
+ assert.match(source,/download non completato/);
+});
+
+test('interrupted automatic directory paging resumes at saved offset after download',()=>{
+ assert.match(source,/let resumePausedFolderScan=\(\)=>\{\}/);
+ assert.match(source,/pausedPageOffset=scan\.autoFetch\?page\.nextOffset:null/);
+ assert.match(source,/resumePausedFolderScan=\(\)=>\{/);
+ assert.match(source,/if\(activeDownload\|\|pausedPageOffset===null/);
+ assert.match(source,/const next=pausedPageOffset/);
+ assert.match(source,/void display\(next\)/);
+ assert.match(source,/activeDownload=true;setBridgeBusy\(true\);[\s\S]*?abortActiveBrowse\(\)/);
+ assert.match(source,/resumePausedFolderScan\(\)/);
+ assert.match(source,/for\(const previous of list\.querySelectorAll\('\.bridge-load-more'\)\)/);
+});
+test('thumbnail jobs back off on errors instead of flooding remote phone',()=>{
+ assert.match(source,/thumbnailNextAt-Date\.now\(\)/);
+ assert.match(source,/thumbnailRetryTimer=setTimeout/);
+ assert.match(source,/thumbnailFailureStreak=Math\.min\(4/);
+ assert.match(source,/thumbnailNextAt=Date\.now\(\)\+Math\.min\(30000/);
+ assert.match(source,/if\(thumbnailRetryTimer!==null\)clearTimeout/);
+});
+
+test('failed directory page releases thumbnails while retaining a visible manual retry',()=>{
+ assert.match(source,/if\(!currentBrowse\.signal\.aborted&&offset>0\)\{/);
+ assert.match(source,/thumbnailsAllowed=true/);
+ assert.match(source,/Ricerca sottocartelle interrotta/);
+ assert.match(source,/Ricerca interrotta: file caricati conservati/);
+ assert.match(source,/finally\{\s*if\(pendingBrowse===currentBrowse\)pendingBrowse=null;\s*startVisibleThumbnail\(\)/);
+});
+
+test('remote folder download retains verified files on transient read interruption',()=>{
+ assert.match(source,/preserveCompletedOnCancel:true/);
+ assert.match(source,/preserveCompletedOnFailure:true/);
+ assert.match(source,/result\.interruptedBy==='transient_read'/);
+ assert.match(source,/Gli altri file non sono stati salvati/);
 });
