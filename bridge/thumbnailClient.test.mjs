@@ -82,3 +82,44 @@ test('thumbnail compactor safely leaves Blob unchanged when no DOM is present',a
  assert.equal(await compactBridgeThumbnail(source),source);
  await assert.rejects(()=>compactBridgeThumbnail(null),/invalid_blob/);
 });
+
+
+test('new TX generates a bounded JPEG thumbnail for a large HEIC photo without fetching original bytes',async()=>{
+  const tiny=Uint8Array.from([0xff,0xd8,0xff,0xd9]);
+  let native=0,full=0,readResult=0;
+  const api={
+    async requestThumbnail(deviceId,handle){
+      assert.equal(deviceId,DEVICE);assert.equal(handle,FILE);native++;
+      return {jobId:JOB,deviceId:DEVICE,state:'queued'};
+    },
+    async getStatus(jobId){
+      assert.equal(jobId,JOB);return {jobId:JOB,deviceId:DEVICE,state:'done'};
+    },
+    async getThumbnail(jobId){
+      assert.equal(jobId,JOB);readResult++;
+      return {base64:Buffer.from(tiny).toString('base64'),bytesRead:tiny.length,eof:true};
+    },
+    async requestRead(){full++;throw Error('full_photo_fetch_forbidden');}
+  };
+  const result=await fetchBridgeThumbnail({api,deviceId:DEVICE,
+    item:{...photo(12*1024*1024,'image/heic'),name:'IMG-001.heic'}});
+  assert.equal(result.type,'image/jpeg');
+  assert.deepEqual(new Uint8Array(await result.arrayBuffer()),tiny);
+  assert.deepEqual({native,full,readResult},{native:1,full:0,readResult:1});
+});
+
+test('native thumbnail never accepts a mismatched device or invalid JPEG',async()=>{
+  const basic={
+    async requestThumbnail(){return {jobId:JOB,deviceId:DEVICE,state:'queued'};},
+    async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:'done'};},
+    async getThumbnail(){return {base64:'AQIDBA==',bytesRead:4,eof:true};},
+    async cancel(){return {state:'cancelled'};}
+  };
+  await assert.rejects(fetchBridgeThumbnail({api:basic,deviceId:DEVICE,item:photo(100)}),
+    /bridge_thumbnail_invalid_jpeg/);
+  const wrong={...basic,requestThumbnail:async()=>({
+    jobId:JOB,deviceId:FILE,state:'queued'
+  })};
+  await assert.rejects(fetchBridgeThumbnail({api:wrong,deviceId:DEVICE,item:photo(100)}),
+    /bridge_thumbnail_invalid_job/);
+});
