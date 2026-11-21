@@ -20,13 +20,20 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn("stopSelf(startId);", source)
         self.assertIn("stopSelf();", source)
 
-    def test_bridge_start_does_not_gate_on_push_permission(self):
-        source = (ROOT / "BridgeTxControlPlugin.java.template").read_text()
-        self.assertNotIn("requestPermissionForAlias", source)
-        self.assertNotIn("bridge_tx_notifications_required", source)
-        self.assertIn("BridgeAllFilesCore.granted()", source)
-        self.assertIn("BridgeDeviceSecretStore.configured(getContext())", source)
-        self.assertIn("startForegroundService", source)
+    def test_bridge_start_never_launches_persistent_foreground_notification(self):
+        control=(ROOT / "BridgeTxControlPlugin.java.template").read_text()
+        boot=(ROOT / "BridgeTxBootReceiver.java.template").read_text()
+        self.assertIn("BridgeAllFilesCore.granted()",control)
+        self.assertIn("BridgeDeviceSecretStore.configured(getContext())",control)
+        self.assertIn("BridgeTxJobService.schedulePeriodic(getContext())",control)
+        self.assertIn("BridgeTxJobService.schedule(getContext(),false)",control)
+        self.assertIn("BridgeTxJobService.schedulePeriodic(context)",boot)
+        self.assertIn("BridgeTxJobService.schedule(context,false)",boot)
+        self.assertNotIn("startForegroundService(",control)
+        self.assertNotIn("startForegroundService(",boot)
+        self.assertNotIn("showForeground()",control)
+        self.assertNotIn("requestPermissionForAlias",control)
+        self.assertIn("scheduler.cancel(BridgeTxJobService.PERIODIC_JOB_ID)",control)
 
     def test_fcm_wake_and_bounded_job_are_consent_checked(self):
         installer=(ROOT / "install.py").read_text()
@@ -66,11 +73,18 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn("BridgeTxJobService.schedulePeriodic(this)", service)
         self.assertIn("scheduler.cancel(BridgeTxJobService.PERIODIC_JOB_ID)", control)
 
-    def test_foreground_notification_remains_visible(self):
-        source = (ROOT / "BridgeTxService.java.template").read_text()
-        self.assertIn('setContentTitle("Servizio attivo")', source)
-        self.assertIn(".setOngoing(true)", source)
-        self.assertIn("startForeground(NOTIFICATION_ID,notification", source)
+    def test_download_notification_is_receiver_only_and_opt_in_is_reused(self):
+        native=(ROOT / "BridgeDownloadNoticePlugin.java.template").read_text()
+        installer=(ROOT / "install.py").read_text()
+        self.assertIn('@CapacitorPlugin(name="BridgeDownloadNotice")',native)
+        self.assertIn("android.permission.POST_NOTIFICATIONS",native)
+        self.assertIn("checkSelfPermission",native)
+        self.assertNotIn("requestPermissions",native)
+        self.assertNotIn("startForeground(",native)
+        self.assertIn("Download completato",native)
+        self.assertIn("Download parziale",native)
+        self.assertIn("Download interrotto",native)
+        self.assertIn("BridgeDownloadNoticePlugin",installer)
 
 
 if __name__ == "__main__":
