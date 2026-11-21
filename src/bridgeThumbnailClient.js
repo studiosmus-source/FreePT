@@ -34,7 +34,11 @@ async function nativeThumbnail({api,deviceId,item,signal}){
   let completed=false;
   try{
     const started=Date.now();
-    for(let i=0;i<65&&Date.now()-started<66000;i++){
+    // Native JPEG is preferred, but an unresponsive thumbnail lane must not
+    // hide otherwise readable images for a full minute. Small images have
+    // an existing size-verified read fallback under the 4 MiB ceiling.
+    const budgetMs=item.size<=BRIDGE_AUTO_THUMB_MAX_BYTES?8000:25000;
+    for(let i=0;i<26&&Date.now()-started<budgetMs;i++){
       if(signal?.aborted)throw Error('bridge_transfer_cancelled');
       const state=await api.getStatus(job.jobId,{signal});
       if(state?.jobId!==job.jobId||state.deviceId!==deviceId)
