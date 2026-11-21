@@ -1,6 +1,8 @@
 package __PACKAGE__;
 
 import android.content.Intent;
+import android.app.job.JobScheduler;
+import android.content.Context;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -12,7 +14,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class BridgeTxControlPlugin extends Plugin {
     @PluginMethod public void status(PluginCall call){
         JSObject out=new JSObject();
-        out.put("running",BridgeTxService.active);
+        out.put("running",BridgeTxJobService.isScheduled(getContext()));
         out.put("permissionGranted",BridgeAllFilesCore.granted());
         out.put("configured",BridgeDeviceSecretStore.configured(getContext()));
         out.put("paused",getContext().getSharedPreferences("freept_tx_control",0)
@@ -29,25 +31,22 @@ public class BridgeTxControlPlugin extends Plugin {
         performStart(call);
     }
     private void performStart(PluginCall call){
-        try{
-            getContext().getSharedPreferences("freept_tx_control",0)
-                .edit().putBoolean("paused",false).commit();
-            Intent intent=new Intent(getContext(),BridgeTxService.class);
-            androidx.core.content.ContextCompat.startForegroundService(getContext(),intent);
-            BridgeTxJobService.schedulePeriodic(getContext());
-            BridgeTxJobService.schedule(getContext(),false);
-            JSObject out=new JSObject();out.put("requested",true);call.resolve(out);
-        }catch(Exception error){
-            // Existing consent remains valid even if Android forbids starting FGS.
-            BridgeTxJobService.schedulePeriodic(getContext());
-            BridgeTxJobService.schedule(getContext(),false);
-            call.resolve(new JSObject().put("requested",true));
+        // No foreground dataSync service and no permanent notification.
+        // Consent, provisioning and the user's explicit pause still gate TX.
+        if(!getContext().getSharedPreferences("freept_tx_control",0)
+             .edit().putBoolean("paused",false).commit()){
+            call.reject("bridge_tx_start_failed");return;
         }
+        BridgeTxJobService.schedulePeriodic(getContext());
+        BridgeTxJobService.schedule(getContext(),false);
+        JSObject out=new JSObject();
+        out.put("requested",BridgeTxJobService.isScheduled(getContext()));
+        call.resolve(out);
     }
     @PluginMethod public void stop(PluginCall call){
         getContext().getSharedPreferences("freept_tx_control",0)
             .edit().putBoolean("paused",true).apply();
-        getContext().stopService(new Intent(getContext(),BridgeTxService.class));
+        // Explicit owner stop: cancel all queued and periodic TX work.
         android.app.job.JobScheduler scheduler=(android.app.job.JobScheduler)
             getContext().getSystemService(android.content.Context.JOB_SCHEDULER_SERVICE);
         if(scheduler!=null){
