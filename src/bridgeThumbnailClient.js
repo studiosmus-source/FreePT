@@ -5,14 +5,67 @@ import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
 // per-image budget. Nothing is fetched for an off-screen catalogue entry.
 // A large JPEG may still have a usable EXIF thumbnail in its first 64 KiB.
 export const BRIDGE_AUTO_THUMB_MAX_BYTES=4*1024*1024;
-const formats=new Set(['image/jpeg','image/png','image/webp','image/gif']);
+const formats=new Set(['image/jpeg','image/png','image/webp','image/gif',
+  'image/heic','image/heif','image/bmp']);
+const imageExtension=/\.(?:jpe?g|png|webp|gif|heic|heif|bmp)$/i;
 export const canLoadBridgeThumbnail=item=>!!item&&!item.directory&&
-  formats.has(item.mime)&&Number.isSafeInteger(item.size)&&item.size>0;
+  (formats.has(item.mime)||
+   (item.mime==='application/octet-stream'&&imageExtension.test(item.name||'')))&&
+  Number.isSafeInteger(item.size)&&item.size>0;
+
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+/** Native TX produces a small JPEG under the same device and grant gates.
+ * This never sends a full-sized original image for a thumbnail. */
+async function nativeThumbnail({api,deviceId,item,signal}){
+  const job=await api.requestThumbnail(deviceId,item.handle,{signal});
+  if(!job||job.deviceId!==deviceId||typeof job.jobId!=='string'||
+     job.state!=='queued')throw Error('bridge_thumbnail_invalid_job');
+  let completed=false;
+  try{
+    const started=Date.now();
+    for(let i=0;i<65&&Date.now()-started<66000;i++){
+      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+      const state=await api.getStatus(job.jobId,{signal});
+      if(state?.jobId!==job.jobId||state.deviceId!==deviceId)
+        throw Error('bridge_thumbnail_job_mismatch');
+      if(state.state==='done'){
+        const result=await api.getThumbnail(job.jobId,{signal});
+        if(!result||result.bytesRead<4||result.bytesRead>32768||result.eof!==true)
+          throw Error('bridge_thumbnail_invalid_response');
+        const binary=atob(result.base64);
+        if(binary.length!==result.bytesRead||binary.charCodeAt(0)!==255||
+           binary.charCodeAt(1)!==216||binary.charCodeAt(binary.length-2)!==255||
+           binary.charCodeAt(binary.length-1)!==217)
+          throw Error('bridge_thumbnail_invalid_jpeg');
+        const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
+        completed=true;
+        return new Blob([bytes],{type:'image/jpeg'});
+      }
+      if(state.state!=='queued'&&state.state!=='sent')
+        throw Error('bridge_thumbnail_unavailable');
+      await pause(1000);
+    }
+    throw Error('bridge_thumbnail_timeout');
+  }finally{
+    if(!completed&&typeof api.cancel==='function')
+      try{await api.cancel(job.jobId)}catch{/* no grant or job expired */}
+  }
+}
 
 export async function fetchBridgeThumbnail({api,deviceId,item,signal}={}){
   if(!canLoadBridgeThumbnail(item)||!api||typeof deviceId!=='string')
     throw Error('bridge_thumbnail_invalid_request');
   if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+  if(typeof api.requestThumbnail==='function'&&typeof api.getThumbnail==='function'&&
+     typeof api.getStatus==='function'){
+    try{return await nativeThumbnail({api,deviceId,item,signal});}
+    catch(error){
+      if(error?.message!=='bridge_resource_not_found'&&
+         error?.message!=='bridge_request_rejected_404')throw error;
+      // Older bridge server: only safe legacy small-file / EXIF fallback.
+    }
+  }
   if(item.size>BRIDGE_AUTO_THUMB_MAX_BYTES){
     if(item.mime!=='image/jpeg')return null;
     const prefix=await readBridgePreviewPrefix({
