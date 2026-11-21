@@ -45,6 +45,7 @@ public class BridgeDestinationPlugin extends Plugin {
     private boolean resumeMode=false;
     private org.json.JSONObject resumeFiles=new org.json.JSONObject();
     private String resumeKey=null;
+    private String resumePublishedName=null;
     private Uri singleStaging;
     private String singleName;
     private final Map<String,Uri> directories=new HashMap<>();
@@ -182,7 +183,8 @@ public class BridgeDestinationPlugin extends Plugin {
     }
     private void resetFolder(){
         staging=null;finalName=null;transferParent=null;
-        resumeMode=false;resumeKey=null;resumeFiles=new org.json.JSONObject();
+        resumeMode=false;resumeKey=null;resumePublishedName=null;
+        resumeFiles=new org.json.JSONObject();
         directories.clear();files.clear();
     }
 
@@ -463,6 +465,7 @@ public class BridgeDestinationPlugin extends Plugin {
                         finalName=name;
                         resumeMode=true;
                         resumeKey=source;
+                        resumePublishedName=record.getString("name");
                         resumeFiles=record.getJSONObject("files");
                         directories.clear();directories.put("",staging);files.clear();
                         call.resolve(new JSObject().put("started",true).put("resumed",true));
@@ -477,6 +480,7 @@ public class BridgeDestinationPlugin extends Plugin {
             if(temp==null)throw new IllegalStateException();
             try{journal(temp);}catch(Exception error){DocumentsContract.deleteDocument(getContext().getContentResolver(),temp);throw error;}
             staging=temp;finalName=name;resumeKey=source;resumeMode=false;
+            resumePublishedName=null;
             resumeFiles=new org.json.JSONObject();
             directories.clear();directories.put("",temp);files.clear();
             JSObject result=new JSObject();result.put("started",true).put("resumed",false);
@@ -736,7 +740,9 @@ public class BridgeDestinationPlugin extends Plugin {
             boolean partial=call.getData().optBoolean("partial",false);
             // A partial download must not masquerade as a complete folder.
             String publishName=finalName;
-            if(partial&&!resumeMode){
+            if(partial&&resumeMode){
+                publishName=resumePublishedName;
+            }else if(partial){
                 String suffix=" (parziale)";
                 publishName=availableName(
                     finalName.substring(0,Math.min(finalName.length(),255-suffix.length()))+
