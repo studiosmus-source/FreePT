@@ -22,7 +22,7 @@ export function createBridgeRemoteFolderLister({
 
   return async function listPage({handle='root',offset=0,signal,onProgress=()=>{}}={}){
     if(!(handle==='root'||UUID.test(handle))||
-       !Number.isSafeInteger(offset)||offset<0||offset>10000)
+       !Number.isSafeInteger(offset)||offset<0||offset>2147483647)
       throw Error('bridge_remote_browse_invalid_request');
     if(typeof onProgress!=='function')throw Error('bridge_remote_browse_invalid_request');
     if(signal?.aborted)throw Error('bridge_transfer_cancelled');
