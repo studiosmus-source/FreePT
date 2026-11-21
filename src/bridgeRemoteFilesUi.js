@@ -55,6 +55,7 @@ export function renderBridgeRemoteFiles({
   let activeDownload=false;
   let abortActiveBrowse=()=>{};
   let stopThumbnails=()=>{};
+  let stopThumbnailViewportListeners=()=>{};
   let pauseThumbnails=()=>{};
   let resumeThumbnails=()=>{};
   let resumePausedFolderScan=()=>{};
@@ -494,6 +495,7 @@ export function renderBridgeRemoteFiles({
     openingDeviceId=deviceId;
     abortActiveBrowse();
     stopThumbnails();
+    stopThumbnailViewportListeners();
     const marker=++revision;
     let pendingBrowse=null;
     abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
@@ -690,6 +692,10 @@ export function renderBridgeRemoteFiles({
     // Capture nested scrolling containers without new controls or polling.
     window.addEventListener('scroll',scheduleThumbnailViewport,{passive:true,capture:true});
     window.addEventListener('resize',scheduleThumbnailViewport,{passive:true});
+    stopThumbnailViewportListeners=()=>{
+      window.removeEventListener('scroll',scheduleThumbnailViewport,true);
+      window.removeEventListener('resize',scheduleThumbnailViewport);
+    };
     const history=()=>stack.map(x=>x.name).join(' / ');
     // Session-only cache: navigating Back must not issue the same remote jobs.
     // Do not persist remote filenames or ephemeral file handles to storage.
@@ -973,8 +979,7 @@ export function renderBridgeRemoteFiles({
     abortActiveBrowse();
     stopObservingMore();
     stopThumbnails();
-    window.removeEventListener('scroll',scheduleThumbnailViewport,true);
-    window.removeEventListener('resize',scheduleThumbnailViewport);
+    stopThumbnailViewportListeners();
     closePreviews();
     clearPreviewCache();
     setBridgeBusy(false);
