@@ -175,3 +175,62 @@ test('SAF provider metadata mismatch is accepted only after exact byte readback'
  assert.match(java,/if\(!verifiedDocumentLength\(file\.uri,file\.expected\)\)/);
  assert.match(java,/if\(!verifiedDocumentLength\(renamed,files\.values\(\)\.iterator\(\)\.next\(\)\.expected\)\)/);
 });
+
+
+test('resumed folder skips a previously verified complete file, downloading only missing bytes',async()=>{
+  const previous=FILE;
+  const pending='66666666-6666-4666-8666-666666666666';
+  const data=Buffer.from([1,2,3,4]);
+  const calls=[],requests=[];
+  const native={
+    async beginFolder(args){calls.push(['begin',args]);return {started:true,resumed:true};},
+    async makeDirectory(){},
+    async openFile({path,size}){
+      calls.push(['open',path.join('/')]);
+      if(path[0]==='already.bin'){assert.equal(size,4);return {alreadyComplete:true};}
+      return {fileId:previous};
+    },
+    async writeChunk(args){calls.push(['write',args.offset]);return {written:args.offset+Buffer.from(args.base64,'base64').length};},
+    async commitFile(){calls.push(['commitFile']);},
+    async discardFile(){calls.push(['discardFile']);},
+    async commitFolder(){calls.push(['commitFolder']);return {name:'Album'};},
+    async discardFolder(){calls.push(['discardFolder']);}
+  };
+  const destination=createBridgeAndroidFolderDestination({
+    plugin:native,name:'Album',sourceKey:JSON.stringify([DEVICE,'Album'])
+  });
+  const api={
+    async requestRead(deviceId,req){
+      assert.equal(deviceId,DEVICE);requests.push(req);
+      assert.equal(req.handle,pending);
+      return {jobId:JOB,deviceId:DEVICE,state:'queued'};
+    },
+    async getStatus(){return {jobId:JOB,deviceId:DEVICE,state:'done'};},
+    async getReadChunk(){return {base64:data.toString('base64'),bytesRead:4,eof:true};},
+    async cancel(){}
+  };
+  const result=await downloadBridgeFolder({
+    api,deviceId:DEVICE,destination,pause:async()=>{},
+    listPage:async()=>({entries:[
+      {handle:previous,name:'already.bin',directory:false,size:4,mime:'application/octet-stream'},
+      {handle:pending,name:'missing.bin',directory:false,size:4,mime:'application/octet-stream'}
+    ],nextOffset:-1})
+  });
+  assert.equal(result.files,2);
+  assert.equal(requests.length,1);
+  assert.deepEqual(calls.filter(x=>x[0]==='open').map(x=>x[1]),['already.bin','missing.bin']);
+  assert.equal(calls.filter(x=>x[0]==='write').length,1);
+  assert.equal(calls.filter(x=>x[0]==='commitFile').length,1);
+  assert.ok(calls.some(x=>x[0]==='commitFolder'));
+});
+
+test('native resume is tied to source identity and SAF-owned document, not bare filenames',()=>{
+ const java=readFileSync(new URL('../android-bridge/BridgeDestinationPlugin.java.template',import.meta.url),'utf8');
+ assert.match(java,/MessageDigest\.getInstance\("SHA-256"\)/);
+ assert.match(java,/DocumentsContract\.getDocumentId\(previous\.uri\)\.equals\(record\.getString\("document"\)\)/);
+ assert.match(java,/DocumentsContract\.getDocumentId\(parent\(\)\)\.equals\(record\.optString\("parent"\)\)/);
+ assert.match(java,/verifiedDocumentLength\(existing\.uri,size\)/);
+ assert.match(java,/bridge_destination_resume_conflict/);
+ assert.match(java,/if\(partial&&resumeKey!=null\)/);
+ assert.match(java,/if\(resumeMode\)\{[\s\S]*?previously published partial folder/);
+});
