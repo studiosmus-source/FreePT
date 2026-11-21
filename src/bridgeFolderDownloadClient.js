@@ -68,6 +68,14 @@ export async function downloadBridgeFolder({
   let completedFiles=0;
   const downloadFile=async({handle,path,size,mime,signal:currentSignal})=>{
     const writer=await destination.openFile(path,{size,mime});
+    // The SAF provider has already checked this completed file's saved
+    // metadata and exact location. No remote READ job or duplicate write.
+    if(writer?.alreadyComplete===true){
+      completedFiles++;
+      onProgress({path:[...path],completedFiles,fileBytes:size,
+        fileTotalBytes:size,resumed:true});
+      return;
+    }
     if(!writer||['write','commit','discard'].some(k=>typeof writer[k]!=='function'))
       throw Error('bridge_folder_file_writer_invalid');
     await downloadBridgeFile({
