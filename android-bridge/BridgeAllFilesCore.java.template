@@ -162,7 +162,7 @@ final class BridgeAllFilesCore {
     }
     static synchronized JSObject list(String handle,int offset)throws Exception {
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
-        if(offset<0||offset>10000)throw new IllegalArgumentException("offset");
+        if(offset<0)throw new IllegalArgumentException("offset");
         Entry parent=entries.get(handle);
         if(parent==null||!currentVolume(parent)||!parent.file.isDirectory()||parent.depth>=32)
             throw new SecurityException("invalid_directory");
