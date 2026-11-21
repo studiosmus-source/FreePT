@@ -24,6 +24,10 @@ public final class BridgeTxJobService extends JobService {
     private final AtomicBoolean running=new AtomicBoolean(false);
     private volatile Thread worker;
     private volatile java.net.HttpURLConnection connection;
+    // Scheduled work is not a live connection. The UI must never mistake
+    // a 15-minute periodic job for a responsive Bridge session.
+    private static volatile boolean connected=false;
+    static boolean isConnected(){return connected;}
     static boolean isScheduled(Context context){
         if(context==null)return false;
         JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
@@ -92,6 +96,7 @@ public final class BridgeTxJobService extends JobService {
                 // preserve a reschedule path without a persistent service.
                 if(BridgeBootstrapCore.configured(this)&&
                    !BridgeBootstrapCore.verified)retry=true;
+                connected=false;
                 running.set(false);jobFinished(params,retry);
             }
         },"freept-bridge-on-demand");
@@ -126,23 +131,35 @@ public final class BridgeTxJobService extends JobService {
             .put("deviceId",credentials.deviceId).put("deviceSecret",credentials.deviceSecret));
         String token=session.getString("token");
         if(!token.matches("^[0-9a-f]{64}$"))throw new SecurityException("invalid_session");
+        connected=true;
         int idle=0,completed=0;
-        long deadline=SystemClock.elapsedRealtime()+55000;
+        boolean serviced=false;
+        // Do not abandon a folder transfer between 256 KiB requests.
+        // The worker is still bounded; Android can interrupt it normally.
+        long deadline=SystemClock.elapsedRealtime()+240000;
+        long lastUseful=SystemClock.elapsedRealtime();
         while(running.get()&&!Thread.currentThread().isInterrupted()&&
-              SystemClock.elapsedRealtime()<deadline&&idle<4&&completed<60){
+              SystemClock.elapsedRealtime()<deadline&&completed<1000){
             JSONObject poll=post.post("/bridge/tx/poll",BridgeTxProtocol.payload(credentials.deviceId,token));
             JSONObject job=poll.optJSONObject("job");
             if(job!=null){
                 BridgeTxProtocol.executeJob(post,job,credentials.deviceId,token);
-                completed++;idle=0;
+                completed++;idle=0;serviced=true;
+                lastUseful=SystemClock.elapsedRealtime();
             }else{
                 idle++;
-                if(idle<4)Thread.sleep(850);
+                // An unused wake returns promptly to protect battery.
+                // After useful work, allow inter-file writes/round trips
+                // before giving up the active authenticated connection.
+                long grace=serviced?20000L:4500L;
+                if(SystemClock.elapsedRealtime()-lastUseful>=grace)break;
+                Thread.sleep(idle<=3?850:2000);
             }
         }
     }
     @Override public boolean onStopJob(JobParameters params){
         running.set(false);
+        connected=false;
         java.net.HttpURLConnection conn=connection;
         if(conn!=null)conn.disconnect();
         Thread t=worker;
