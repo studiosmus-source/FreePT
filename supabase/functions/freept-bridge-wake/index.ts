@@ -97,14 +97,12 @@ Deno.serve(async(req:Request)=>{
       .eq('id',device.owner_id).maybeSingle();
     if(ownerError||owner?.role!=='user'||owner.status!=='approved')
       return json(origin,{error:'not_found'},404);
-    const {data:live,error:liveError}=await db.from('bridge_tx_sessions')
-      .select('device_id').eq('device_id',job.device_id)
-      .gt('expires_at',new Date().toISOString()).limit(1);
-    if(liveError)throw Error('session_lookup_failed');
-    if(live?.length)return json(origin,{queued:true,wake:'already_connected'});
-
+    // A valid five-minute TX session does NOT mean a bounded Android job
+    // worker is still running. Never suppress a wake based on session expiry.
     const now=Date.now(),previous=recent.get(job.device_id)||0;
-    if(now-previous<12000)return json(origin,{queued:true,wake:'coalesced'});
+    // Jobs normally poll for several seconds; coalescing for only 2 seconds
+    // prevents redundant push storms without delaying a later page/chunk.
+    if(now-previous<2000)return json(origin,{queued:true,wake:'coalesced'});
     recent.set(job.device_id,now);
     if(recent.size>1000)for(const [key,at] of recent)
       if(now-at>120000)recent.delete(key);
@@ -145,7 +143,7 @@ Deno.serve(async(req:Request)=>{
     const category=error instanceof Error?error.message:'unknown';
     // Never log identifiers, tokens, paths, or private credential contents.
     console.error('freept-bridge-wake failed',{category:
-      ['server_key_missing','staging_only','session_lookup_failed','token_lookup_failed',
+      ['server_key_missing','staging_only','token_lookup_failed',
        'fcm_credentials_missing','fcm_oauth_failed','fcm_oauth_invalid'].includes(category)
         ?category:'unexpected'});
     return json(origin,{error:'wake_unavailable'},503);
