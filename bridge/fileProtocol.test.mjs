@@ -52,4 +52,5 @@ test('accepts pagination offsets beyond ten thousand entries',()=>{
   }));
   assert.equal(validateBridgeFolderPage({entries,nextOffset:20000}).nextOffset,20000);
   assert.throws(()=>validateBridgeFolderPage({entries:[],nextOffset:-2}));
+  assert.throws(()=>validateBridgeFolderPage({entries,nextOffset:BRIDGE_FILE_LIMITS.maxTotalEntries+1}));
 });
