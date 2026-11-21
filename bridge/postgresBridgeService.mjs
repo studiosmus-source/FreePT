@@ -27,7 +27,9 @@ export function createBridgePostgresService({
     requestList: params => jobs.requestList(params),
     requestRead: params => jobs.requestRead(params),
     requestBrowse: params => jobs.requestBrowse(params),
+    requestThumbnail: params => jobs.requestThumbnail(params),
     getBrowsePage: params => jobs.getBrowsePage(params),
+    getThumbnail: params => jobs.getThumbnail(params),
     getReadChunk: params => jobs.getReadChunk(params),
     getRequestStatus: params => jobs.getRequestStatus(params),
     cancelRequest: params => jobs.cancelRequest(params),
@@ -37,6 +39,7 @@ export function createBridgePostgresService({
     completeFolderPage: params => jobs.completeFolderPage(params),
     completeRead: params => jobs.completeRead(params),
     completeBrowsePage: params => jobs.completeBrowsePage(params),
+    completeThumbnail: params => jobs.completeThumbnail(params),
     getFolderPage: params => jobs.getFolderPage(params),
     closeDeviceSession: params => sessions.close(params)
   });
