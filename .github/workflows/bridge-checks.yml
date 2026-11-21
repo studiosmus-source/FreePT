@@ -151,6 +151,8 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-browse.sql
       - name: Install grant-checked JPEG thumbnail RPCs in disposable PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261121_bridge_thumbnail_staging.sql
+      - name: Integration-test thumbnail enqueue, claim, completion and revocation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-thumbnail.sql
       - name: Verify thumbnail job boundaries and non-public tables
         run: |
           set -euo pipefail
