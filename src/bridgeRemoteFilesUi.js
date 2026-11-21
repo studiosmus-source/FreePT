@@ -44,7 +44,8 @@ function create(node,label,parent){
 }
 
 export function renderBridgeRemoteFiles({
-  host,db,bridgeClient,bridgeDestination,adminId,ownerId=null,ownerName=null,isAuthorized
+  host,db,bridgeClient,bridgeDestination,bridgeDownloadNotice=null,
+  adminId,ownerId=null,ownerName=null,isAuthorized
 }={}){
   if(!host||typeof db?.from!=='function'||typeof isAuthorized!=='function')
     throw Error('bridge_remote_ui_invalid_options');
@@ -133,7 +134,7 @@ export function renderBridgeRemoteFiles({
       return 'Il file salvato non corrisponde alla dimensione attesa: download non completato.';
     return code||'errore remoto';
   };
-  const fileDownload=async(item,deviceId)=>{
+  const fileDownload=async(item,deviceId,onNoticeProgress=()=>{})=>{
     const writer=await createBridgeAndroidSingleFileWriter({
       plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime,
       ownerId,ownerName
@@ -141,7 +142,10 @@ export function renderBridgeRemoteFiles({
     await downloadBridgeFile({
       api:bridgeClient,deviceId,handle:item.handle,size:item.size,
       destination:writer,signal:controller.signal,
-      onProgress:p=>setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte')
+      onProgress:p=>{
+        setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte');
+        if(p.totalBytes>0)onNoticeProgress(100*p.receivedBytes/p.totalBytes);
+      }
     });
   };
   // Explicit, bounded previews use the same authorized Bridge read path as downloads.
@@ -346,6 +350,23 @@ export function renderBridgeRemoteFiles({
     cancel.hidden=false;
     controller=new AbortController();
     const signal=controller.signal;
+    let noticeStarted=false,noticeOutcome='failed',lastNoticeAt=0,lastNoticePercent=-1;
+    const notice=async(method,args={})=>{
+      if(!bridgeDownloadNotice||typeof bridgeDownloadNotice[method]!=='function')return;
+      try{await bridgeDownloadNotice[method](args);}catch{/* Never block file transfer. */}
+    };
+    const beginNotice=async()=>{
+      noticeStarted=true;
+      await notice('begin');
+    };
+    const progressNotice=percent=>{
+      if(!noticeStarted||!Number.isFinite(percent))return;
+      const next=Math.max(0,Math.min(100,Math.floor(percent)));
+      const now=Date.now();
+      if(next===lastNoticePercent||(next<100&&now-lastNoticeAt<1000))return;
+      lastNoticePercent=next;lastNoticeAt=now;
+      void notice('progress',{percent:next});
+    };
     try{
       if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
       if(isFolder){
@@ -383,6 +404,7 @@ export function renderBridgeRemoteFiles({
         setStatus('Controllo cartella di destinazione…');
         await destinationReady();
         if(signal.aborted)throw Error('bridge_transfer_cancelled');
+        await beginNotice();
         const writer=createBridgeAndroidFolderDestination({
           plugin:bridgeDestination,name:title,ownerId,ownerName
         });
@@ -396,30 +418,40 @@ export function renderBridgeRemoteFiles({
             else if(stage==='finalizing')setStatus('Verifica finale della cartella…');
             else if(stage==='preserving')setStatus('Salvataggio dei file completi già scaricati…');
           },
-          onProgress:p=>setStatus('Completati '+p.completedFiles+'/'+summary.files+
-            ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
+          onProgress:p=>{
+            setStatus('Completati '+p.completedFiles+'/'+summary.files+
+              ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte');
+            const fraction=p.fileTotalBytes>0?p.fileBytes/p.fileTotalBytes:0;
+            progressNotice(summary.files>0?
+              100*(p.completedFiles+fraction)/summary.files:100);
+          }
         });
         if(result.partial){
+          noticeOutcome='partial';
           setStatus((result.interruptedBy==='transient_read'
             ?'Download interrotto per un errore di comunicazione. '
             :'Download annullato. ')+
             'Conservati '+result.files+'/'+summary.files+' file completi in '+
             (result.savedName||'cartella (parziale)')+
             '. Gli altri file non sono stati salvati.');
-        }else setStatus('Cartella scaricata: '+result.files+' file.');
+        }else{noticeOutcome='done';progressNotice(100);setStatus('Cartella scaricata: '+result.files+' file.');}
       }else{
         setStatus('Controllo cartella di destinazione…');
         await destinationReady();
         if(signal.aborted)throw Error('bridge_transfer_cancelled');
         if(item.size<0)throw Error('Dimensione del file non disponibile.');
-        await fileDownload(item,deviceId);
+        await beginNotice();
+        await fileDownload(item,deviceId,progressNotice);
+        noticeOutcome='done';progressNotice(100);
         setStatus('File scaricato: '+item.name);
       }
     }catch(error){
-      if(error?.message==='bridge_transfer_cancelled')
+      if(error?.message==='bridge_transfer_cancelled'){
+        noticeOutcome='cancelled';
         setStatus('Download interrotto. Se nessun file era completo, nessuna cartella è stata salvata.');
-      else setStatus('Download non riuscito: '+remoteErrorText(error));
+      }else setStatus('Download non riuscito: '+remoteErrorText(error));
     }finally{
+      if(noticeStarted)await notice('finish',{result:noticeOutcome});
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
       resumePausedFolderScan();
