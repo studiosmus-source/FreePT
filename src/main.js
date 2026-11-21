@@ -38,6 +38,7 @@ const bridgeFiles = Capacitor.isNativePlatform() && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
 const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
+const bridgeWakeToken = bridgeFiles ? registerPlugin('BridgeWakeToken') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
@@ -113,7 +114,7 @@ async function startProvisionedTxWhenAllowed(){
 const el = document.getElementById('app');
 // Both native APK identities register push only after Firebase configuration is installed.
 const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
-  plugin:PushNotifications,db,
+  plugin:PushNotifications,db,wakeToken:bridgeWakeToken,
   getApprovedUser:()=>profile?.status==='approved'&&me?me:null,
   onMessage:()=>{
     if(profile?.role==='admin'&&!adminUnlocked)return;
