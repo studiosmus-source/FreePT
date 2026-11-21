@@ -267,234 +267,104 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
   overflow-wrap:anywhere;word-break:normal;
 }
 
-/* FreePT UI refresh v2 — consolidated replacement of the previous cosmetic layer.
-   Pure CSS. Existing DOM IDs, event handlers, permission labels, native code and
-   the active Bridge protocol are unchanged. */
-:root{
-  color-scheme:light;
-  --fp-ink:#1a3348;
-  --fp-muted:#6d8091;
-  --fp-navy:#11293e;
-  --fp-blue:#1d6483;
-  --fp-teal:#16a89b;
-  --fp-line:#dce7ed;
-  --fp-page:#f3f7fa;
-}
-body{background:#e8eef3;color:var(--fp-ink)}
-.shell{background:var(--fp-page);box-shadow:0 12px 40px rgba(19,43,64,.11)}
+/* FreePT visual refresh v3: CSS-only, reduced risk.
+   Existing markup, IDs, JS, request texts and Android Bridge unchanged.
+   No :has selectors, no hiding of existing page areas or controls. */
+:root{color-scheme:light;--fp-ink:#19374a;--fp-muted:#62798b;--fp-line:#d6e5ec;--fp-accent:#187e88}
+body{background:#eaf1f5;color:var(--fp-ink)}
+.shell{background:#fff;box-shadow:0 0 25px rgba(27,60,81,.09)}
 .top{
-  background:linear-gradient(120deg,#10263b 0%,#173d56 68%,#205e73 100%);
-  color:#fff;border-bottom:3px solid #36c3b5;
-  box-shadow:0 8px 24px rgba(13,35,54,.15);
-  gap:10px;
+  background:linear-gradient(110deg,#102b42,#1c536b);
+  border-bottom:3px solid #20ad9e;
+  box-shadow:0 4px 12px rgba(22,52,74,.12)
 }
-.top h1{font-size:22px;line-height:1.3;letter-spacing:.01em;font-weight:750}
-.top button{
-  color:#fff;background:rgba(255,255,255,.12);
-  border:1px solid rgba(255,255,255,.26);
-  border-radius:999px;padding:10px 15px;
-  font-size:13px;min-height:42px;box-shadow:inset 0 1px rgba(255,255,255,.1)
-}
-.top button:active{background:rgba(255,255,255,.2)}
-button{background:var(--fp-blue);border-radius:13px;font-weight:650}
-button:not(:disabled):active{filter:brightness(.95)}
-input,textarea{background:#fff;border-color:#cfdfe8;color:var(--fp-ink)}
-input:focus-visible,textarea:focus-visible,button:focus-visible,
-.bridge-entry-menu>summary:focus-visible{outline:3px solid #61c9ca;outline-offset:2px}
-.panel{color:var(--fp-ink)}
-.panel h2{color:#163b53}
+.top h1{font-weight:750;letter-spacing:.02em}
+.top button{border-radius:14px;background:#ffffff16;border:1px solid #ffffff35;padding:9px 12px}
+button{font-weight:650;border-radius:12px;background:#1c6b84}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #36b5b4;outline-offset:2px}
+.panel h2{color:#1b4962}
 .small,.hint,.chat-preview{color:var(--fp-muted)}
-.admin-people-tools{background:#f3f8fa;border-bottom-color:var(--fp-line)}
-.admin-people-tools input,.admin-people-tools select{border-color:#cbdce7}
-.person{background:#fff;color:var(--fp-ink);border-bottom:1px solid #e6edf1;padding-block:14px}
-.person:hover,.person:focus-visible{background:#eff8f8}
-.chat-preview{color:#708395}
+.admin-people-tools{background:#f2f8fa;border-color:var(--fp-line)}
+.admin-people-tools input,.admin-people-tools select{border-color:#cbdfe9}
+.person{border-bottom-color:#e6eef2;padding-block:13px}
+.person:hover{background:#edf7f8}
+.toolbar{background:#fff;border-bottom:1px solid var(--fp-line);box-shadow:0 3px 9px rgba(28,62,81,.045)}
+.toolbar strong{color:#1c455c;font-weight:750}
+.toolbar button{color:#235a76;background:#edf5f8;border:1px solid #dce9ef;border-radius:12px;font-size:13px;font-weight:650}
+.feed{background:linear-gradient(#eff6f8,#f9fbfc);gap:10px}
+.bubble{background:#fff;border:1px solid #e3edf1;box-shadow:0 2px 8px #1c3c5010;border-radius:17px 17px 17px 5px;line-height:1.45;padding:11px 14px}
+.bubble.mine{background:#d7f2e7;border-color:#c4e8db;border-radius:17px 17px 5px 17px}
+.compose{background:#fff;border-top:1px solid var(--fp-line)}
+.compose textarea{background:#f8fbfc;border-radius:13px}
+.compose .attach{background:#f1f8fa;border-color:#cee1e9;border-radius:12px}
+.compose #sendBtn{background:#187e88}
+.bridge-admin-panel,.chat-actions-box{border:1px solid #e3edf1;box-shadow:0 22px 50px #16354d30}
+.bridge-admin-panel h2{color:#1d4b63}
+.bridge-admin-panel nav button[aria-pressed=true]{background:#187e88}
 
-/* The existing four controls are arranged as a two-row conversation header
-   on phones, and as a compact single line on tablet/desktop. */
-#chat .toolbar{
-  background:#fff;border-bottom:1px solid var(--fp-line);
-  box-shadow:0 3px 12px rgba(19,49,70,.045)
+/* Conversation screen: compact two-line arrangement only at narrow widths. */
+@media(max-width:699px){
+  .top{padding-inline:14px}
+  .shell{box-shadow:none}
+  #chat .toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px}
+  #chat .toolbar .mobileBack{flex:0 0 38px;width:38px;min-width:38px;height:40px;padding:5px}
+  #chat .toolbar #chatTitle{flex:1 1 calc(100% - 55px);min-width:0;font-size:18px}
+  #chat .toolbar #chatMessagesView,
+  #chat .toolbar #chatRemoteFilesView{
+    flex:1 1 44%;min-height:44px;white-space:normal;padding:9px 8px;
+    font-size:13px;line-height:1.3
+  }
+  .feed{padding:13px}
 }
-#chat .toolbar:has(#chatRemoteFilesView){
-  display:grid;gap:10px 9px;padding:12px 14px;
-  grid-template-columns:40px minmax(0,1fr) minmax(0,1fr);
-  grid-template-areas:"back title title" "chat chat files";
-  align-items:center
-}
-#chat .toolbar .mobileBack{grid-area:back;width:40px;height:40px;min-height:40px;padding:0}
-#chat .toolbar #chatTitle{
-  grid-area:title;display:flex;align-items:center;gap:10px;
-  min-width:0;color:#15384d;font-size:17px;font-weight:760;line-height:1.2
-}
-#chat .toolbar:has(#chatRemoteFilesView) #chatTitle::before{
-  content:"";flex:0 0 38px;width:38px;height:38px;border-radius:50%;
-  background:
-    radial-gradient(circle at 50% 36%,#fff 0 5px,transparent 5.5px),
-    radial-gradient(ellipse 10px 7px at 50% 70%,#fff 0 9px,transparent 9.5px),
-    linear-gradient(140deg,#2aa3a0,#20718c);
-  box-shadow:0 0 0 3px #ecf6f7
-}
-#chat .toolbar #chatMessagesView{grid-area:chat}
-#chat .toolbar #chatRemoteFilesView{grid-area:files}
-#chat .toolbar #chatMessagesView,#chat .toolbar #chatRemoteFilesView{
-  border:1px solid #deeaef;border-radius:12px;background:#edf4f6;
-  padding:11px 12px;min-height:43px;
-  color:#416679;font-size:13px;font-weight:700;white-space:normal;
-  box-shadow:none
-}
-#chat:not(:has(#chatRemoteFilesPanel)) .toolbar #chatMessagesView,
-#chat:has(#chatRemoteFilesPanel) .toolbar #chatRemoteFilesView{
-  background:#1b6580;border-color:#1b6580;color:#fff;
-  box-shadow:0 4px 12px rgba(29,100,131,.17)
-}
-
-/* Chat: more deliberate contrast, comfortable spacing, existing controls. */
-.feed{background:linear-gradient(#f0f6f7,#f8fbfc);gap:10px}
-.bubble{
-  background:#fff;border:1px solid #e2ebed;
-  border-radius:17px 17px 17px 5px;padding:11px 14px;line-height:1.48;
-  box-shadow:0 2px 8px rgba(25,49,67,.045)
-}
-.bubble.mine{background:#d8f2e9;border-color:#bbe4d8;border-radius:17px 17px 5px 17px}
-.bubble small{color:#60798a}
-.compose{
-  background:#fff;border-top:1px solid #dce8ed;
-  box-shadow:0 -3px 14px rgba(20,50,73,.035)
-}
-.compose textarea{background:#f8fbfc;border-radius:14px}
-.compose .attach{border-radius:12px;border-color:#cfe0e8;background:#f4f9fa;color:#1e6685}
-.compose #sendBtn{background:#157b82}
-.bridge-admin-panel,.chat-actions-box{
-  border:1px solid #e1edf1;
-  box-shadow:0 22px 60px rgba(10,30,47,.24)
-}
-.bridge-admin-panel h2{color:#153c55}
-.bridge-admin-panel nav button[aria-pressed=true]{background:#187a82}
-
-/* The actual file-browser DOM: explanation, commands, status, then folders.
-   No placeholder success state is invented when remote TX is unavailable. */
 #chatRemoteFilesPanel{
-  display:flex;flex-direction:column;gap:13px;
-  padding:17px 14px calc(30px + env(safe-area-inset-bottom,0px));
-  background:
-    radial-gradient(circle at top right,rgba(48,169,171,.12),transparent 290px),
-    linear-gradient(180deg,#f0f6f9,#f8fbfc 64%);
+  background:linear-gradient(#f1f7fa,#fafcfd);
+  padding:14px 12px 24px;
+  border-top:0
 }
 #chatRemoteFilesPanel>p:first-child{
-  order:0;position:relative;
-  margin:0;padding:19px 16px 19px 59px;
-  background:#fff;color:#253e50;
-  border:1px solid #dceaf0;border-left:4px solid #24a99f;
-  border-radius:17px;font-size:14px;line-height:1.52;font-weight:540;
-  box-shadow:0 6px 18px rgba(28,60,79,.055);
-  overflow-wrap:anywhere
-}
-#chatRemoteFilesPanel>p:first-child::before{
-  content:"";position:absolute;top:20px;left:17px;width:28px;height:26px;
-  background:linear-gradient(145deg,#27998e,#167a8c);
-  clip-path:polygon(0 22%,37% 22%,47% 7%,85% 7%,85% 28%,100% 28%,100% 92%,0 92%);
-  border-radius:4px;opacity:.94
+  margin:0 0 14px;padding:17px 17px 17px 20px;
+  background:#fff;border:1px solid #dbe9ee;
+  border-left:4px solid #20a99c;border-radius:15px;
+  box-shadow:0 4px 16px #183f5810;
+  font-size:14px;line-height:1.48;color:#28475a
 }
 #chatRemoteFilesPanel>div:first-of-type{
-  order:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:10px;align-items:stretch;margin:0
+  display:flex;flex-wrap:wrap;gap:10px;
+  margin:0 0 14px
 }
 #chatRemoteFilesPanel>div:first-of-type>button{
-  display:flex;flex-direction:column;justify-content:center;align-items:center;
-  gap:6px;min-height:78px;min-width:0;
-  padding:12px 8px;text-align:center;white-space:normal;
-  font-size:12.5px;line-height:1.34;font-weight:750;
-  border-radius:16px;box-shadow:0 6px 16px rgba(21,70,91,.095)
+  flex:1 1 140px;min-width:0;min-height:65px;
+  padding:12px 10px;white-space:normal;
+  border-radius:15px;font-size:13px;line-height:1.4;
+  text-align:center;font-weight:750
 }
 #chatRemoteFilesPanel>div:first-of-type>button:first-child{
-  background:linear-gradient(140deg,#19617d,#137d83);color:#fff;
-  border:1px solid #176b7b
-}
-#chatRemoteFilesPanel>div:first-of-type>button:first-child::before{
-  content:"";display:block;width:27px;height:22px;
-  border-radius:4px 5px 5px 5px;
-  background:#fff;clip-path:polygon(0 20%,37% 20%,46% 0,88% 0,88% 25%,100% 25%,100% 100%,0 100%);
-  opacity:.94
+  color:#fff;background:linear-gradient(125deg,#1c6381,#15868b);
+  box-shadow:0 5px 14px #176a8424
 }
 #chatRemoteFilesPanel>div:first-of-type>button:nth-child(2){
-  background:#fff;color:#1d5974;border:1px solid #d5e5ec;
-  box-shadow:0 6px 16px rgba(21,70,91,.05)
-}
-#chatRemoteFilesPanel>div:first-of-type>button:nth-child(2)::before{
-  content:"⟳";display:block;font-size:29px;line-height:20px;
-  color:#1c8c98;font-weight:400
-}
-#chatRemoteFilesPanel>div:first-of-type>button:disabled{
-  opacity:.6;box-shadow:none
+  background:#fff;color:#235d75;border:1px solid #d4e6ee;
+  box-shadow:0 3px 10px #18435b0b
 }
 #chatRemoteFilesPanel>div:first-of-type>button[hidden]{display:none!important}
 #chatRemoteFilesPanel>p[role="status"]{
-  order:2;position:relative;margin:0;padding:14px 15px 14px 35px;
-  border-radius:14px;color:#25506a;background:#eaf4f9;
-  border:1px solid #d4e6ef;
-  font-size:13.5px;line-height:1.48;font-weight:640;
-  overflow-wrap:anywhere
+  margin:0 0 14px;padding:13px 15px;
+  background:#e7f3f8;border:1px solid #d1e6ed;border-radius:13px;
+  color:#285671;font-size:13px;line-height:1.48;font-weight:650
 }
 #chatRemoteFilesPanel>p[role="status"]:empty{display:none}
-#chatRemoteFilesPanel>p[role="status"]::before{
-  content:"";position:absolute;top:20px;left:16px;width:9px;height:9px;
-  border-radius:50%;background:#e3a14c;box-shadow:0 0 0 4px #fceacc
-}
-#chatRemoteFilesPanel>section{order:3;min-width:0}
-#chatRemoteFilesPanel>section:empty{display:none}
 #chatRemoteFilesPanel>section:not(:empty){
-  background:#fff;border:1px solid #dfeaf0;border-radius:17px;
-  padding:12px;box-shadow:0 6px 16px rgba(24,55,74,.04)
+  margin:10px 0 0;background:#fff;
+  border:1px solid #e0ebf0;border-radius:14px;padding:12px
 }
-#chatRemoteFilesPanel>section h3{color:#153f56;font-size:15px;margin:4px 0 10px}
-.bridge-remote-entries{gap:0}
-.bridge-breadcrumbs{gap:5px}
-.bridge-breadcrumbs button{
-  background:#eaf5f6;color:#155978;border:1px solid #d9e9ed;
-  border-radius:10px;font-size:12px
-}
-.bridge-folder-actions{gap:10px}
-.bridge-folder-actions button{border-radius:11px;background:#1e7485}
-.bridge-folder-actions button:last-child{background:#eaf3f7;color:#23617a}
-.bridge-list-section-heading{
-  color:#2b657b;border-bottom-color:#dae8ee;
-  padding:9px 0 7px;margin:7px 0 8px
-}
+.bridge-list-section-heading{color:#2d647a;border-color:#d8e8ee}
+.bridge-breadcrumbs button{color:#1c5b77;background:#e9f4f7;border:1px solid #d9eaf0}
+.bridge-folder-actions button{background:#1a7286;border-radius:11px}
 .bridge-remote-folders>.bridge-entry,.bridge-remote-files>.bridge-entry{
-  margin:0 0 8px;padding:2px 6px;
-  border:1px solid #e0eaf0;border-radius:13px;
-  background:#fbfdff;box-shadow:0 2px 6px rgba(22,53,73,.025)
+  background:#fbfdfe;border:1px solid #e2edf2;border-radius:12px;
+  margin:5px 0;padding:2px 5px
 }
-.bridge-remote-folders>.bridge-entry:active,.bridge-remote-files>.bridge-entry:active{background:#eef8f8}
-.bridge-entry>.bridge-entry-primary{color:#253e51;font-size:13.5px}
-.bridge-entry-menu[open]>div{border-color:#d7e6ee;box-shadow:0 14px 28px rgba(16,45,64,.15)}
-.bridge-entry-menu button{background:#edf6f8;color:#22536b}
-.bridge-entry-photo-icon,.bridge-entry-photo-thumb{border-radius:10px;background:#e9f3f7}
-.bridge-folder-completeness{
-  border:1px solid #d6e7ed;background:#eff8fa;
-  color:#326479;border-radius:11px
-}
-.update-banner{background:#ecf8f8;border-bottom-color:#d1e9e7;color:#225b68}
-.update-banner button,.attach-download{background:#177981}
-@media(min-width:700px){
-  #chat .toolbar:has(#chatRemoteFilesView){
-    grid-template-columns:minmax(0,1fr) 86px 144px;
-    grid-template-areas:"title chat files";
-    padding:10px 12px
-  }
-  #chat .toolbar .mobileBack{display:none}
-  #chatRemoteFilesPanel{padding-inline:20px}
-}
-@media(max-width:699px){
-  .shell{box-shadow:none}
-  .top{padding-inline:15px}
-  #chat .toolbar:has(#chatRemoteFilesView){padding:11px 13px}
-  .feed{padding:13px}
-  #chatRemoteFilesPanel{padding-inline:12px}
-}
-@media(max-width:330px){
-  #chat .toolbar #chatMessagesView,#chat .toolbar #chatRemoteFilesView{font-size:12px;padding:9px 6px}
-  #chatRemoteFilesPanel>div:first-of-type>button{font-size:12px;padding-inline:6px}
-}
-@media(prefers-reduced-motion:reduce){button{transition:none}}
+.bridge-entry-photo-icon,.bridge-entry-photo-thumb{border-radius:10px}
+.bridge-folder-completeness{background:#edf7f9;border:1px solid #daeaee;border-radius:10px}
+.update-banner{background:#e9f7f8;border-color:#d3e9e8;color:#255f70}
+.update-banner button,.attach-download{background:#187e88}
