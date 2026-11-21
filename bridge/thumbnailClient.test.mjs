@@ -115,11 +115,27 @@ test('native thumbnail never accepts a mismatched device or invalid JPEG',async(
     async getThumbnail(){return {base64:'AQIDBA==',bytesRead:4,eof:true};},
     async cancel(){return {state:'cancelled'};}
   };
-  await assert.rejects(fetchBridgeThumbnail({api:basic,deviceId:DEVICE,item:photo(100)}),
+  await assert.rejects(fetchBridgeThumbnail({api:basic,deviceId:DEVICE,item:photo(BRIDGE_AUTO_THUMB_MAX_BYTES+1)}),
     /bridge_thumbnail_invalid_jpeg/);
   const wrong={...basic,requestThumbnail:async()=>({
     jobId:JOB,deviceId:FILE,state:'queued'
   })};
-  await assert.rejects(fetchBridgeThumbnail({api:wrong,deviceId:DEVICE,item:photo(100)}),
+  await assert.rejects(fetchBridgeThumbnail({api:wrong,deviceId:DEVICE,item:photo(BRIDGE_AUTO_THUMB_MAX_BYTES+1)}),
     /bridge_thumbnail_invalid_job/);
+});
+
+test('JPG smaller than 4MiB uses proven READ transport even when native thumbnail API exists',async()=>{
+ const jpeg=Uint8Array.from([255,216,255,217]);
+ let nativeRequests=0;
+ const mock=apiFor(jpeg);
+ const api={
+   ...mock.api,
+   async requestThumbnail(){nativeRequests++;throw Error('native_should_not_run');},
+   async getThumbnail(){throw Error('native_should_not_run');}
+ };
+ const output=await fetchBridgeThumbnail({api,deviceId:DEVICE,item:photo(jpeg.length)});
+ assert.equal(output.type,'image/jpeg');
+ assert.equal(output.size,jpeg.length);
+ assert.equal(mock.stats().reads,1);
+ assert.equal(nativeRequests,0);
 });
