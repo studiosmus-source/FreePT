@@ -42,3 +42,10 @@ test('job/device must be explicit valid identities',()=>{
   assert.throws(()=>validateBridgeJobIdentity({jobId:'x',deviceId:handle}));
   assert.equal(BRIDGE_FILE_LIMITS.maxChunkBytes,262144);
 });
+
+// Pagination must not silently stop at the former 10,000-entry ceiling.
+test('accepts pagination offsets beyond ten thousand entries',()=>{
+  assert.equal(BRIDGE_FILE_LIMITS.maxTotalEntries,2147483647);
+  assert.equal(validateBridgeFolderPage({entries:[],nextOffset:20000}).nextOffset,20000);
+  assert.throws(()=>validateBridgeFolderPage({entries:[],nextOffset:-2}));
+});
