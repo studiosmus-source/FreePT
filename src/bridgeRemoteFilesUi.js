@@ -558,6 +558,7 @@ export function renderBridgeRemoteFiles({
     const thumbnailRows=new Map();
     let thumbnailObserver=null;
     let thumbnailVisibilityFrame=null;
+    let thumbnailLayoutTimer=null;
     let thumbnailAbort=null;
     let thumbnailActive=null;
     let thumbnailGeneration=0;
@@ -600,6 +601,10 @@ export function renderBridgeRemoteFiles({
       if(thumbnailVisibilityFrame!==null){
         cancelAnimationFrame(thumbnailVisibilityFrame);
         thumbnailVisibilityFrame=null;
+      }
+      if(thumbnailLayoutTimer!==null){
+        clearTimeout(thumbnailLayoutTimer);
+        thumbnailLayoutTimer=null;
       }
       for(const row of thumbnailRows.values())releaseThumbnail(row);
       thumbnailRows.clear();
@@ -725,6 +730,12 @@ export function renderBridgeRemoteFiles({
       thumbnailRows.set(element,row);
       thumbnailObserver?.observe(element);
       scheduleThumbnailViewport();
+      // Android WebView may delay paint/observer delivery while the DOM is
+      // replaced. One bounded post-layout retry; never an ongoing poller.
+      if(thumbnailLayoutTimer===null)thumbnailLayoutTimer=setTimeout(()=>{
+        thumbnailLayoutTimer=null;
+        if(alive()&&marker===revision)refreshThumbnailViewport();
+      },180);
     };
 
     // Capture nested scrolling containers without new controls or polling.
