@@ -966,7 +966,10 @@ export function renderBridgeRemoteFiles({
         return false;
       }finally{
         if(pendingBrowse===currentBrowse)pendingBrowse=null;
-        startVisibleThumbnail();
+        // The catalogue is fully mounted here. Detect the actual visible
+        // images synchronously; do not rely on an observer/animation frame
+        // that an embedded WebView can defer until the next interaction.
+        refreshThumbnailViewport();
         scheduleThumbnailViewport();
       }
     }
