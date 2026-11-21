@@ -351,9 +351,16 @@ export function renderBridgeRemoteFiles({
     controller=new AbortController();
     const signal=controller.signal;
     let noticeStarted=false,noticeOutcome='failed',lastNoticeAt=0,lastNoticePercent=-1;
-    const notice=async(method,args={})=>{
-      if(!bridgeDownloadNotice||typeof bridgeDownloadNotice[method]!=='function')return;
-      try{await bridgeDownloadNotice[method](args);}catch{/* Never block file transfer. */}
+    // Keep notification updates ordered: a late progress update must never
+    // overwrite the final "completed"/"failed" result.
+    let noticeQueue=Promise.resolve();
+    const notice=(method,args={})=>{
+      noticeQueue=noticeQueue.then(async()=>{
+        if(!bridgeDownloadNotice||typeof bridgeDownloadNotice[method]!=='function')return;
+        try{await bridgeDownloadNotice[method](args);}
+        catch{/* Never block file transfer. */}
+      });
+      return noticeQueue;
     };
     const beginNotice=async()=>{
       noticeStarted=true;
