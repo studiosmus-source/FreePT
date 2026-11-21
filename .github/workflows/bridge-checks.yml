@@ -13,6 +13,7 @@ on:
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
       - 'supabase/migrations/20261109_bridge_*.sql'
+      - 'supabase/migrations/20261121_bridge_*.sql'
       - 'supabase/bootstrap/**'
       - 'supabase/bridge_preflight.sql'
       - 'supabase/bridge_staging_install_once.sql'
@@ -29,6 +30,7 @@ on:
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
       - 'supabase/migrations/20261109_bridge_*.sql'
+      - 'supabase/migrations/20261121_bridge_*.sql'
       - 'supabase/bootstrap/**'
       - 'supabase/bridge_preflight.sql'
       - 'package.json'
@@ -147,6 +149,24 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_browse_staging.sql
       - name: Verify nested folders, explicit selection and grant revocations
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-browse.sql
+      - name: Install grant-checked JPEG thumbnail RPCs in disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261121_bridge_thumbnail_staging.sql
+      - name: Verify thumbnail job boundaries and non-public tables
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -Atqc "
+            select to_regprocedure('public.bridge_server_enqueue_thumbnail(uuid,uuid,uuid,uuid)') is not null
+              and to_regprocedure('public.bridge_server_claim_thumbnail(uuid,text)') is not null
+              and to_regprocedure('public.bridge_server_complete_thumbnail(uuid,uuid,text,jsonb)') is not null
+              and to_regprocedure('public.bridge_server_read_thumbnail(uuid,uuid)') is not null
+              and not has_function_privilege('authenticated',
+                'public.bridge_server_enqueue_thumbnail(uuid,uuid,uuid,uuid)','EXECUTE')
+              and not has_table_privilege('authenticated',
+                'public.bridge_thumbnail_results','SELECT')
+              and has_function_privilege('service_role',
+                'public.bridge_server_enqueue_thumbnail(uuid,uuid,uuid,uuid)','EXECUTE');
+          " | grep -qx t
+
       - name: Install server-only owner enrollment on isolated PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_device_enrollment_staging.sql
       - name: Verify enrollment privileges, ownership and deletion
