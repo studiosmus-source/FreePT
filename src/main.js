@@ -76,7 +76,13 @@ const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
 }):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
-  baseUrl:bridgeRuntime.baseUrl,auth:db.auth
+  baseUrl:bridgeRuntime.baseUrl,auth:db.auth,
+  // Authenticated, metadata-only wake. No device key, path or permission in FCM.
+  // This never blocks queued jobs or requires family actions.
+  wakeJob:async ({jobId})=>{
+    const response=await db.functions.invoke('freept-bridge-wake',{body:{jobId}});
+    if(response.error)throw response.error;
+  }
 });
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
