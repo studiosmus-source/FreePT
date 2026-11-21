@@ -26,7 +26,7 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn("BridgeAllFilesCore.granted()",control)
         self.assertIn("BridgeDeviceSecretStore.configured(getContext())",control)
         self.assertIn("BridgeTxJobService.schedulePeriodic(getContext())",control)
-        self.assertIn("BridgeTxJobService.schedule(getContext(),false)",control)
+        self.assertIn("BridgeTxJobService.schedule(getContext(),true)",control)
         self.assertIn("BridgeTxJobService.schedulePeriodic(context)",boot)
         self.assertIn("BridgeTxJobService.schedule(context,false)",boot)
         self.assertNotIn("startForegroundService(",control)
