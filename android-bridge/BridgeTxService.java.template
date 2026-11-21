@@ -49,6 +49,7 @@ public final class BridgeTxService extends Service {
             if(!validEndpoint(endpoint)){stopSelf();return START_NOT_STICKY;}
         }catch(Exception error){stopSelf();return START_NOT_STICKY;}
         showForeground();
+        BridgeTxJobService.schedulePeriodic(this);
         if(running.compareAndSet(false,true)){
             worker=new Thread(this::runWorker,"freept-bridge-tx");
             worker.start();
