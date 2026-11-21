@@ -1,0 +1,105 @@
+package __PACKAGE__;
+
+import android.app.job.JobInfo;
+import android.app.job.JobParameters;
+import android.app.job.JobScheduler;
+import android.app.job.JobService;
+import android.content.ComponentName;
+import android.content.Context;
+import android.os.Build;
+import android.os.SystemClock;
+import android.util.Log;
+import org.json.JSONObject;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * Consent-preserving, bounded on-demand Bridge worker. No foreground dataSync
+ * clock, no new permission or user action. Work is always claimed from the
+ * authenticated server; an FCM payload never contains a path or file command.
+ */
+public final class BridgeTxJobService extends JobService {
+    private static final int JOB_ID=4752;
+    private final AtomicBoolean running=new AtomicBoolean(false);
+    private volatile Thread worker;
+    private volatile java.net.HttpURLConnection connection;
+
+    static void schedule(Context context,boolean highPriority){
+        if(context==null||!BridgeAllFilesCore.granted()||
+           !BridgeDeviceSecretStore.configured(context)||
+           context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))
+            return;
+        JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        if(scheduler==null)return;
+        JobInfo.Builder request=new JobInfo.Builder(JOB_ID,
+            new ComponentName(context,BridgeTxJobService.class))
+            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY);
+        // High-priority FCM gives a short expedited-job quota exemption.
+        if(highPriority&&Build.VERSION.SDK_INT>=31)request.setExpedited(true);
+        else if(Build.VERSION.SDK_INT<31)request.setOverrideDeadline(0);
+        try{scheduler.schedule(request.build());}
+        catch(RuntimeException denied){
+            // A depleted expedited quota must not prevent a regular attempt.
+            if(highPriority&&Build.VERSION.SDK_INT>=31){
+                try{scheduler.schedule(new JobInfo.Builder(JOB_ID,
+                    new ComponentName(context,BridgeTxJobService.class))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).build());}
+                catch(RuntimeException ignored){}
+            }
+        }
+    }
+    @Override public boolean onStartJob(JobParameters params){
+        BridgeAllFilesCore.configure(this);
+        if(BridgeTxService.active||!BridgeAllFilesCore.granted()||
+           !BridgeDeviceSecretStore.configured(this)||
+           getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))return false;
+        if(!running.compareAndSet(false,true))return false;
+        worker=new Thread(()->{
+            boolean retry=false;
+            try{runBurst();}
+            catch(SecurityException blocked){/* Disabled/revoked credentials: no retry. */}
+            catch(Exception temporary){retry=true;Log.w("FreePTBridgeTX","job_error="+temporary.getClass().getSimpleName());}
+            finally{running.set(false);jobFinished(params,retry);}
+        },"freept-bridge-on-demand");
+        worker.start();
+        return true;
+    }
+    private void runBurst()throws Exception{
+        BridgeDeviceSecretStore.Credentials credentials=BridgeDeviceSecretStore.read(this);
+        String endpoint=getString(getResources().getIdentifier("bridge_endpoint","string",getPackageName()));
+        java.net.URL parsed=new java.net.URL(endpoint);
+        if(!"https".equals(parsed.getProtocol())||parsed.getPort()!=-1||
+           parsed.getUserInfo()!=null||parsed.getQuery()!=null||parsed.getRef()!=null||
+           parsed.getHost().isEmpty()||!(parsed.getPath().isEmpty()||"/".equals(parsed.getPath()))||
+           "cpopqsvzzxfjgnlawlvc.supabase.co".equals(parsed.getHost()))
+           throw new SecurityException("invalid_endpoint");
+        BridgeTxProtocol.Poster post=(route,body)->BridgeTxProtocol.post(
+            endpoint,route,body,conn->connection=conn);
+        JSONObject session=post.post("/bridge/tx/connect",new JSONObject()
+            .put("deviceId",credentials.deviceId).put("deviceSecret",credentials.deviceSecret));
+        String token=session.getString("token");
+        if(!token.matches("^[0-9a-f]{64}$"))throw new SecurityException("invalid_session");
+        int idle=0,completed=0;
+        long deadline=SystemClock.elapsedRealtime()+55000;
+        while(running.get()&&!Thread.currentThread().isInterrupted()&&
+              SystemClock.elapsedRealtime()<deadline&&idle<4&&completed<60){
+            JSONObject poll=post.post("/bridge/tx/poll",BridgeTxProtocol.payload(credentials.deviceId,token));
+            JSONObject job=poll.optJSONObject("job");
+            if(job!=null){
+                BridgeTxProtocol.executeJob(post,job,credentials.deviceId,token);
+                completed++;idle=0;
+            }else{
+                idle++;
+                if(idle<4)Thread.sleep(850);
+            }
+        }
+    }
+    @Override public boolean onStopJob(JobParameters params){
+        running.set(false);
+        java.net.HttpURLConnection conn=connection;
+        if(conn!=null)conn.disconnect();
+        Thread t=worker;if(t!=null)t.interrupt();
+        return BridgeAllFilesCore.granted()&&
+            BridgeDeviceSecretStore.configured(this)&&
+            !getSharedPreferences("freept_tx_control",0).getBoolean("paused",false);
+    }
+}
