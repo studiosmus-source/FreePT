@@ -11,7 +11,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class BridgeTxControlPlugin extends Plugin {
     @PluginMethod public void status(PluginCall call){
         JSObject out=new JSObject();
-        out.put("running",BridgeTxJobService.isScheduled(getContext()));
+        out.put("running",BridgeTxJobService.isConnected());
+        out.put("scheduled",BridgeTxJobService.isScheduled(getContext()));
         out.put("permissionGranted",BridgeAllFilesCore.granted());
         out.put("configured",BridgeDeviceSecretStore.configured(getContext()));
         out.put("paused",getContext().getSharedPreferences("freept_tx_control",0)
