@@ -1,0 +1,21 @@
+package __PACKAGE__;
+
+import androidx.annotation.NonNull;
+import com.capacitorjs.plugins.pushnotifications.MessagingService;
+import com.google.firebase.messaging.RemoteMessage;
+
+/**
+ * Keep existing Capacitor chat notifications intact. Silent, data-only wake
+ * messages schedule authenticated work, never deliver file paths or grants.
+ */
+public final class BridgeTxMessagingService extends MessagingService {
+    @Override public void onMessageReceived(@NonNull RemoteMessage message){
+        if("bridge_wake".equals(message.getData().get("kind"))&&
+           "1".equals(message.getData().get("version"))){
+            BridgeTxJobService.schedule(getApplicationContext(),
+                message.getPriority()==RemoteMessage.PRIORITY_HIGH);
+            return;
+        }
+        super.onMessageReceived(message);
+    }
+}
