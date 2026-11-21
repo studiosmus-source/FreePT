@@ -38,17 +38,21 @@ async function writeInParts(plugin,fileId,bytes,offset){
   }
   return pos;
 }
-export function createBridgeAndroidFolderDestination({plugin,name,ownerId,ownerName}={}){
+export function createBridgeAndroidFolderDestination({plugin,name,ownerId,ownerName,sourceKey}={}){
   if(!safeName(name)||!plugin||
      ['beginFolder','makeDirectory','openFile','writeChunk','commitFile',
       'discardFile','commitFolder','discardFolder'].some(k=>typeof plugin[k]!=='function'))
     throw Error('bridge_destination_invalid_options');
   ownerArguments(ownerId,ownerName);
+  if(typeof sourceKey!=='string'||sourceKey.length<5||sourceKey.length>2048)
+    throw Error('bridge_destination_invalid_source');
   let active=false;
   return Object.freeze({
     async begin(){
       if(active)throw Error('bridge_destination_already_started');
-      const result=await plugin.beginFolder({name,...ownerArguments(ownerId,ownerName)});
+      const result=await plugin.beginFolder({
+        name,sourceKey,...ownerArguments(ownerId,ownerName)
+      });
       if(result?.started!==true)throw Error('bridge_destination_begin_invalid');
       active=true;
     },
@@ -62,6 +66,8 @@ export function createBridgeAndroidFolderDestination({plugin,name,ownerId,ownerN
          typeof mime!=='string'||mime.length>160)
         throw Error('bridge_destination_invalid_metadata');
       const selected=await plugin.openFile({path:checkPath(path),size,mime});
+      if(selected?.alreadyComplete===true)
+        return Object.freeze({alreadyComplete:true});
       const fileId=selected?.fileId;
       if(typeof fileId!=='string'||!(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(fileId)))
         throw Error('bridge_destination_invalid_file_id');
