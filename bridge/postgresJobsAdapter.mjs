@@ -79,6 +79,61 @@ export class BridgePostgresJobsAdapter {
     return {jobId,deviceId,state:'queued'};
   }
 
+  async requestThumbnail({authContext,deviceId,jobId,handle}) {
+    if(!this.readJobsEnabled)throw Error('bridge_thumbnail_disabled');
+    requireId(deviceId);requireId(jobId);requireId(handle);
+    const receiverId=await this.#requireAdminId(authContext);
+    const data=await this.#rpc('bridge_server_enqueue_thumbnail',{
+      p_job_id:jobId,p_device_id:deviceId,p_receiver_id:receiverId,p_handle:handle
+    });
+    if(data!==jobId)throw Error('bridge_jobs_invalid_response');
+    return {jobId,deviceId,state:'queued'};
+  }
+
+  async getThumbnail({authContext,jobId}) {
+    if(!this.readJobsEnabled)throw Error('bridge_thumbnail_disabled');
+    requireId(jobId);
+    const receiverId=await this.#requireAdminId(authContext);
+    const result=await this.#rpc('bridge_server_read_thumbnail',{
+      p_job_id:jobId,p_receiver_id:receiverId
+    });
+    if(!result||!Number.isSafeInteger(result.bytesRead)||result.bytesRead<4||
+       result.bytesRead>32768||result.eof!==true)
+      throw Error('bridge_thumbnail_invalid_result');
+    return validateBridgeFileChunk(result,result.bytesRead);
+  }
+
+  async completeThumbnail({deviceId,sessionToken,jobId,chunk}) {
+    if(!this.readJobsEnabled)throw Error('bridge_thumbnail_disabled');
+    requireId(deviceId);requireId(jobId);
+    if(!chunk||!Number.isSafeInteger(chunk.bytesRead)||chunk.bytesRead<4||
+       chunk.bytesRead>32768||chunk.eof!==true)
+      throw Error('bridge_thumbnail_invalid_chunk');
+    const validated=validateBridgeFileChunk(chunk,chunk.bytesRead);
+    const binding=await this.sessions.getDispatchBinding({deviceId,token:sessionToken});
+    if(!BINDING.test(binding))throw Error('bridge_invalid_session_binding');
+    const result=await this.#rpc('bridge_server_complete_thumbnail',{
+      p_job_id:jobId,p_device_id:deviceId,p_session_binding_hex:binding,
+      p_chunk:validated
+    });
+    if(result!==true)throw Error('bridge_jobs_invalid_response');
+    return {jobId,deviceId,state:'done'};
+  }
+
+  async #claimThumbnail(deviceId,binding) {
+    if(!this.readJobsEnabled)return null;
+    const next=await this.#rpc('bridge_server_claim_thumbnail',{
+      p_device_id:deviceId,p_session_binding_hex:binding
+    });
+    if(next===null)return null;
+    if(!next||typeof next!=='object'||Array.isArray(next)||
+       Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,operation,state'||
+       !UUID.test(next.jobId)||next.deviceId!==deviceId||
+       !UUID.test(next.handle)||next.operation!=='thumbnail'||next.state!=='sent')
+      throw Error('bridge_jobs_invalid_response');
+    return next;
+  }
+
   async #requireAdminId(authContext) {
     const admin = await this.authenticateAdmin(authContext);
     if (!admin || admin.role !== 'admin' || admin.approved !== true)
@@ -142,7 +197,7 @@ export class BridgePostgresJobsAdapter {
       const next=await this.#rpc('bridge_server_claim_browse',{
         p_device_id:deviceId,p_session_binding_hex:binding
       });
-      if(next===null)return null;
+      if(next===null)return this.#claimThumbnail(deviceId,binding);
       if(!next||typeof next!=='object'||Array.isArray(next)||
          Object.keys(next).sort().join(',')!=='deviceId,handle,jobId,offset,operation,state'||
          !UUID.test(next.jobId)||next.deviceId!==deviceId||
