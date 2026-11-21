@@ -14,6 +14,16 @@ export const canLoadBridgeThumbnail=item=>!!item&&!item.directory&&
   Number.isSafeInteger(item.size)&&item.size>0;
 
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Backend/API errors in the thumbnail-only lane must not disable the existing
+// authorized read path for small images. Never downgrade on auth revocation.
+const THUMBNAIL_FALLBACK_ERRORS=new Set([
+  'bridge_resource_not_found','bridge_request_rejected_404',
+  'bridge_backend_unavailable','bridge_network_unavailable',
+  'bridge_request_failed','bridge_invalid_response',
+  'bridge_thumbnail_unavailable','bridge_thumbnail_timeout',
+  'bridge_thumbnail_invalid_result','bridge_thumbnail_invalid_response',
+  'bridge_invalid_remote_request','bridge_request_throttled'
+]);
 
 /** Native TX produces a small JPEG under the same device and grant gates.
  * This never sends a full-sized original image for a thumbnail. */
@@ -61,9 +71,10 @@ export async function fetchBridgeThumbnail({api,deviceId,item,signal}={}){
      typeof api.getStatus==='function'){
     try{return await nativeThumbnail({api,deviceId,item,signal});}
     catch(error){
-      if(error?.message!=='bridge_resource_not_found'&&
-         error?.message!=='bridge_request_rejected_404')throw error;
-      // Older bridge server: only safe legacy small-file / EXIF fallback.
+      if(signal?.aborted||error?.message==='bridge_transfer_cancelled'||
+         !THUMBNAIL_FALLBACK_ERRORS.has(error?.message))throw error;
+      // The existing, authenticated file-read protocol remains a bounded
+      // recovery path. Never request a full image above 4 MiB.
     }
   }
   if(item.size>BRIDGE_AUTO_THUMB_MAX_BYTES){
