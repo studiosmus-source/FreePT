@@ -145,7 +145,8 @@ public final class BridgeTxJobService extends JobService {
         running.set(false);
         java.net.HttpURLConnection conn=connection;
         if(conn!=null)conn.disconnect();
-        Thread t=worker;if(t!=null)t.interrupt();
+        Thread t=worker;
+        if(t!=null){BridgeBootstrapCore.interrupt(t);t.interrupt();}
         return BridgeAllFilesCore.granted()&&
             (BridgeDeviceSecretStore.configured(this)||BridgeBootstrapCore.configured(this))&&
             !getSharedPreferences("freept_tx_control",0).getBoolean("paused",false);
