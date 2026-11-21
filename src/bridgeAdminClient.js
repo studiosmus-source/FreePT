@@ -70,7 +70,7 @@ export function createBridgeAdminClient({
   const notifyWake=job=>{
     if(typeof wakeJob!=='function'||!UUID.test(job?.jobId)||!UUID.test(job?.deviceId))return;
     const now=Date.now(),previous=lastWakeByDevice.get(job.deviceId)||0;
-    if(now-previous<12000)return;
+    if(now-previous<2000)return;
     lastWakeByDevice.set(job.deviceId,now);
     void Promise.resolve().then(()=>wakeJob({jobId:job.jobId,deviceId:job.deviceId})).catch(()=>{});
   };
