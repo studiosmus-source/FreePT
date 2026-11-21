@@ -266,3 +266,57 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
   display:block;flex:1 1 auto;min-width:0;
   overflow-wrap:anywhere;word-break:normal;
 }
+
+/* FreePT visual refresh 2026-11-21 — appearance only.
+   No markup/DOM, permissions, message strings, Bridge transport, or layout flows. */
+:root{color-scheme:light;--fp-ink:#203145;--fp-muted:#697a8d;--fp-line:#dce6ef;--fp-blue:#236388;--fp-soft:#f5f9fc}
+body{background:#eaf0f5;color:var(--fp-ink)}
+.shell{box-shadow:0 0 28px rgba(24,48,73,.09)}
+.top{background:linear-gradient(112deg,#142a42 0%,#1d5274 100%);border-bottom:1px solid #ffffff20;box-shadow:0 2px 10px rgba(15,35,55,.12)}
+.top h1{font-weight:750;letter-spacing:.015em}
+.top button{background:#ffffff18;border:1px solid #ffffff28;color:#fff;border-radius:11px}
+button{border-radius:11px;background:#236388;font-weight:600}
+button:not(:disabled):active{filter:brightness(.94)}
+input,textarea{border-color:#cbd9e5;background:#fff;color:#243449}
+input:focus-visible,textarea:focus-visible,button:focus-visible,.bridge-entry-menu>summary:focus-visible{outline:2px solid #3c92b8;outline-offset:2px}
+.panel h2{color:#1b3550}
+.small,.hint,.chat-preview{color:var(--fp-muted)}
+.admin-people-tools{background:linear-gradient(180deg,#f8fbfd,#eef5f9);border-bottom-color:var(--fp-line)}
+.admin-people-tools input,.admin-people-tools select{border-color:#cbd9e5}
+.person{background:#fff;border-bottom:1px solid #e9eef3;color:var(--fp-ink);padding-block:13px}
+.person:hover,.person:focus-visible{background:#eef6fa}
+.person .chat-preview{color:#718396}
+.toolbar{background:#fff;border-bottom:1px solid var(--fp-line);box-shadow:0 2px 7px rgba(27,55,80,.04)}
+.toolbar strong{color:#1d3954;letter-spacing:.005em}
+.toolbar button{background:#edf4f8;border:1px solid #dce6ef;color:#255572;font-size:13px}
+.toolbar button:active{background:#dcecf5}
+.feed{background:linear-gradient(180deg,#f5f9fc 0%,#f9fbfd 100%);gap:10px}
+.bubble{border-radius:17px 17px 17px 5px;background:#fff;border:1px solid #e4edf3;box-shadow:0 1px 4px rgba(24,49,72,.045);padding:11px 14px;line-height:1.43}
+.bubble.mine{border-radius:17px 17px 5px 17px;background:#dff2ed;border-color:#cce7de}
+.bubble small{color:#64778b}
+.compose{background:#fff;border-top:1px solid var(--fp-line);box-shadow:0 -3px 12px rgba(18,44,66,.035)}
+.compose textarea{background:#f9fbfd;border-radius:13px}
+.compose>button{background:#236388}
+.compose>.attach{border:1px solid #d6e3ec;background:#f5f9fc;color:#236388;border-radius:12px}
+.bridge-admin-panel,.chat-actions-box{border:1px solid #e8eff5;box-shadow:0 18px 48px rgba(10,33,53,.23)}
+.bridge-admin-panel h2{color:#193a54}
+.bridge-admin-panel nav button[aria-pressed=true]{background:#236388}
+#chatRemoteFilesPanel{background:#fbfdff}
+.bridge-breadcrumbs button{background:#eaf3f8;color:#245a79;border:1px solid #deebf2}
+.bridge-list-section-heading{color:#315c76;border-bottom:1px solid #dbe7ee}
+.bridge-remote-folders>.bridge-entry,.bridge-remote-files>.bridge-entry{border-bottom-color:#e7eef3;background:#fff}
+.bridge-remote-folders>.bridge-entry:active,.bridge-remote-files>.bridge-entry:active{background:#f0f7fb}
+.bridge-entry>.bridge-entry-primary{color:#263b50}
+.bridge-entry-photo-icon,.bridge-entry-photo-thumb{border-radius:10px;background:#eaf2f7}
+.bridge-folder-completeness{background:#edf5fa;color:#34556d;border:1px solid #e0ebf2}
+.bridge-entry-menu[open]>div{border-color:#d9e6ef;box-shadow:0 12px 30px rgba(18,42,63,.16)}
+.bridge-entry-menu button{background:#f3f8fb;color:#2a4961}
+.update-banner{background:#eff6fb;border-bottom-color:#d6e7f1;color:#265776}
+.update-banner button,.attach-download{background:#236388}
+@media(max-width:699px){
+  .shell{box-shadow:none}
+  .top{padding-inline:16px}
+  .toolbar{gap:6px}
+  .toolbar button{padding:10px 9px}
+  .feed{padding:13px}
+}
