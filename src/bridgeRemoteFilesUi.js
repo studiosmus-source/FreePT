@@ -573,6 +573,9 @@ export function renderBridgeRemoteFiles({
     let thumbnailRetryTimer=null;
     let thumbnailNextAt=0;
     let thumbnailFailureStreak=0;
+    // Initial page thumbnails must not depend on Android WebView scroll or
+    // IntersectionObserver delivery. Fetch a small, bounded initial batch.
+    const INITIAL_THUMBNAILS=4;
     const rememberThumbnail=(key,blob)=>{
       if(blob.size>THUMBNAIL_CACHE_BYTES)return;
       const previous=thumbnailCache.get(key);
@@ -628,7 +631,7 @@ export function renderBridgeRemoteFiles({
       if(thumbnailRetryTimer!==null){clearTimeout(thumbnailRetryTimer);thumbnailRetryTimer=null;}
     };
     const showThumbnail=(row,blob)=>{
-      if(!row.element.isConnected||!row.visible||!alive()||marker!==revision)return;
+      if(!row.element.isConnected||!alive()||marker!==revision)return;
       releaseThumbnail(row);
       row.url=URL.createObjectURL(blob);
       row.img.src=row.url;
@@ -646,8 +649,11 @@ export function renderBridgeRemoteFiles({
         },waitMs);
         return;
       }
-      const row=[...thumbnailRows.values()].find(item=>
-        item.visible&&!item.attempted&&item.element.isConnected);
+      const entries=[...thumbnailRows.values()];
+      const initial=entries.slice(0,INITIAL_THUMBNAILS);
+      const row=entries.find(item=>
+        item.visible&&!item.attempted&&item.element.isConnected)||
+        initial.find(item=>!item.attempted&&item.element.isConnected);
       if(!row)return;
       row.attempted=true;
       thumbnailActive=row;
@@ -668,10 +674,19 @@ export function renderBridgeRemoteFiles({
           }
           if(abort.signal.aborted||generation!==thumbnailGeneration)return;
           showThumbnail(row,blob);
+          row.element.dataset.thumbnailState='ready';
+          row.element.removeAttribute('title');
           thumbnailFailureStreak=0;
           // Keep expensive read jobs secondary to navigation and downloads.
           thumbnailNextAt=Date.now()+2000;
-        }catch{
+        }catch(error){
+          // Expose a non-sensitive, localized failure on this row instead of
+          // silently leaving an unchanging generic icon after all retries.
+          if(!abort.signal.aborted&&row.element.isConnected){
+            row.element.dataset.thumbnailState='failed';
+            row.element.title='Miniatura non disponibile ('+
+              String(error?.message||'errore').replace(/[^a-z0-9_-]/gi,'').slice(0,48)+')';
+          }
           // Bound retries per visible image to avoid flooding the remote TX.
           if(!abort.signal.aborted){
             row.failures=(row.failures||0)+1;
@@ -702,10 +717,8 @@ export function renderBridgeRemoteFiles({
         const bounds=row.element.getBoundingClientRect();
         const visible=bounds.bottom>-60&&bounds.top<height+60&&
           bounds.right>0&&bounds.left<width;
-        if(!visible){
-          if(thumbnailActive===row){row.attempted=false;thumbnailAbort?.abort();}
-          if(row.url){releaseThumbnail(row);row.attempted=false;}
-        }
+        // Keep thumbnails cached and visible after a scroll: hiding a row
+        // must not delete its already-loaded preview or cancel initial priming.
         row.visible=visible;
       }
       startVisibleThumbnail();
@@ -724,10 +737,8 @@ export function renderBridgeRemoteFiles({
             const row=thumbnailRows.get(entry.target);
             if(!row)continue;
             row.visible=entry.isIntersecting;
-            if(!row.visible){
-              if(thumbnailActive===row){row.attempted=false;thumbnailAbort?.abort();}
-              if(row.url){releaseThumbnail(row);row.attempted=false;}
-            }
+            // Only scheduling priority changes with visibility. A completed
+            // thumbnail remains present; scrolling never destroys it.
           }
           startVisibleThumbnail();
         },{root:null,rootMargin:'0px 0px 60px 0px'});
@@ -1020,6 +1031,9 @@ export function renderBridgeRemoteFiles({
         // images synchronously; do not rely on an observer/animation frame
         // that an embedded WebView can defer until the next interaction.
         refreshThumbnailViewport();
+        // A completed listing primes the first few image rows even when
+        // Android WebView has not reported their intersection yet.
+        startVisibleThumbnail();
         scheduleThumbnailViewport();
       }
     }
