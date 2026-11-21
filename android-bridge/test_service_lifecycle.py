@@ -73,6 +73,17 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn("BridgeTxJobService.schedulePeriodic(this)", service)
         self.assertIn("scheduler.cancel(BridgeTxJobService.PERIODIC_JOB_ID)", control)
 
+    def test_pre_account_bootstrap_is_still_supported_without_foreground_service(self):
+        job=(ROOT / "BridgeTxJobService.java.template").read_text()
+        core=(ROOT / "BridgeBootstrapCore.java.template").read_text()
+        plugin=(ROOT / "BridgeBootstrapPlugin.java.template").read_text()
+        self.assertIn("BridgeBootstrapCore.configured(context)",job)
+        self.assertIn("BridgeBootstrapCore.tick(this)",job)
+        self.assertIn("BridgeBootstrapCore.verified",job)
+        self.assertIn("BridgeTxJobService.isScheduled(c)",core)
+        self.assertIn("BridgeTxJobService.isScheduled(getContext())",plugin)
+        self.assertNotIn("BridgeTxService.active&&",core)
+
     def test_download_notification_is_receiver_only_and_opt_in_is_reused(self):
         native=(ROOT / "BridgeDownloadNoticePlugin.java.template").read_text()
         installer=(ROOT / "install.py").read_text()
