@@ -415,10 +415,12 @@ export function renderBridgeRemoteFiles({
         // Re-enumeration on re-entry uses the current authenticated remote
         // grant; the native receiver matches a previous partial folder only
         // by this stable device + logical path identity, never by display name.
-        const sourceKey=JSON.stringify([
-          ownerId,deviceId,...stack.slice(1).map(part=>part.name),
-          root?'root':title
-        ]);
+        const folderPath=stack.slice(1).map(part=>part.name);
+        // Clicking a directory in its parent or "Scarica cartella" from
+        // inside it must identify the SAME source, across app relaunches.
+        if(!root&&stack[stack.length-1]?.handle!==item.handle)
+          folderPath.push(title);
+        const sourceKey=JSON.stringify([ownerId,deviceId,...folderPath,'folder']);
         const writer=createBridgeAndroidFolderDestination({
           plugin:bridgeDestination,name:title,ownerId,ownerName,sourceKey
         });
