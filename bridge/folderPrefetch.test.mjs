@@ -76,7 +76,7 @@ test('the last legal page at offset 10000 can complete a 10001-item folder',()=>
  }
  assert.equal(result.autoFetch,true,'offset 10000 is still readable by TX');
  assert.equal(result.complete,false);
- assert.equal(result.itemsSeen,BRIDGE_FILE_LIMITS.maxTotalEntries);
+ assert.equal(result.itemsSeen,10000);
  const last=scan.record({handle:'root',offset:10000,
    page:{entries:dirs(1),nextOffset:-1}});
  assert.equal(last.complete,true);
