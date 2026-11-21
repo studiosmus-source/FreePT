@@ -90,6 +90,7 @@ required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin", "BridgeDestinationNames",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
+    "BridgeTxProtocol", "BridgeTxJobService", "BridgeTxMessagingService",
     "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"
 ]
 for name in required_templates:
@@ -158,7 +159,8 @@ if xml.count("<application") != 1:
     raise SystemExit("Unexpected AndroidManifest.xml layout")
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
-             "BridgeTxControlPlugin", "BridgeTxBootReceiver", "FreePTUpdaterPlugin",
+             "BridgeTxControlPlugin", "BridgeTxBootReceiver", "BridgeTxProtocol",
+             "BridgeTxJobService", "BridgeTxMessagingService", "FreePTUpdaterPlugin",
              "FreePTAdminSharePlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
     template = template_path.read_text()
@@ -180,6 +182,16 @@ for permission_name in ("RECEIVE_BOOT_COMPLETED", "FOREGROUND_SERVICE", "FOREGRO
 service = ('<service android:name=".BridgeTxService" '
            'android:exported="false" '
            'android:foregroundServiceType="dataSync" />')
+job_service = ('<service android:name=".BridgeTxJobService" '
+               'android:permission="android.permission.BIND_JOB_SERVICE" '
+               'android:exported="true" />')
+# Exactly one FCM receiver. The existing Capacitor MessagingService is
+# replaced by a compatible subclass that forwards every non-Bridge push.
+old_fcm = ('<service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" '
+           'tools:node="remove" />')
+bridge_fcm = ('<service android:name=".BridgeTxMessagingService" android:exported="false">'
+              '<intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" />'
+              '</intent-filter></service>')
 boot_receiver = ('<receiver android:name=".BridgeTxBootReceiver" '
                  'android:enabled="true" android:exported="false">'
                  '<intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" />'
@@ -188,8 +200,13 @@ if manifest_text.count("</application>") != 1:
     raise SystemExit("Unexpected AndroidManifest app closure")
 if "BridgeTxService" in manifest_text:
     raise SystemExit("TX native service already registered")
+if "xmlns:tools=" not in manifest_text:
+    manifest_text = manifest_text.replace(
+        "<manifest ", '<manifest xmlns:tools="http://schemas.android.com/tools" ', 1
+    )
 manifest.write_text(manifest_text.replace("</application>",
-    "    " + service + "\n    " + boot_receiver + "\n    </application>", 1))
+    "    " + service + "\n    " + job_service + "\n    " + old_fcm + "\n    " +
+    bridge_fcm + "\n    " + boot_receiver + "\n    </application>", 1))
 values = Path("android/app/src/main/res/values")
 values.mkdir(parents=True, exist_ok=True)
 (values / "freept_bridge.xml").write_text(
