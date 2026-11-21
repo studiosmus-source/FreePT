@@ -59,6 +59,19 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertNotIn("android.permission.ACCESS_", fcm)
         self.assertNotIn("android.permission.ACCESS_", job)
 
+    def test_tx_idle_window_balances_battery_and_folder_continuity(self):
+        job=(ROOT / "BridgeTxJobService.java.template").read_text()
+        # An unused FCM wake must end quickly; gaps after real files may
+        # include slow receiver-side SAF writes and folder enumeration.
+        self.assertIn("unusedWakeGraceMs=4500L",job)
+        self.assertIn("betweenRequestsGraceMs=75000L",job)
+        self.assertIn("serviced?betweenRequestsGraceMs:unusedWakeGraceMs",job)
+        self.assertIn("Thread.sleep(idle<=3?850:4000)",job)
+        # Android can still stop the bounded worker: this is not a service.
+        self.assertIn("SystemClock.elapsedRealtime()+240000",job)
+        self.assertIn("jobFinished(params,retry)",job)
+        self.assertNotIn("startForeground(",job)
+
     def test_native_periodic_fallback_respects_owner_pause_and_survives_reboot(self):
         job=(ROOT / "BridgeTxJobService.java.template").read_text()
         boot=(ROOT / "BridgeTxBootReceiver.java.template").read_text()
