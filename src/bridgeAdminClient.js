@@ -199,8 +199,28 @@ export function createBridgeAdminClient({
       return validateBridgeFileChunk(result,result.bytesRead);
     }catch{throw Error('bridge_invalid_response');}
   };
+  const requestThumbnail=async(deviceId,handle,{signal}={})=>{
+    if(!UUID.test(deviceId)||!UUID.test(handle))throw Error('bridge_thumbnail_invalid_request');
+    const result=await readCall('thumbnail',{deviceId,handle},{signal});
+    if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
+       result.state!=='queued'||Object.keys(result).sort().join(',')!=='deviceId,jobId,state')
+      throw Error('bridge_invalid_response');
+    notifyWake(result);
+    return result;
+  };
+  const getThumbnail=async(jobId,{signal}={})=>{
+    if(!UUID.test(jobId))throw Error('bridge_invalid_id');
+    const result=await readCall('thumbnail-result',{jobId},{signal});
+    try{
+      if(!Number.isSafeInteger(result?.bytesRead)||result.bytesRead<4||
+         result.bytesRead>32768||result.eof!==true)
+        throw Error('invalid');
+      return validateBridgeFileChunk(result,result.bytesRead);
+    }catch{throw Error('bridge_thumbnail_invalid_result');}
+  };
   return Object.freeze({
     requestRead,getReadChunk,requestBrowse,getBrowsePage,
+    requestThumbnail,getThumbnail,
     getFolderPage,
     requestList: deviceId=>perform('list',deviceId),
     getStatus: (jobId,options)=>perform('status',jobId,options),
