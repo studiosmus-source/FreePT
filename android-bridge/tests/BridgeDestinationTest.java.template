@@ -26,7 +26,8 @@ public class BridgeDestinationTest {
  private final Map<String,Doc> docs=new LinkedHashMap<>();
  private Context context;private ContentResolver resolver;private BridgeDestinationPlugin plugin;
  private boolean permission=true,renameWrong=false,providerOffline=false,autoJpgExtension=false;
- private boolean staleReportedSize=false;
+ private boolean staleReportedSize=false,truncateOnReopen=false;
+ private final Map<String,Integer> descriptorOpens=new HashMap<>();
  private String returnExisting=null;
  private int serial=0;
  static class Doc {String id,parent,name,mime;File bytes;Doc(String id,String p,String n,String m,File f){this.id=id;parent=p;name=n;mime=m;bytes=f;}}
@@ -54,7 +55,14 @@ public class BridgeDestinationTest {
    }else{Doc d=doc(u);if(d!=null)row(c,columns,d);}
    return c;
   });
-  when(resolver.openFileDescriptor(any(Uri.class),eq("rw"))).thenAnswer(a->ParcelFileDescriptor.open(doc(a.getArgument(0)).bytes,ParcelFileDescriptor.MODE_READ_WRITE));
+  when(resolver.openFileDescriptor(any(Uri.class),eq("rw"))).thenAnswer(a->{
+   Doc target=doc(a.getArgument(0));
+   int count=descriptorOpens.merge(target.id,1,Integer::sum);
+   // Simulate a SAF provider that replaces the write transaction on reopen.
+   if(truncateOnReopen&&count>1)
+    try(FileOutputStream reset=new FileOutputStream(target.bytes,false)){}
+   return ParcelFileDescriptor.open(target.bytes,ParcelFileDescriptor.MODE_READ_WRITE);
+  });
   when(resolver.openInputStream(any(Uri.class))).thenAnswer(a->new FileInputStream(doc(a.getArgument(0)).bytes));
   ContentProviderClient client=mock(ContentProviderClient.class);
   when(resolver.acquireUnstableContentProviderClient(anyString())).thenReturn(client);
@@ -137,6 +145,16 @@ public class BridgeDestinationTest {
  @Test public void largeFileIsVerifiedByteForByte()throws Exception{
   byte[] b=new byte[300000];new Random(42).nextBytes(b);finish(begin(A,"large.bin",b.length),b);
   Doc d=docs.values().stream().filter(x->"large.bin".equals(x.name)).findFirst().orElseThrow();assertArrayEquals(b,Files.readAllBytes(d.bytes.toPath()));
+ }
+
+ @Test public void sequentialChunksUseOneSafWriteTransaction()throws Exception{
+  truncateOnReopen=true;
+  byte[] bytes=new byte[600000];new Random(93).nextBytes(bytes);
+  finish(begin(A,"streamed.bin",bytes.length),bytes);
+  Doc saved=docs.values().stream().filter(d->"streamed.bin".equals(d.name)).findFirst().orElseThrow();
+  assertEquals("Each file must use exactly one SAF writer",1,(int)descriptorOpens.getOrDefault(saved.id,0));
+  assertArrayEquals("A provider that truncates on reopen must not corrupt previous chunks",
+    bytes,Files.readAllBytes(saved.bytes.toPath()));
  }
  @Test public void revocationAndTraversalDoNotStartATransfer()throws Exception{
   permission=false;Call c=call(Map.of("name","x.bin","size",0,"mime","application/octet-stream","ownerId",A,"ownerName","Cristina"));plugin.beginSingleFile(c.call);assertNotNull(c.error);
