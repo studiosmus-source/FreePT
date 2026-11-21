@@ -11,7 +11,7 @@ export const BRIDGE_FILE_LIMITS = Object.freeze({
   maxMime: 160,
   maxFileBytes: 1024 ** 4,
   maxChunkBytes: 262144,
-  maxTotalEntries: 10000
+  maxTotalEntries: 2147483647
 });
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HANDLE=/^(?:root|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
