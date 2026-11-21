@@ -251,63 +251,15 @@ final class BridgeAllFilesCore {
         }
     }
 
-    /**
-     * Native low-resolution JPEG preview for an already-listed, authorized
-     * file handle. Uses the same shared-storage boundaries as read(), never
-     * uploads the original photo and never asks for additional permissions.
-     */
-    static synchronized JSObject thumbnail(String handle)throws Exception{
+    /** Same verified, opaque file handle used by regular Bridge reads.
+     * Pixel decoding is isolated in BridgeNativeThumbnailCore. */
+    static synchronized File thumbnailSource(String handle)throws Exception{
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
         Entry entry=entries.get(handle);
         if(entry==null||!currentVolume(entry)||!entry.file.isFile()||
            !valid(entry.file,entry.volumeRoot)||!entry.file.canRead())
             throw new SecurityException("invalid_thumbnail_handle");
-        String name=entry.file.getName().toLowerCase(java.util.Locale.ROOT);
-        if(!(name.endsWith(".jpg")||name.endsWith(".jpeg")||
-             name.endsWith(".png")||name.endsWith(".webp")||
-             name.endsWith(".heic")||name.endsWith(".heif")||
-             name.endsWith(".gif")||name.endsWith(".bmp")))
-            throw new SecurityException("unsupported_thumbnail_format");
-        android.graphics.BitmapFactory.Options probe=new android.graphics.BitmapFactory.Options();
-        probe.inJustDecodeBounds=true;
-        android.graphics.BitmapFactory.decodeFile(entry.file.getAbsolutePath(),probe);
-        if(probe.outWidth<1||probe.outHeight<1||
-           probe.outWidth>32000||probe.outHeight>32000)
-            throw new IOException("thumbnail_dimensions_invalid");
-        android.graphics.BitmapFactory.Options options=new android.graphics.BitmapFactory.Options();
-        int biggest=Math.max(probe.outWidth,probe.outHeight),sample=1;
-        while(biggest/sample>256&&sample<1024)sample*=2;
-        options.inSampleSize=sample;
-        android.graphics.Bitmap original=android.graphics.BitmapFactory.decodeFile(
-            entry.file.getAbsolutePath(),options);
-        if(original==null)throw new IOException("thumbnail_decode_failed");
-        android.graphics.Bitmap scaled=null;
-        try{
-            int width=original.getWidth(),height=original.getHeight();
-            if(width<1||height<1)throw new IOException("thumbnail_dimensions_invalid");
-            float scale=Math.min(1f,144f/Math.max(width,height));
-            scaled=android.graphics.Bitmap.createScaledBitmap(original,
-                Math.max(1,Math.round(width*scale)),
-                Math.max(1,Math.round(height*scale)),true);
-            java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream(16384);
-            byte[] jpeg=null;
-            for(int quality:new int[]{72,55,35}){
-                data.reset();
-                if(!scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG,quality,data))
-                    throw new IOException("thumbnail_encode_failed");
-                jpeg=data.toByteArray();
-                if(jpeg.length<=24000)break;
-            }
-            if(jpeg==null||jpeg.length<4||jpeg.length>32768)
-                throw new IOException("thumbnail_too_large");
-            JSObject out=new JSObject();
-            out.put("base64",Base64.encodeToString(jpeg,Base64.NO_WRAP));
-            out.put("bytesRead",jpeg.length);
-            out.put("eof",true);
-            return out;
-        }finally{
-            if(scaled!=null&&scaled!=original)scaled.recycle();
-            original.recycle();
-        }
+        return entry.file;
     }
+
 }
