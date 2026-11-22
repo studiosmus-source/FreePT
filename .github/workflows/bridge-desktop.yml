@@ -143,5 +143,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: FreePT-Bridge-TEST-${{ matrix.target }}-${{ matrix.arch }}
-          path: release/*
+          path: |
+            release/FreePT-Bridge-TEST-${{ matrix.target }}-${{ matrix.arch }}.*
+            release/verification.txt
+          compression-level: 0
           if-no-files-found: error
