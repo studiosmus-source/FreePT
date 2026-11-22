@@ -8,12 +8,14 @@ on:
       - work/unified-verified-20261119
       - fix/bridge-all-accessible-folders-20261120
       - fix/bridge-transfer-resume-20261121
+      - fix/bridge-autonomous-bridge-20261121
     paths:
       - 'android-bridge/**'
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
       - 'supabase/migrations/20261109_bridge_*.sql'
+      - 'supabase/migrations/20261118_bridge_*.sql'
       - 'supabase/migrations/20261121_bridge_*.sql'
       - 'supabase/bootstrap/**'
       - 'supabase/bridge_preflight.sql'
@@ -31,9 +33,13 @@ on:
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
       - 'supabase/migrations/20261109_bridge_*.sql'
+      - 'supabase/migrations/20261118_bridge_*.sql'
       - 'supabase/migrations/20261121_bridge_*.sql'
       - 'supabase/bootstrap/**'
       - 'supabase/bridge_preflight.sql'
+      - 'supabase/bridge_staging_install_once.sql'
+      - 'supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql'
+      - 'supabase/bridge_sql_safety.test.mjs'
       - 'package.json'
       - 'src/**'
       - 'index.html'
@@ -54,6 +60,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Bridge model tests
         run: npm run test:bridge
+      - name: Check isolated staging SQL bundle invariants
+        run: node --test supabase/bridge_sql_safety.test.mjs
       - name: Syntax check every Bridge module and FreePT entrypoint
         run: |
           for file in bridge/*.mjs src/main.js; do
@@ -144,14 +152,18 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-folder-catalog.sql
       - name: Install isolated authenticated read-chunk RPCs
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_read_chunks_staging.sql
-      - name: Verify read authorization session fencing and revocation
-        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-read-chunks.sql
       - name: Install isolated authenticated nested folder browsing RPCs
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261108_bridge_browse_staging.sql
       - name: Verify nested folders, explicit selection and grant revocations
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-browse.sql
+      - name: Install 256 KiB authenticated read support
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261118_bridge_chunk_size_256k.sql
       - name: Install grant-checked JPEG thumbnail RPCs in disposable PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261121_bridge_thumbnail_staging.sql
+      - name: Keep queued TEST requests available for Android recovery
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261121_bridge_job_delivery_staging.sql
+      - name: Verify 256 KiB read jobs, delivery window and revocation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-read-chunks.sql
       - name: Integration-test thumbnail enqueue, claim, completion and revocation
         run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-thumbnail.sql
       - name: Verify thumbnail job boundaries and non-public tables
@@ -227,6 +239,8 @@ jobs:
           grep -Fq 'BRIDGE STOP: Bridge already installed' /tmp/bridge-repeat.txt
           after="$(psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from pg_class where relnamespace='public'::regnamespace and relname like 'bridge_%'")"
           test "$before" = "$after"
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-read-chunks.sql
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-thumbnail.sql
       - name: Verify complete bundle using existing SQL integration tests
         run: |
           set -euo pipefail

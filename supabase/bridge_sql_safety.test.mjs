@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const sql=readFileSync(new URL('./bridge_staging_install_once.sql',import.meta.url),'utf8');
-const sections=[...sql.matchAll(/^-- ===== (\d+)\/(?:13|14): (.+) =====$/gm)];
+const sections=[...sql.matchAll(/^-- ===== (\d+)\/(?:13|14|17): (.+) =====$/gm)];
 const functionNames=[...sql.matchAll(/create or replace function\s+public\.([a-z_]+)\s*\(/gi)].map(x=>x[1]);
 const frequencies=Object.create(null);
 for(const name of functionNames) frequencies[name]=(frequencies[name]??0)+1;
@@ -13,13 +13,13 @@ test('staging bundle remains explicitly test-only',()=>{
  assert.match(sql,/aqjuixbuxtnjfzxmzuj/);
  assert.match(sql,/BEGIN;[\s\S]*COMMIT;/);
 });
-test('staging bundle contains 14 ordered migration sections',()=>{
- assert.equal(sections.length,14);
- assert.deepEqual(sections.map(x=>Number(x[1])),Array.from({length:14},(_,i)=>i+1));
+test('staging bundle contains 17 ordered migration sections',()=>{
+ assert.equal(sections.length,17);
+ assert.deepEqual(sections.map(x=>Number(x[1])),Array.from({length:17},(_,i)=>i+1));
 });
 test('replaced RPCs are explicit and reviewed rather than accidental',()=>{
  assert.deepEqual(Object.entries(frequencies).filter(([,n])=>n>1).sort(),
- [['bridge_server_claim_list',3],['bridge_server_complete_list',3]]);
+ [['bridge_server_claim_list',3],['bridge_server_complete_list',3],['bridge_server_enqueue_read',2]]);
 });
 test('schema DDL and direct data mutations target only bridge tables',()=>{
  const targets=[...sql.matchAll(/\b(?:create\s+table\s+(?:if\s+not\s+exists\s+)?|alter\s+table\s+|delete\s+from\s+|update\s+)public\.([a-z_]+)/gi)].map(x=>x[1]);
@@ -70,8 +70,8 @@ test('final list RPCs retain session fencing and list-only job guards',()=>{
 });
 
 test('bundled staging migrations exactly match individual source files',()=>{
- const markers=[...sql.matchAll(/^-- ===== \d+\/(?:13|14): ([^\s]+) =====$/gm)];
- assert.equal(markers.length,14);
+ const markers=[...sql.matchAll(/^-- ===== \d+\/(?:13|14|17): ([^\s]+) =====$/gm)];
+ assert.equal(markers.length,17);
  for(let i=0;i<markers.length;i++){
    const start=markers[i].index+markers[i][0].length;
    const end=i+1<markers.length?markers[i+1].index:sql.lastIndexOf('\nCOMMIT;');
@@ -83,7 +83,7 @@ test('bundled staging migrations exactly match individual source files',()=>{
 
 test('all bundled Bridge function bodies have balanced PostgreSQL dollar delimiters',()=>{
  const definitions=[...sql.matchAll(/create\s+or\s+replace\s+function\s+public\.[a-z_]+\s*\(/gi)];
- assert.equal(definitions.length,27);
+ assert.equal(definitions.length,30);
  for(let i=0;i<definitions.length;i++){
    const start=definitions[i].index;
    const end=i+1<definitions.length?definitions[i+1].index:sql.lastIndexOf('\nCOMMIT;');
@@ -97,16 +97,23 @@ test('all bundled Bridge function bodies have balanced PostgreSQL dollar delimit
  }
 });
 
-test('production candidate matches the reviewed staging migration payload byte for byte',()=>{
+test('production candidate retains its reviewed payload; staging additions stay isolated',()=>{
  const production=readFileSync(new URL('./bridge_production_install_CANDIDATE_DO_NOT_RUN.sql',import.meta.url),'utf8');
  const marker='-- ===== 1/14: 20261106_bridge_foundation.sql =====';
  const stagingStart=sql.indexOf(marker);
  const productionStart=production.indexOf(marker);
  assert.ok(stagingStart>0 && productionStart>0);
- const stagingEnd=sql.lastIndexOf('\nCOMMIT;');
+ const stagingEnd=sql.indexOf('\n-- ===== 15/17: 20261118_bridge_chunk_size_256k.sql =====',stagingStart);
  const productionEnd=production.lastIndexOf('\nCOMMIT;');
  assert.ok(stagingEnd>stagingStart && productionEnd>productionStart);
- assert.equal(production.slice(productionStart,productionEnd),sql.slice(stagingStart,stagingEnd));
+ const stagingPayload=sql.slice(stagingStart,stagingEnd);
+ const stagingExpiryState=`'state',
+    case when v_job.state in ('queued','sent')
+           and v_job.expires_at <= clock_timestamp()
+      then 'expired' else v_job.state end`;
+ assert.equal(stagingPayload.split(stagingExpiryState).length-1,1);
+ assert.equal(production.slice(productionStart,productionEnd).trimEnd(),
+  stagingPayload.replace(stagingExpiryState,"'state',v_job.state").trimEnd());
  assert.match(production,/PRODUCTION CANDIDATE -- NOT APPROVED FOR EXECUTION/);
  assert.match(production,/verified production backup/);
  assert.match(production,/BRIDGE STOP: existing Bridge objects/);

@@ -9,12 +9,14 @@ const store=read('android-bridge/BridgeDeviceSecretStore.java.template');
 const nativeFiles=read('android-bridge/BridgeAllFilesCore.java.template');
 const main=read('src/main.js');
 const workflow=read('.github/workflows/bridge-android-staging.yml');
-test('native TX only installed in isolated APK with explicit Android foreground service',()=>{
+test('TEST TX uses scheduled jobs without a persistent foreground service',()=>{
   assert.match(installer,/package != "it\.freept\.bridge\.next"/);
+  assert.match(installer,/if target == "production":\s+permission_names\[1:1\]/);
   assert.match(installer,/"FOREGROUND_SERVICE_DATA_SYNC"/);
   assert.match(installer,/android:foregroundServiceType="dataSync"/);
   assert.match(installer,/android:exported="false"/);
-  assert.match(installer,/"BridgeTxService"/);
+  assert.match(installer,/if target == "production":\s+service =/);
+  assert.match(installer,/service_manifest = "    " \+ service/);
   assert.match(installer,/name \+ "\.java\.template"/);
   assert.match(installer,/registerPlugin\(BridgeTxControlPlugin\.class\)/);
   assert.match(installer,/MANAGE_EXTERNAL_STORAGE/);
@@ -46,6 +48,7 @@ test('FreePT owner TX is native, not a four-minute WebView loop',()=>{
   assert.match(main,/bridgeTxControl\.stop\(\)/);
   assert.doesNotMatch(main,/Date\.now\(\)\+240000/);
   assert.doesNotMatch(main,/Avvia Bridge per 4 minuti/);
+  assert.match(main,/service\?\.scheduled===true\|\|service\?\.running===true/);
   assert.doesNotMatch(main,/createBridgeFolderTransmitter\(/);
   assert.match(workflow,/freept-bridge-staging\.onrender\.com/);
 });

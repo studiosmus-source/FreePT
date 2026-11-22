@@ -177,8 +177,10 @@ for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
         template.replace("__PACKAGE__", package)
     )
 manifest_text = manifest.read_text()
-for permission_name in ("RECEIVE_BOOT_COMPLETED", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC",
-                        "POST_NOTIFICATIONS"):
+permission_names = ["RECEIVE_BOOT_COMPLETED", "POST_NOTIFICATIONS"]
+if target == "production":
+    permission_names[1:1] = ["FOREGROUND_SERVICE", "FOREGROUND_SERVICE_DATA_SYNC"]
+for permission_name in permission_names:
     token = 'android.permission.' + permission_name
     if token not in manifest_text:
         manifest_text = manifest_text.replace(
@@ -186,9 +188,12 @@ for permission_name in ("RECEIVE_BOOT_COMPLETED", "FOREGROUND_SERVICE", "FOREGRO
             '<uses-permission android:name="' + token + '" />\n    <application',
             1,
         )
-service = ('<service android:name=".BridgeTxService" '
-           'android:exported="false" '
-           'android:foregroundServiceType="dataSync" />')
+service_manifest = ""
+if target == "production":
+    service = ('<service android:name=".BridgeTxService" '
+               'android:exported="false" '
+               'android:foregroundServiceType="dataSync" />')
+    service_manifest = "    " + service + "\n"
 job_service = ('<service android:name=".BridgeTxJobService" '
                'android:permission="android.permission.BIND_JOB_SERVICE" '
                'android:exported="true" />')
@@ -205,14 +210,14 @@ boot_receiver = ('<receiver android:name=".BridgeTxBootReceiver" '
                  '</intent-filter></receiver>')
 if manifest_text.count("</application>") != 1:
     raise SystemExit("Unexpected AndroidManifest app closure")
-if "BridgeTxService" in manifest_text:
+if target == "production" and "BridgeTxService" in manifest_text:
     raise SystemExit("TX native service already registered")
 if "xmlns:tools=" not in manifest_text:
     manifest_text = manifest_text.replace(
         "<manifest ", '<manifest xmlns:tools="http://schemas.android.com/tools" ', 1
     )
 manifest.write_text(manifest_text.replace("</application>",
-    "    " + service + "\n    " + job_service + "\n    " + old_fcm + "\n    " +
+    service_manifest + "    " + job_service + "\n    " + old_fcm + "\n    " +
     bridge_fcm + "\n    " + boot_receiver + "\n    </application>", 1))
 values = Path("android/app/src/main/res/values")
 values.mkdir(parents=True, exist_ok=True)
@@ -267,19 +272,19 @@ xml_dir.mkdir(parents=True, exist_ok=True)
     escape(updater_url) + '</string></resources>\n'
 )
 
-# Neutral monochrome notification icon for the TX foreground service (Phase 5):
-# a simple ring, tinted white by the system, instead of the upload arrow.
-drawable_dir = Path("android/app/src/main/res/drawable")
-drawable_dir.mkdir(parents=True, exist_ok=True)
-(drawable_dir / "ic_freept_service.xml").write_text(
-    '<vector xmlns:android="http://schemas.android.com/apk/res/android" '
-    'android:width="24dp" android:height="24dp" '
-    'android:viewportWidth="24" android:viewportHeight="24">\n'
-    '  <path android:fillColor="#FFFFFFFF" '
-    'android:pathData="M12,2A10,10 0 1,0 12,22A10,10 0 1,0 12,2Z '
-    'M12,5.5A6.5,6.5 0 1,1 12,18.5A6.5,6.5 0 1,1 12,5.5Z" />\n'
-    '</vector>\n'
-)
+if target == "production":
+    # Keep the existing production service icon unchanged.
+    drawable_dir = Path("android/app/src/main/res/drawable")
+    drawable_dir.mkdir(parents=True, exist_ok=True)
+    (drawable_dir / "ic_freept_service.xml").write_text(
+        '<vector xmlns:android="http://schemas.android.com/apk/res/android" '
+        'android:width="24dp" android:height="24dp" '
+        'android:viewportWidth="24" android:viewportHeight="24">\n'
+        '  <path android:fillColor="#FFFFFFFF" '
+        'android:pathData="M12,2A10,10 0 1,0 12,22A10,10 0 1,0 12,2Z '
+        'M12,5.5A6.5,6.5 0 1,1 12,18.5A6.5,6.5 0 1,1 12,5.5Z" />\n'
+        '</vector>\n'
+    )
 print("FreePT APK updater wired (endpoint set:", bool(updater_url), ")")
 
 print("Bridge native plugins installed for:", target, package)

@@ -66,6 +66,36 @@ class InstallerGuardTests(unittest.TestCase):
             self.assertIn('https://bridge.example.org',
                           (root / "android/app/src/main/res/values/freept_bridge.xml").read_text())
 
+    def test_staging_uses_jobs_without_registering_the_legacy_foreground_service(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main = root / "android/app/src/main/java/it/freept/bridge/next/MainActivity.java"
+            main.parent.mkdir(parents=True)
+            main.write_text(
+                "package it.freept.bridge.next;\n"
+                "import com.getcapacitor.BridgeActivity;\n"
+                "public class MainActivity extends BridgeActivity {}\n"
+            )
+            manifest = root / "android/app/src/main/AndroidManifest.xml"
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text(
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+                '<application></application></manifest>'
+            )
+            (root / "android-bridge").symlink_to(INSTALLER.parent, target_is_directory=True)
+            env = {**os.environ,
+                   "FREEPT_BRIDGE_INSTALL_TARGET": "staging",
+                   "VITE_BRIDGE_TEST_API_URL": "https://staging.example.org"}
+            env.pop("VITE_BRIDGE_API_URL", None)
+            result = subprocess.run([sys.executable, str(INSTALLER)],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            generated = manifest.read_text()
+            self.assertIn('BridgeTxJobService', generated)
+            self.assertNotIn('BridgeTxService', generated)
+            self.assertNotIn('FOREGROUND_SERVICE', generated)
+            self.assertFalse((root / "android/app/src/main/res/drawable/ic_freept_service.xml").exists())
+
     def test_missing_manifest_never_mutates_main_activity(self):
         self.run_guard("it.freept.app", {
             "VITE_BRIDGE_API_URL": "https://bridge.example.org"})

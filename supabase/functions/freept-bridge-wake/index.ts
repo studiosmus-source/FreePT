@@ -127,7 +127,7 @@ Deno.serve(async(req:Request)=>{
         body:JSON.stringify({message:{
           token:entry.token,
           data:{kind:'bridge_wake',version:'1'},
-          android:{priority:'HIGH',ttl:'60s',collapse_key:'freept_bridge_wake'}
+          android:{priority:'HIGH',ttl:'1800s',collapse_key:'freept_bridge_wake'}
         }})
       });
       if(response.ok)delivered++;
