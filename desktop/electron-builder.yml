@@ -19,6 +19,7 @@ files:
   - src/bridgePollRetry.js
   - src/bridgeTxFolderClient.js
   - package.json
+  - '!node_modules/**'
 artifactName: FreePT-Bridge-TEST-${os}-${arch}.${ext}
 win:
   target:

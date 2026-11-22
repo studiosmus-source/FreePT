@@ -91,9 +91,55 @@ jobs:
       - name: Package Windows TEST app
         if: matrix.target == 'win'
         run: npx electron-builder --config desktop/electron-builder.yml --win nsis --x64 --publish never
+      - name: Verify and hash Windows TEST installer
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $installer = Get-Item "release\FreePT-Bridge-TEST-win-x64.exe"
+          $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
+          if ($signature.Status -ne 'NotSigned') { throw "Unexpected Windows signature status" }
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $installer.FullName).Hash.ToLowerInvariant()
+          $record = @(
+            "file=$($installer.Name)"
+            "size_bytes=$($installer.Length)"
+            "sha256=$hash"
+            "signature=$($signature.Status)"
+          )
+          Set-Content -Path "release\verification.txt" -Value $record -Encoding utf8
+          $record | ForEach-Object { Write-Output $_ }
       - name: Package macOS TEST app
         if: matrix.target == 'mac'
         run: npx electron-builder --config desktop/electron-builder.yml --mac dmg --${{ matrix.arch }} --publish never
+      - name: Verify and hash macOS TEST disk image
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="release/FreePT-Bridge-TEST-mac-${{ matrix.arch }}.dmg"
+          hdiutil verify "$image"
+          mountpoint="$(mktemp -d)"
+          hdiutil attach "$image" -readonly -nobrowse -mountpoint "$mountpoint" >/dev/null
+          trap 'hdiutil detach "$mountpoint" -quiet >/dev/null; rmdir "$mountpoint"' EXIT
+          app="$mountpoint/FreePT.app"
+          test -d "$app"
+          details="$mountpoint/signature-details.txt"
+          if codesign -dv --verbose=2 "$app" >"$details" 2>&1; then
+            if grep -q '^TeamIdentifier=not set$' "$details" || ! grep -q '^Authority=' "$details"; then
+              signature_status="unsigned-or-ad-hoc"
+            else
+              signature_status="signed"
+            fi
+          else
+            signature_status="unsigned"
+          fi
+          hash="$(shasum -a 256 "$image" | awk '{print $1}')"
+          size="$(stat -f '%z' "$image")"
+          {
+            echo "file=$(basename "$image")"
+            echo "size_bytes=$size"
+            echo "sha256=$hash"
+            echo "signature=$signature_status"
+          } | tee release/verification.txt
       - uses: actions/upload-artifact@v4
         with:
           name: FreePT-Bridge-TEST-${{ matrix.target }}-${{ matrix.arch }}
