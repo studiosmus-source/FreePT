@@ -29,7 +29,7 @@ test('support diagnostics can be revealed without developer tools or a PC',()=>{
  assert.doesNotMatch(setup,/fetch\([^\n]*Diagnostic/);
 });
 
-test('activation succeeds only after verified server grant and running foreground service',()=>{
+test('activation succeeds only after verified server grant and scheduled Bridge worker',()=>{
  assert.match(setup,/let verified=false/);
  assert.match(setup,/settings\?\.enabled===true/);
  assert.match(setup,/grants\.some\(grant=>grant\.active===true\)/);

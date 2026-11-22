@@ -7,8 +7,9 @@ import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
  */
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-// Staging SQL expires queued/sent jobs after 60s. Allow scheduling and HTTP
-// jitter, but do not wait for minutes if an older backend reports stale states.
+// Keep interactive browsing responsive; timed-out requests are cancelled.
+// The staging queue itself remains valid longer so Android can recover a
+// delayed FCM/JobScheduler wake without expiring the user's request early.
 const BROWSE_WAIT_MS=70_000;
 export function createBridgeRemoteFolderLister({
   api,deviceId,pause=wait,pollMs=1200,maxPolls=90,now=Date.now

@@ -9,7 +9,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const pauseDefault=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export async function downloadBridgeFile({
   api,deviceId,handle,size,destination,signal,
-  pause=pauseDefault,pollMs=700,maxPolls=60,onProgress=()=>{}
+  pause=pauseDefault,pollMs=700,maxPolls=90,onProgress=()=>{}
 }={}){
   if(!UUID.test(deviceId)||!UUID.test(handle)||!api||
      !['requestRead','getStatus','getReadChunk','cancel'].every(k=>typeof api[k]==='function')||
@@ -39,8 +39,9 @@ export async function downloadBridgeFile({
   // Use large requests when TX accepts them, but back off safely if the
   // remote session cancels work. No server/TX change required.
   let currentChunk=262144;
+  let transferComplete=false;
   try{
-    return await receiveBridgeFile({
+    const result=await receiveBridgeFile({
       size,signal,chunkBytes:262144,
       chooseChunkBytes:()=>currentChunk,
       onReadError:(error,{length})=>{
@@ -93,8 +94,10 @@ export async function downloadBridgeFile({
         throw Error('bridge_download_job_cancelled');
       }
     });
+    transferComplete=true;
+    return result;
   }finally{
-    if(activeJob&&signal?.aborted){
+    if(activeJob&&(!transferComplete||signal?.aborted)){
       try{await api.cancel(activeJob)}catch{/* already complete, revoked or offline */}
     }
   }
@@ -105,7 +108,7 @@ export async function downloadBridgeFile({
  * Bound every step to the existing authorized read-job protocol.
  */
 export async function readBridgePreviewPrefix({
-  api,deviceId,handle,size,signal,pause=pauseDefault,pollMs=700,maxPolls=60
+  api,deviceId,handle,size,signal,pause=pauseDefault,pollMs=700,maxPolls=90
 }={}){
   if(!UUID.test(deviceId)||!UUID.test(handle)||
      !Number.isSafeInteger(size)||size<1||size>BRIDGE_FILE_LIMITS.maxFileBytes||
@@ -115,6 +118,7 @@ export async function readBridgePreviewPrefix({
     throw Error('bridge_preview_invalid_options');
   const length=Math.min(size,65536);
   let jobId=null;
+  let delivered=false;
   try{
     for(let retry=0;retry<2;retry++){
       if(signal?.aborted)throw Error('bridge_transfer_cancelled');
@@ -138,9 +142,11 @@ export async function readBridgePreviewPrefix({
         if(signal?.aborted)throw Error('bridge_transfer_cancelled');
         const chunk=validateBridgeFileChunk(await api.getReadChunk(jobId),length);
         if(chunk.bytesRead!==length)throw Error('bridge_preview_truncated');
-        if(typeof Buffer!=='undefined')
-          return new Uint8Array(Buffer.from(chunk.base64,'base64'));
-        return Uint8Array.from(atob(chunk.base64),c=>c.charCodeAt(0));
+        const result=typeof Buffer!=='undefined'
+          ?new Uint8Array(Buffer.from(chunk.base64,'base64'))
+          :Uint8Array.from(atob(chunk.base64),c=>c.charCodeAt(0));
+        delivered=true;
+        return result;
       }
       if(!cancelled)throw Error('bridge_preview_timeout');
       if(retry===1)throw Error('bridge_preview_job_cancelled');
@@ -148,7 +154,7 @@ export async function readBridgePreviewPrefix({
     }
     throw Error('bridge_preview_job_cancelled');
   }finally{
-    if(jobId&&signal?.aborted){
+    if(jobId&&(!delivered||signal?.aborted)){
       try{await api.cancel(jobId)}catch{/* already complete or revoked */}
     }
   }

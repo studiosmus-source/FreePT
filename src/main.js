@@ -792,9 +792,9 @@ async function showOwnerBridgeFolder(){
       await bridgeTxControl.start();
       if(!alive())return;
       setStage('verification');
-      // start() acknowledges a request, not a running foreground service.
-      // Never mark activation successful until both the server grant and
-      // Android foreground-service state have actually been observed.
+      // start() acknowledges a request, not a live connection. A scheduled
+      // JobScheduler worker is the normal autonomous state.
+      // Confirm the server grant and that Android retained the scheduled job.
       let verified=false;
       for(let attempt=0;attempt<5;attempt++){
         if(!alive())return;
@@ -804,7 +804,8 @@ async function showOwnerBridgeFolder(){
           bridgeTxControl.status()
         ]);
         if(settings?.enabled===true&&Array.isArray(grants)&&
-           grants.some(grant=>grant.active===true)&&service?.running===true){
+           grants.some(grant=>grant.active===true)&&
+           (service?.scheduled===true||service?.running===true)){
           verified=true;break;
         }
         if(attempt<4)await new Promise(resolve=>setTimeout(resolve,350));

@@ -10,9 +10,14 @@ declare
   readjob uuid:='e3333333-3333-4333-8333-333333333333';
   revokedjob uuid:='e5555555-5555-4555-8555-555555555555';
   file_handle uuid:='e4444444-4444-4444-8444-444444444444';
+  largejob uuid:='e6666666-6666-4666-8666-666666666666';
+  large_handle uuid:='e7777777-7777-4777-8777-777777777777';
   binding text:=repeat('11223344556677889900aabbccddeeff',2);
   verifier text:=repeat('e',64);
   chunk jsonb:=jsonb_build_object('base64','AQID','bytesRead',3,'eof',false);
+  large_bytes bytea;
+  large_chunk jsonb;
+  job_expiry timestamptz;
   claimed jsonb;
 begin
   if has_function_privilege('authenticated',
@@ -31,8 +36,12 @@ begin
   if public.bridge_server_claim_list(dev,binding) is distinct from listing then
     raise exception 'list claim failed'; end if;
   perform public.bridge_server_complete_folder_page(listing,dev,binding,
-    jsonb_build_array(jsonb_build_object('handle',file_handle::text,
-      'name','test.bin','directory',false,'size',3,'mime','application/octet-stream')));
+    jsonb_build_array(
+      jsonb_build_object('handle',file_handle::text,
+        'name','test.bin','directory',false,'size',3,'mime','application/octet-stream'),
+      jsonb_build_object('handle',large_handle::text,
+        'name','large.bin','directory',false,'size',262144,'mime','application/octet-stream')
+    ));
   begin
     perform public.bridge_server_enqueue_read(readjob,dev,stranger,file_handle,0,3);
     raise exception 'stranger requested chunk';
@@ -42,6 +51,9 @@ begin
     raise exception 'out-of-bounds chunk accepted';
   exception when sqlstate '42501' then null; end;
   perform public.bridge_server_enqueue_read(readjob,dev,admin_id,file_handle,0,3);
+  select expires_at into job_expiry from public.bridge_jobs where id=readjob;
+  if job_expiry<clock_timestamp()+interval '29 minutes' then
+    raise exception 'queued read job delivery window too short'; end if;
   if public.bridge_server_claim_list(dev,binding) is not null then
     raise exception 'list claimed read job'; end if;
   claimed:=public.bridge_server_claim_read(dev,binding);
@@ -61,6 +73,32 @@ begin
     raise exception 'read completion failed'; end if;
   if public.bridge_server_read_chunk(readjob,admin_id) is distinct from chunk then
     raise exception 'read result mismatch'; end if;
+  select expires_at into job_expiry from public.bridge_jobs where id=readjob;
+  if job_expiry>clock_timestamp()+interval '5 minutes' then
+    raise exception 'completed read data retention not shortened'; end if;
+
+  -- The TEST APK requests 256 KiB chunks. Exercise the SQL table, enqueue,
+  -- claim, base64-validation and read-result path used by a real transfer.
+  perform public.bridge_server_enqueue_read(
+    largejob,dev,admin_id,large_handle,0,262144
+  );
+  select expires_at into job_expiry from public.bridge_jobs where id=largejob;
+  if job_expiry<clock_timestamp()+interval '29 minutes' then
+    raise exception 'large queued read job delivery window too short'; end if;
+  claimed:=public.bridge_server_claim_read(dev,binding);
+  if claimed->>'jobId'<>largejob::text or (claimed->>'length')::int<>262144 then
+    raise exception '256 KiB read claim mismatch'; end if;
+  large_bytes:=decode(repeat('00',262144),'hex');
+  large_chunk:=jsonb_build_object(
+    'base64',translate(encode(large_bytes,'base64'),E'\n',''),
+    'bytesRead',262144,'eof',false
+  );
+  if public.bridge_server_complete_read(
+       largejob,dev,binding,large_chunk
+     ) is distinct from true then
+    raise exception '256 KiB read completion failed'; end if;
+  if public.bridge_server_read_chunk(largejob,admin_id) is distinct from large_chunk then
+    raise exception '256 KiB read result mismatch'; end if;
   begin
     perform public.bridge_server_read_chunk(readjob,stranger);
     raise exception 'stranger read result';
