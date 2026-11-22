@@ -67,10 +67,14 @@ export function createBridgeAdminClient({
   // Coalesce FCM wake attempts; the already-running TX polls queued jobs itself.
   // A wake failure must never discard the queued, authorized server job.
   const lastWakeByDevice=new Map();
-  const notifyWake=job=>{
+  const notifyWake=(job,retry=false)=>{
     if(typeof wakeJob!=='function'||!UUID.test(job?.jobId)||!UUID.test(job?.deviceId))return;
     const now=Date.now(),previous=lastWakeByDevice.get(job.deviceId)||0;
     if(now-previous<2000)return;
+    // A push can be lost or temporarily unavailable. Retry only while the
+    // authenticated backend still reports this exact job as queued, and
+    // without sending a push on every status poll.
+    if(retry&&now-previous<15000)return;
     lastWakeByDevice.set(job.deviceId,now);
     void Promise.resolve().then(()=>wakeJob({jobId:job.jobId,deviceId:job.deviceId})).catch(()=>{});
   };
@@ -111,6 +115,7 @@ export function createBridgeAdminClient({
       throw Error('bridge_invalid_response');
     const job={jobId:body.jobId,deviceId:body.deviceId,state:body.state};
     if(action==='list'&&job.state==='queued')notifyWake(job);
+    if(action==='status'&&job.state==='queued')notifyWake(job,true);
     return job;
   };
   const getFolderPage=async jobId=>{

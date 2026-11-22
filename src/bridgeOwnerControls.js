@@ -13,7 +13,7 @@ export const familyActivationErrorCode=(error)=>{
   const message=typeof error?.message==='string'?error.message:'';
   return allowed.has(message)?message:'bridge_owner_activation_denied';
 };
-export function createBridgeOwnerControls({db,auth}={}){
+export function createBridgeOwnerControls({db,auth,getProfileId}={}){
   if(typeof db?.rpc!=='function'||typeof db?.from!=='function'||
      typeof auth?.getSession!=='function')
     throw Error('bridge_owner_controls_dependencies_invalid');
@@ -22,7 +22,9 @@ export function createBridgeOwnerControls({db,auth}={}){
     if(error||typeof data?.session?.access_token!=='string'||
        data.session.access_token.length<20)
       throw Error('bridge_owner_login_required');
-    return data.session.user?.id||null;
+    const authUserId=data.session.user?.id||null;
+    const profileId=typeof getProfileId==='function'?await getProfileId():authUserId;
+    return profileId||null;
   };
   async function device(deviceId){
     if(!UUID.test(deviceId))throw Error('bridge_owner_invalid_device');

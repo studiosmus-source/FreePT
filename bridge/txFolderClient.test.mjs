@@ -7,7 +7,7 @@ const HANDLE='33333333-3333-4333-8333-333333333333';
 const SECRET='a'.repeat(64),TOKEN='b'.repeat(64);
 const entry={handle:HANDLE,name:'Foto',directory:true,size:-1,mime:'vnd.android.document/directory'};
 function fixture({poll={job:{jobId:JOB,deviceId:DEVICE,state:'sent',operation:'list'}},
-  folder={entries:[entry],nextOffset:-1}}={}){
+  folder={entries:[entry],nextOffset:-1},chunk={base64:'',bytesRead:0,eof:true}}={}){
   const calls=[];
   const fakeFetch=async (url,request)=>{
     const action=url.split('/').at(-1);
@@ -15,13 +15,17 @@ function fixture({poll={job:{jobId:JOB,deviceId:DEVICE,state:'sent',operation:'l
     if(action==='connect')return {ok:true,json:async()=>({token:TOKEN,expiresAt:Date.now()+60000})};
     if(action==='poll')return {ok:true,json:async()=>poll};
     if(action==='folder')return {ok:true,json:async()=>({jobId:JOB,deviceId:DEVICE,state:'done'})};
+    if(action==='chunk')return {ok:true,json:async()=>({jobId:JOB,deviceId:DEVICE,state:'done'})};
     if(action==='disconnect')return {ok:true,json:async()=>({closed:true})};
     throw Error('unexpected_route');
   };
   const reads=[];
   const tx=createBridgeFolderTransmitter({
     baseUrl:'https://bridge-test.example.test',deviceId:DEVICE,deviceSecret:SECRET,
-    folderProvider:{async list(request){reads.push(request);return folder;}},
+     folderProvider:{
+       async list(request){reads.push(request);return folder;},
+       async readChunk(request){reads.push(request);return chunk;}
+     },
     fetchImpl:fakeFetch
   });
   return {tx,calls,reads};
@@ -39,6 +43,22 @@ test('no auto-start, TX must connect and only selected root is read',async()=>{
   assert.equal(f.calls[0].request.redirect,'error');
   assert.equal(await f.tx.disconnect(),true);
   await assert.rejects(()=>f.tx.processOne(),/not_connected|disabled/);
+});
+test('TX accepts the full 256 KiB Bridge read chunk',async()=>{
+  const requested=262144;
+  const f=fixture({
+    poll:{job:{
+      jobId:JOB,deviceId:DEVICE,state:'sent',operation:'read',
+      handle:HANDLE,offset:0,length:requested
+    }},
+    chunk:{base64:Buffer.alloc(requested).toString('base64'),
+      bytesRead:requested,eof:false}
+  });
+  await f.tx.connect();
+  assert.equal(await f.tx.processOne(),true);
+  assert.deepEqual(f.reads,[{handle:HANDLE,offset:0,length:requested}]);
+  assert.ok(f.calls.some(call=>call.action==='chunk'&&
+    call.body.chunk.bytesRead===requested));
 });
 test('zero jobs and mismatched TX device never trigger folder reads',async()=>{
   const empty=fixture({poll:{job:null}});

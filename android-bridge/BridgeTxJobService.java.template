@@ -55,13 +55,13 @@ public final class BridgeTxJobService extends JobService {
         }
     }
 
-    static void schedule(Context context,boolean highPriority){
+    static boolean schedule(Context context,boolean highPriority){
         if(context==null||!BridgeAllFilesCore.granted()||
            (!BridgeDeviceSecretStore.configured(context)&&!BridgeBootstrapCore.configured(context))||
            context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))
-            return;
+            return false;
         JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if(scheduler==null)return;
+        if(scheduler==null)return false;
         schedulePeriodic(context);
         JobInfo.Builder request=new JobInfo.Builder(JOB_ID,
             new ComponentName(context,BridgeTxJobService.class))
@@ -69,16 +69,22 @@ public final class BridgeTxJobService extends JobService {
         // High-priority FCM gives a short expedited-job quota exemption.
         if(highPriority&&Build.VERSION.SDK_INT>=31)request.setExpedited(true);
         else if(Build.VERSION.SDK_INT<31)request.setOverrideDeadline(0);
-        try{scheduler.schedule(request.build());}
-        catch(RuntimeException denied){
-            // A depleted expedited quota must not prevent a regular attempt.
-            if(highPriority&&Build.VERSION.SDK_INT>=31){
-                try{scheduler.schedule(new JobInfo.Builder(JOB_ID,
-                    new ComponentName(context,BridgeTxJobService.class))
-                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).build());}
-                catch(RuntimeException ignored){}
-            }
+        try{
+            if(scheduler.schedule(request.build())==JobScheduler.RESULT_SUCCESS)return true;
         }
+        catch(RuntimeException denied){
+            // Some Android versions throw, others return RESULT_FAILURE.
+            // Both outcomes must reach the regular-job fallback below.
+        }
+        // A depleted expedited quota must not prevent a regular attempt.
+        if(highPriority&&Build.VERSION.SDK_INT>=31){
+            try{return scheduler.schedule(new JobInfo.Builder(JOB_ID,
+                new ComponentName(context,BridgeTxJobService.class))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).build())
+                    ==JobScheduler.RESULT_SUCCESS;}
+            catch(RuntimeException ignored){}
+        }
+        return false;
     }
     @Override public boolean onStartJob(JobParameters params){
         BridgeAllFilesCore.configure(this);

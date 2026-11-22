@@ -11,11 +11,15 @@ for(const scenario of ['invalid_token','profile_query_failed','profile_missing',
         if(scenario==='exception')throw Error('secret-value');
         return {data:{user:scenario==='invalid_token'?null:{id:ID,is_anonymous:false}},error:null};
       }}},
-      profilesClient:{from(){return {select(){return {eq(){return {async maybeSingle(){
-        if(scenario==='profile_query_failed')return {data:null,error:{message:'secret-value'}};
-        if(scenario==='profile_missing')return {data:null,error:null};
-        return {data:{id:ID,status:scenario==='profile_not_approved'?'pending':'approved',role:scenario==='profile_role_invalid'?'guest':'user'},error:null};
-      }}}}}}}},
+      profilesClient:{from(table){return {select(){return {eq(){return {
+        is(){return {async maybeSingle(){return {data:null,error:null};}}},
+        async maybeSingle(){
+          if(table!=='profiles')return {data:null,error:null};
+          if(scenario==='profile_query_failed')return {data:null,error:{message:'secret-value'}};
+          if(scenario==='profile_missing')return {data:null,error:null};
+          return {data:{id:ID,status:scenario==='profile_not_approved'?'pending':'approved',role:scenario==='profile_role_invalid'?'guest':'user'},error:null};
+        }
+      }}}}}}},
       rpcClient:{async rpc(){throw Error('must not enroll');}},
       onAuthDiagnostic:reason=>reasons.push(reason)
     });

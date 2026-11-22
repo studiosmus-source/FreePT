@@ -30,7 +30,12 @@ function setup(){
   const rpcClient={async rpc(name,args){
     calls.push({name,args});
     if(name==='bridge_server_enroll_device'){
-      if(args.p_owner_id!==OWNER)return {data:null,error:{code:'42501'}};
+      // Existing Android TEST databases expose only the five-argument RPC.
+      // The optional PC migration must not be required to enroll a phone.
+      if(Object.hasOwn(args,'p_owner_auth_user_id'))
+        return {data:null,error:{code:'PGRST202'}};
+      if(args.p_owner_id!==OWNER)
+        return {data:null,error:{code:'42501'}};
       rows.set(args.p_device_id,args);return {data:args.p_device_id,error:null};
     }
     if(name==='bridge_server_delete_device'){
@@ -67,6 +72,14 @@ test('owner gets a one-time distinct device credential; persisted data is verifi
   }),true);
   assert.equal((await f.request('/bridge/owner/delete',{deviceId:DEVICE})).status,200);
   assert.equal(f.rows.size,0);
+});
+test('Android enrollment works without the optional PC migration',async()=>{
+  const f=setup();
+  const answer=await f.request('/bridge/owner/enroll',{label:'Android'});
+  assert.equal(answer.status,201);
+  assert.deepEqual(Object.keys(f.calls[0].args).sort(),[
+    'p_device_id','p_label','p_owner_id','p_salt_hex','p_verifier_hex'
+  ]);
 });
 test('missing token, unapproved owner and invalid body never touch privileged DB',async()=>{
   const f=setup();
@@ -123,4 +136,52 @@ test('approved anonymous FreePT owner may enroll, pending anonymous owner remain
   approved=false;
   assert.equal((await request()).status,403);
   assert.equal(rpcCalls,1);
+});
+
+test('paired desktop enrolls under the approved phone profile but records its own revocable session',async()=>{
+  const pc='44444444-4444-4444-8444-444444444444';
+  const token='b'.repeat(40);
+  const authClient={auth:{async getUser(value){
+    return {data:{user:value===token?{id:pc,is_anonymous:true}:null},error:null};
+  }}};
+  const profilesClient={from(table){
+    return {select(columns){
+      if(table==='profiles'){
+        assert.equal(columns,'id,role,status');
+        return {eq(column,id){assert.equal(column,'id');return {async maybeSingle(){
+          return {data:id===OWNER?{id:OWNER,role:'user',status:'approved'}:null,error:null};
+        }};}};
+      }
+      assert.equal(table,'freept_pc_device_links');
+      assert.equal(columns,'profile_id');
+      return {eq(column,id){assert.equal(column,'auth_user_id');assert.equal(id,pc);return {
+        is(column,value){assert.equal(column,'revoked_at');assert.equal(value,null);return {
+          async maybeSingle(){return {data:{profile_id:OWNER},error:null};}
+        };}
+      };}};
+    }};
+  }};
+  let argsSeen,schemaReady=true;
+  const enrollCalls=[];
+  const handler=createBridgeOwnerEnrollmentHandler({
+    authClient,profilesClient,
+    rpcClient:{async rpc(name,args){
+      argsSeen={name,args};enrollCalls.push(argsSeen);
+      return schemaReady?{data:args.p_device_id,error:null}:
+        {data:null,error:{code:'PGRST202'}};
+    }},
+    newDeviceId:()=>DEVICE,randomBytesFn:n=>Buffer.alloc(n,3)
+  });
+  const answer=await handler({method:'POST',path:'/bridge/owner/enroll',
+    headers:{authorization:'Bearer '+token},body:{label:'PC Windows'}});
+  assert.equal(answer.status,201);
+  assert.equal(argsSeen.name,'bridge_server_enroll_device');
+  assert.equal(argsSeen.args.p_owner_id,OWNER);
+  assert.equal(argsSeen.args.p_owner_auth_user_id,pc);
+  schemaReady=false;
+  const unavailable=await handler({method:'POST',path:'/bridge/owner/enroll',
+    headers:{authorization:'Bearer '+token},body:{label:'PC Windows'}});
+  assert.equal(unavailable.status,409);
+  assert.equal(enrollCalls.length,2,'no fallback to the phone RPC for a PC');
+  assert.ok(enrollCalls.every(call=>call.args.p_owner_auth_user_id===pc));
 });
