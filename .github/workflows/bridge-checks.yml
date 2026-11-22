@@ -9,8 +9,10 @@ on:
       - fix/bridge-all-accessible-folders-20261120
       - fix/bridge-transfer-resume-20261121
       - fix/bridge-autonomous-bridge-20261121
+      - feature/bridge-desktop-windows-macos-20261122
     paths:
       - 'android-bridge/**'
+      - 'desktop/**'
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
@@ -29,6 +31,7 @@ on:
   pull_request:
     paths:
       - 'android-bridge/**'
+      - 'desktop/**'
       - 'bridge/**'
       - 'supabase/migrations/20261106_bridge_*.sql'
       - 'supabase/migrations/20261108_bridge_*.sql'
@@ -64,7 +67,7 @@ jobs:
         run: node --test supabase/bridge_sql_safety.test.mjs
       - name: Syntax check every Bridge module and FreePT entrypoint
         run: |
-          for file in bridge/*.mjs src/main.js; do
+          for file in bridge/*.mjs desktop/*.mjs src/main.js; do
             node --check "$file"
           done
 

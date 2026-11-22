@@ -34,17 +34,24 @@ const bridgeRuntime=resolveBridgeRuntimeConfig({
   testApiUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
   productionApiUrl:import.meta.env.VITE_BRIDGE_API_URL
 });
-const bridgeFiles = Capacitor.isNativePlatform() && bridgeRuntime.enabled
+const desktopBridge=globalThis.window?.freeptDesktop?.protocol==='freept-desktop-bridge-v1'
+  ?globalThis.window.freeptDesktop:null;
+const nativeBridgeEnabled=Capacitor.isNativePlatform()&&bridgeRuntime.enabled;
+const desktopBridgeEnabled=!!desktopBridge&&bridgeRuntime.enabled;
+const bridgeFiles = nativeBridgeEnabled
   ? registerPlugin('BridgeFiles') : null;
-const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
-const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
-const bridgeWakeToken = bridgeFiles ? registerPlugin('BridgeWakeToken') : null;
-const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
-const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
-const bridgeDownloadNotice=bridgeFiles?registerPlugin('BridgeDownloadNotice'):null;
-const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
+const bridgeAllFiles = nativeBridgeEnabled ? registerPlugin('BridgeAllFiles') :
+  desktopBridgeEnabled?desktopBridge.allFiles:null;
+const bridgeTxControl = nativeBridgeEnabled ? registerPlugin('BridgeTxControl') :
+  desktopBridgeEnabled?desktopBridge.txControl:null;
+const bridgeWakeToken = nativeBridgeEnabled ? registerPlugin('BridgeWakeToken') : null;
+const bridgeCredentials = nativeBridgeEnabled ? registerPlugin('BridgeCredentials') :
+  desktopBridgeEnabled?desktopBridge.credentials:null;
+const bridgeDestination = nativeBridgeEnabled ? registerPlugin('BridgeDestination') : null;
+const bridgeDownloadNotice=nativeBridgeEnabled?registerPlugin('BridgeDownloadNotice'):null;
+const bridgeRxKeys = nativeBridgeEnabled ? registerPlugin('BridgeRxKeys') : null;
 const bootstrapEnabled=import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'&&import.meta.env.VITE_BRIDGE_BOOTSTRAP_ENABLED==='true';
-const bridgeBootstrap=bootstrapEnabled&&bridgeFiles?registerPlugin('BridgeBootstrap'):null;
+const bridgeBootstrap=bootstrapEnabled&&nativeBridgeEnabled?registerPlugin('BridgeBootstrap'):null;
 let diagnosticCleanup=null;
 let diagnosticPassed=false;
 function diagnosticScreen(complete=()=>requestScreen()){
@@ -674,6 +681,7 @@ function showAdminBridge(){
 async function showOwnerBridgeFolder(){
   if(!bridgeAllFiles||!bridgeOwnerClient||!bridgeCredentials||
      !me||profile?.status!=='approved'||profile.role!=='user')return;
+  const desktopMode=desktopBridgeEnabled;
   document.getElementById('ownerBridgePanel')?.remove();
   const panel=document.createElement('div');
   panel.id='ownerBridgePanel';
@@ -687,6 +695,10 @@ async function showOwnerBridgeFolder(){
   document.body.appendChild(panel);
   const button=panel.querySelector('#bridgeFamilyStart');
   const status=panel.querySelector('#bridgeFamilyStatus');
+  if(desktopMode){
+    button.textContent='Attiva Bridge';
+    button.setAttribute('aria-label','Attiva Bridge');
+  }
   const currentOwner=me.id;
   let working=false;
   let activationStage='idle';
@@ -714,7 +726,7 @@ async function showOwnerBridgeFolder(){
     console.info('[FreePT Bridge activation]',{stage,outcome:outcome==='success'?'success':'failure',code:safeCode});
   };
   const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
-  const update=message=>{if(alive())status.textContent=message;};
+  const update=message=>{if(alive())status.textContent=desktopMode?'':message;};
   const stageDescriptions=Object.freeze({
     permission:'autorizzazione ai file',
     'local-device':'controllo del telefono',
@@ -748,6 +760,10 @@ async function showOwnerBridgeFolder(){
       if(!alive())return;
       if(!permission?.granted||!device?.provisioned){
         button.hidden=false;
+        if(desktopMode){
+          button.disabled=false;
+          button.textContent='Attiva Bridge';
+        }
         update('');
         return;
       }
@@ -758,8 +774,15 @@ async function showOwnerBridgeFolder(){
       ]);
       if(!alive())return;
       const ready=settings.enabled&&grants.some(g=>g.active);
-      button.hidden=ready&&service?.running===true;
-      update(ready&&service?.running?'Pronto':'');
+      if(desktopMode){
+        button.hidden=false;
+        button.disabled=ready&&service?.running===true;
+        button.textContent=ready&&service?.running===true?'Bridge attivo':'Attiva Bridge';
+        update('');
+      }else{
+        button.hidden=ready&&service?.running===true;
+        update(ready&&service?.running?'Pronto':'');
+      }
     }catch{update('');}
   };
   button.onclick=async()=>{
@@ -775,7 +798,8 @@ async function showOwnerBridgeFolder(){
       if(!alive())return;
       if(permission?.granted!==true){
         diagnostic('failure','permission_denied');
-        update('Non è stato possibile attivare: permesso Android non concesso.');return;
+        if(!desktopMode)update('Non è stato possibile attivare: permesso Android non concesso.');
+        return;
       }
       setStage('local-device');
       const current=await bridgeOwnerClient.status();
@@ -817,7 +841,8 @@ async function showOwnerBridgeFolder(){
       diagnostic('failure',error instanceof Error?error.message:'unknown');
       // Diagnostics are intentionally kept off the family-facing screen.
       // No raw exception, access token or device secret is displayed.
-      update('Non è stato possibile attivare: '+(stageDescriptions[activationStage]||'verifica')+'.');
+      if(!desktopMode)
+        update('Non è stato possibile attivare: '+(stageDescriptions[activationStage]||'verifica')+'.');
     }finally{
       if(stageTimer!==null)clearTimeout(stageTimer);
       stageTimer=null;

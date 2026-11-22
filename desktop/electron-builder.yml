@@ -1,0 +1,41 @@
+appId: it.freept.bridge.desktop
+productName: FreePT
+electronVersion: 45.4.1
+asar: true
+directories:
+  output: release
+files:
+  - dist/**/*
+  - desktop/main.mjs
+  - desktop/preload.cjs
+  - desktop/appProtocol.mjs
+  - desktop/credentialStore.mjs
+  - desktop/folderProvider.mjs
+  - desktop/rootsStore.mjs
+  - desktop/trayIcon.mjs
+  - desktop/worker.mjs
+  - src/bridgeAdminClient.js
+  - src/bridgeFileProtocol.js
+  - src/bridgePollRetry.js
+  - src/bridgeTxFolderClient.js
+  - package.json
+artifactName: FreePT-Bridge-TEST-${os}-${arch}.${ext}
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  signAndEditExecutable: false
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  identity: null
+  gatekeeperAssess: false
