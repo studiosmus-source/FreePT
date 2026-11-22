@@ -88,11 +88,18 @@ export function createBridgeOwnerEnrollmentHandler({
       const verifier=createHash('sha256')
         .update('freept-bridge-device-v1\0').update(deviceId).update('\0')
         .update(salt).update(secret).digest('hex');
-      const created=await rpcClient.rpc('bridge_server_enroll_device',{
+      const enrollment={
         p_device_id:deviceId,p_owner_id:owner.profileId,
-        p_owner_auth_user_id:owner.authUserId,p_label:body.label.trim(),
+        p_label:body.label.trim(),
         p_salt_hex:salt,p_verifier_hex:verifier
-      });
+      };
+      // A phone's Auth identity is its profile identity: keep using the
+      // existing five-argument RPC, also preserved by the PC migration.
+      // Only a linked desktop requires the separate revocable Auth identity.
+      // Never downgrade that desktop to the phone RPC on schema errors.
+      if(owner.authUserId!==owner.profileId)
+        enrollment.p_owner_auth_user_id=owner.authUserId;
+      const created=await rpcClient.rpc('bridge_server_enroll_device',enrollment);
       if(created?.error||created?.data!==deviceId)
         return fail(409,'bridge_enrollment_unavailable');
       // Transmit secret ONCE, only to authenticated owner via trusted HTTPS.

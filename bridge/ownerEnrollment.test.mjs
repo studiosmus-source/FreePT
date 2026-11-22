@@ -30,7 +30,11 @@ function setup(){
   const rpcClient={async rpc(name,args){
     calls.push({name,args});
     if(name==='bridge_server_enroll_device'){
-      if(args.p_owner_id!==OWNER||args.p_owner_auth_user_id!==OWNER)
+      // Existing Android TEST databases expose only the five-argument RPC.
+      // The optional PC migration must not be required to enroll a phone.
+      if(Object.hasOwn(args,'p_owner_auth_user_id'))
+        return {data:null,error:{code:'PGRST202'}};
+      if(args.p_owner_id!==OWNER)
         return {data:null,error:{code:'42501'}};
       rows.set(args.p_device_id,args);return {data:args.p_device_id,error:null};
     }
@@ -68,6 +72,14 @@ test('owner gets a one-time distinct device credential; persisted data is verifi
   }),true);
   assert.equal((await f.request('/bridge/owner/delete',{deviceId:DEVICE})).status,200);
   assert.equal(f.rows.size,0);
+});
+test('Android enrollment works without the optional PC migration',async()=>{
+  const f=setup();
+  const answer=await f.request('/bridge/owner/enroll',{label:'Android'});
+  assert.equal(answer.status,201);
+  assert.deepEqual(Object.keys(f.calls[0].args).sort(),[
+    'p_device_id','p_label','p_owner_id','p_salt_hex','p_verifier_hex'
+  ]);
 });
 test('missing token, unapproved owner and invalid body never touch privileged DB',async()=>{
   const f=setup();
@@ -149,10 +161,15 @@ test('paired desktop enrolls under the approved phone profile but records its ow
       };}};
     }};
   }};
-  let argsSeen;
+  let argsSeen,schemaReady=true;
+  const enrollCalls=[];
   const handler=createBridgeOwnerEnrollmentHandler({
     authClient,profilesClient,
-    rpcClient:{async rpc(name,args){argsSeen={name,args};return {data:args.p_device_id,error:null};}},
+    rpcClient:{async rpc(name,args){
+      argsSeen={name,args};enrollCalls.push(argsSeen);
+      return schemaReady?{data:args.p_device_id,error:null}:
+        {data:null,error:{code:'PGRST202'}};
+    }},
     newDeviceId:()=>DEVICE,randomBytesFn:n=>Buffer.alloc(n,3)
   });
   const answer=await handler({method:'POST',path:'/bridge/owner/enroll',
@@ -161,4 +178,10 @@ test('paired desktop enrolls under the approved phone profile but records its ow
   assert.equal(argsSeen.name,'bridge_server_enroll_device');
   assert.equal(argsSeen.args.p_owner_id,OWNER);
   assert.equal(argsSeen.args.p_owner_auth_user_id,pc);
+  schemaReady=false;
+  const unavailable=await handler({method:'POST',path:'/bridge/owner/enroll',
+    headers:{authorization:'Bearer '+token},body:{label:'PC Windows'}});
+  assert.equal(unavailable.status,409);
+  assert.equal(enrollCalls.length,2,'no fallback to the phone RPC for a PC');
+  assert.ok(enrollCalls.every(call=>call.args.p_owner_auth_user_id===pc));
 });
