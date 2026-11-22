@@ -35,9 +35,12 @@ public class BridgeTxControlPlugin extends Plugin {
             call.reject("bridge_tx_start_failed");return;
         }
         BridgeTxJobService.schedulePeriodic(getContext());
-        BridgeTxJobService.schedule(getContext(),true);
+        boolean requested=BridgeTxJobService.schedule(getContext(),true);
+        // An existing periodic job does not prove this immediate wake was
+        // accepted. Report rejection so app-side recovery can retry safely.
+        if(!requested){call.reject("bridge_tx_start_failed");return;}
         JSObject out=new JSObject();
-        out.put("requested",BridgeTxJobService.isScheduled(getContext()));
+        out.put("requested",true);
         call.resolve(out);
     }
     @PluginMethod public void stop(PluginCall call){

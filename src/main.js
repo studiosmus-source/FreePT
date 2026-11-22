@@ -121,8 +121,8 @@ async function startProvisionedTxWhenAllowed(){
     if(me?.id===owner&&setting?.enabled&&grants.some(x=>x.active)){
       // Opening the app must request a real expedited native connection.
       // Avoid rescheduling JobScheduler every 20 seconds while it is pending.
-      lastNativeTxKick=Date.now();
       await bridgeTxControl.start();
+      if(me?.id===owner)lastNativeTxKick=Date.now();
     }
   }catch{
     // Failed closed on expired login, missing staging backend or permissions.
