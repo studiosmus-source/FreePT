@@ -21,6 +21,7 @@ import {createUpdaterClient} from './updaterClient.js';
 import {mountUpdaterBanner} from './updaterUi.js';
 import {renderChatAttachment} from './chatAttachmentsUi.js';
 import {createBridgeAndroidSingleFileWriter} from './bridgeAndroidDestination.js';
+import {createPcAccountLink} from './pcAccountLink.js';
 
 const config=getFreePtSupabaseConfig({
   url:import.meta.env.VITE_SUPABASE_URL,
@@ -28,6 +29,7 @@ const config=getFreePtSupabaseConfig({
   isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
 });
 const db = createClient(config.url, config.key, { auth: { persistSession: true, autoRefreshToken: true } });
+const pcAccountLink=createPcAccountLink({db,auth:db.auth});
 const bridgeRuntime=resolveBridgeRuntimeConfig({
   isolated:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true',
   production:import.meta.env.VITE_BRIDGE_PRODUCTION_BUILD==='true',
@@ -73,7 +75,9 @@ async function bindBootstrapAfterApproval(){
 const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
 // Full-APK self-updater (native). Endpoint is locked in the APK; JS cannot set it.
 const freeptUpdater = Capacitor.isNativePlatform() ? registerPlugin('FreePTUpdater') : null;
-const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
+const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({
+  db,auth:db.auth,getProfileId:()=>profile?.id||null
+}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:bridgeRuntime.baseUrl,
   auth:db.auth,credentials:bridgeCredentials
@@ -81,7 +85,7 @@ const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
 const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
  native:bridgeBootstrap,files:bridgeAllFiles,tx:bridgeTxControl,
  owner:bridgeOwnerClient,controls:bridgeOwnerControls,
- getUser:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null
+ getUser:()=>me&&profile?{id:profile.id,role:profile.role,status:profile.status}:null
 }):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
@@ -195,6 +199,166 @@ function status(msg, bad=false){ const n=document.getElementById('status'); if(n
 function phoneNorm(s){ return s.replace(/[\s().-]/g,''); }
 
 function heading(t,extra=''){return '<header class="top"><h1>'+esc(t)+'</h1>'+extra+'</header>'}
+let pcLinkPollTimer=null;
+let pcLinkDialog=null;
+function clearPcLinkPoll(){
+  if(pcLinkPollTimer!==null){clearTimeout(pcLinkPollTimer);pcLinkPollTimer=null;}
+}
+function closePcLinkDialog(){
+  if(!pcLinkDialog)return;
+  try{pcLinkDialog.close();}catch{}
+  pcLinkDialog.remove();
+  pcLinkDialog=null;
+}
+function pcPairLabel(){
+  const ua=navigator.userAgent||'';
+  return /Windows/i.test(ua)?'PC Windows':(/Macintosh|Mac OS X/i.test(ua)?'PC macOS':'PC');
+}
+function pcLinkUnavailableMessage(error){
+  const code=error?.message||'';
+  if(code==='pc_link_wait')return 'Attendi qualche secondo prima di generare un altro codice.';
+  if(code==='pc_link_start_denied'||code==='pc_link_anonymous_session_required')
+    return 'Questa sessione non può essere collegata. Esci e riprova.';
+  if(code==='pc_link_approver_denied')return 'Serve un profilo FreePT approvato sul telefono.';
+  if(code==='pc_link_device_limit')return 'Hai raggiunto il numero massimo di PC collegati.';
+  if(/freept_pc_link|freept_current_profile|schema cache|does not exist/i.test(code))
+    return 'Aggiornamento server necessario per collegare il PC.';
+  return 'Operazione non riuscita. Riprova.';
+}
+function desktopPcLinkScreen(){
+  clearPcLinkPoll();
+  closePcLinkDialog();
+  selected=null;messageRequest++;
+  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+
+    '<main class="panel"><h2>Collega questo PC</h2>'+
+    '<p class="small">Apri FreePT sul telefono già approvato, scegli “Collega PC” e inserisci il codice mostrato qui.</p>'+
+    '<button type="button" id="startPcLink">Mostra codice di collegamento</button>'+
+    '<section id="pcLinkCodeBox" hidden><p class="small">Codice temporaneo, valido 5 minuti:</p>'+
+    '<p id="pcLinkCode" style="font-size:1.25rem;font-weight:700;letter-spacing:.12em;user-select:text"></p>'+
+    '<button type="button" id="copyPcLinkCode">Copia codice</button></section>'+
+    '<p id="status" class="small" role="status"></p></main></div>';
+  bindConcealedAdminEntry();
+  const button=document.getElementById('startPcLink');
+  const box=document.getElementById('pcLinkCodeBox');
+  const codeNode=document.getElementById('pcLinkCode');
+  let expiresAt=0;
+  document.getElementById('copyPcLinkCode').onclick=async()=>{
+    const code=codeNode.dataset.code||'';
+    try{await navigator.clipboard.writeText(code);status('Codice copiato.');}
+    catch{status('Seleziona e copia il codice mostrato.');}
+  };
+  button.onclick=async()=>{
+    button.disabled=true;
+    status('Preparazione del collegamento…');
+    try{
+      const code=await pcAccountLink.start(pcPairLabel());
+      if(!document.getElementById('startPcLink'))return;
+      expiresAt=Date.now()+5*60*1000;
+      codeNode.textContent=code.match(/.{1,4}/g).join(' ');
+      codeNode.dataset.code=code;
+      box.hidden=false;
+      button.textContent='Genera nuovo codice';
+      status('Conferma il codice dal telefono.');
+      const poll=async()=>{
+        if(!box.isConnected||box.hidden)return;
+        try{
+          await loadProfile();
+          if(profile?.status==='approved'){
+            clearPcLinkPoll();
+            await boot();
+            return;
+          }
+        }catch{}
+        if(Date.now()>=expiresAt){
+          clearPcLinkPoll();
+          status('Codice scaduto. Puoi generarne uno nuovo.');
+          button.disabled=false;
+          return;
+        }
+        pcLinkPollTimer=setTimeout(poll,2000);
+      };
+      clearPcLinkPoll();
+      pcLinkPollTimer=setTimeout(poll,1200);
+    }catch(error){
+      status(pcLinkUnavailableMessage(error),true);
+    }finally{
+      if(button.isConnected)button.disabled=false;
+    }
+  };
+}
+
+async function renderPcLinkList(dialog){
+  const host=dialog.querySelector('#pcLinkedDevices');
+  host.replaceChildren();
+  try{
+    const links=await pcAccountLink.list();
+    if(!dialog.isConnected)return;
+    if(!links.length){
+      const empty=document.createElement('p');empty.className='small';
+      empty.textContent='Nessun PC collegato.';host.appendChild(empty);return;
+    }
+    for(const link of links){
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0';
+      const label=document.createElement('span');
+      const when=link.linked_at?new Date(link.linked_at).toLocaleString('it-IT'):'';
+      label.textContent=(link.device_label||'PC')+(when?' · '+when:'');
+      const revoke=document.createElement('button');
+      revoke.type='button';revoke.textContent='Scollega';
+      revoke.onclick=async()=>{
+        revoke.disabled=true;
+        try{
+          if(!await pcAccountLink.revoke(link.auth_user_id))throw Error('pc_link_device_invalid');
+          await renderPcLinkList(dialog);
+        }catch(error){dialog.querySelector('#pcLinkStatus').textContent=pcLinkUnavailableMessage(error);}
+        finally{if(revoke.isConnected)revoke.disabled=false;}
+      };
+      row.append(label,revoke);host.appendChild(row);
+    }
+  }catch(error){
+    const note=document.createElement('p');note.className='error';
+    note.textContent=pcLinkUnavailableMessage(error);host.appendChild(note);
+  }
+}
+
+async function showPcLinkDialog(){
+  if(profile?.role!=='user'||profile?.status!=='approved')return;
+  closePcLinkDialog();
+  const dialog=document.createElement('dialog');
+  dialog.setAttribute('aria-label','Collega un PC');
+  dialog.style.cssText='max-width:min(92vw,480px);width:100%;border:0;border-radius:12px;padding:22px;box-shadow:0 12px 40px #0005';
+  dialog.innerHTML='<form id="pcLinkForm"><header style="display:flex;justify-content:space-between;align-items:center">'+
+    '<h2>Collega un PC</h2><button type="button" id="closePcLink">Chiudi</button></header>'+
+    '<label for="pcLinkInput">Codice mostrato sul PC</label>'+
+    '<input id="pcLinkInput" name="code" autocomplete="off" autocapitalize="characters" maxlength="28" inputmode="text" required>'+
+    '<button type="submit">Approva collegamento</button>'+
+    '<p id="pcLinkStatus" class="small" role="status"></p></form>'+
+    '<h3>PC collegati</h3><div id="pcLinkedDevices"></div>';
+  document.body.appendChild(dialog);
+  pcLinkDialog=dialog;
+  dialog.querySelector('#closePcLink').onclick=closePcLinkDialog;
+  dialog.addEventListener('close',()=>{if(pcLinkDialog===dialog)pcLinkDialog=null;dialog.remove();},{once:true});
+  dialog.querySelector('#pcLinkForm').onsubmit=async event=>{
+    event.preventDefault();
+    const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
+    button.disabled=true;
+    const note=dialog.querySelector('#pcLinkStatus');
+    note.textContent='Verifica del codice…';
+    try{
+      if(!await pcAccountLink.approve(new FormData(form).get('code')))
+        throw Error('pc_link_code_invalid');
+      note.textContent='PC collegato al tuo profilo.';
+      form.reset();
+      await renderPcLinkList(dialog);
+    }catch(error){
+      note.textContent=error?.message==='pc_link_code_invalid'
+        ?'Codice errato o scaduto. Controlla il PC e riprova.'
+        :pcLinkUnavailableMessage(error);
+    }finally{button.disabled=false;}
+  };
+  dialog.showModal();
+  await renderPcLinkList(dialog);
+}
 /** Concealed entry is UI discretion only: Supabase roles remain mandatory. */
 function bindConcealedAdminEntry(){
   const title=el.querySelector('.top h1');
@@ -213,6 +377,7 @@ function bindConcealedAdminEntry(){
 function requestScreen(denied=false){
   closeAdminOverlays();
   if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
+  if(desktopBridgeEnabled&&!denied){desktopPcLinkScreen();return;}
   selected=null; messageRequest++;
   el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
 
@@ -341,7 +506,21 @@ function waitingScreen(){
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
 }
 
-async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
+async function loadProfile(){
+  const current=await db.rpc('freept_current_profile');
+  if(!current?.error){
+    profile=Array.isArray(current.data)?(current.data[0]||null):(current.data||null);
+    return;
+  }
+  const missing=current.error.code==='PGRST202'||current.error.code==='42883'||
+    /function.+freept_current_profile.+does not exist/i.test(current.error.message||'');
+  if(!missing)throw current.error;
+  // Older TEST and production schemas have no linked-PC migration yet.
+  const {data,error}=await db.from('profiles')
+    .select('id,full_name,phone,role,status').eq('id',me.id).maybeSingle();
+  if(error)throw error;
+  profile=data;
+}
 async function boot(){
   // A fresh installation has no session: this is normal, not an error.
   const {data:{session},error:sessionError}=await db.auth.getSession();
@@ -378,7 +557,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
+async function logout(){if(profile?.id&&pushRegistration)try{await pushRegistration.clear(profile.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -404,7 +583,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=profile.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -431,6 +610,7 @@ async function refreshOnVisible(){
 function closeAdminOverlays(){
   if(typeof chatFilesCleanup==='function')chatFilesCleanup();
   chatFilesCleanup=null;
+  closePcLinkDialog();
   document.getElementById('chatRemoteFilesPanel')?.remove();
   document.getElementById('adminBridgePanel')?.remove();
   document.getElementById('chatActions')?.remove();
@@ -856,7 +1036,8 @@ async function showOwnerBridgeFolder(){
 function renderLayout(){
   closeAdminOverlays();
   const admin=profile.role==='admin';
-  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button type="button" id="adminBridge">Bridge</button><button id="logout">Esci</button>':'')+
+  const userActions=!admin&&!desktopBridgeEnabled?'<button type="button" id="linkPc">Collega PC</button>':'';
+  el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button type="button" id="adminBridge">Bridge</button><button id="logout">Esci</button>':userActions)+
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
@@ -950,6 +1131,8 @@ function renderLayout(){
       document.getElementById('chat').classList.add('off');
       document.getElementById('people').classList.remove('off');
     };
+  }else if(!desktopBridgeEnabled){
+    document.getElementById('linkPc').onclick=()=>void showPcLinkDialog();
   }
   document.getElementById('send').onsubmit=send;
   configureFileInput(document.getElementById('file'));
@@ -1175,11 +1358,11 @@ function mountAdminChatShareActions(feed){
     bubble.appendChild(actions);
   });
 }
-async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===me.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<div class="attach-host" data-file="'+esc(m.file_path)+'" data-name="'+esc(m.file_name||'Allegato')+'"></div>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
+async function showMessages(scroll=true){if(!selected)return;const requestedUser=selected, requestId=++messageRequest;let query=db.from('messages').select('id,user_id,sender_id,body,file_path,file_name,created_at').eq('user_id',requestedUser).order('created_at',{ascending:false}).limit(200);const {data,error}=await query;if(requestId!==messageRequest || requestedUser!==selected)return;if(error){status(friendly(error),true);return}messages=(data||[]).reverse();const feed=document.getElementById('feed');if(!feed)return;const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<100;feed.innerHTML=messages.map(m=>'<article class="bubble '+(m.sender_id===profile?.id?'mine':'other')+'">'+(m.body?esc(m.body):'')+(m.file_path?'<div class="attach-host" data-file="'+esc(m.file_path)+'" data-name="'+esc(m.file_name||'Allegato')+'"></div>':'')+'<small>'+new Date(m.created_at).toLocaleString('it-IT')+'</small></article>').join('');if(profile?.role!=='admin'){
   const queue=document.getElementById('queued');
   if(queue){
     const last=messages[messages.length-1];
-    const awaiting=last && last.sender_id===me.id;
+   const awaiting=last && last.sender_id===profile?.id;
     queue.textContent=awaiting?'Richiesta in elaborazione… Attendere.':'';
     queue.classList.toggle('processing',!!awaiting);
   }
@@ -1250,7 +1433,7 @@ async function uploadAttachment(path,file,onProgress){
   });
 }
 
-async function send(ev){ev.preventDefault();if(busy||!selected)return;const form=ev.target,body=form.elements.text.value.trim(),file=form.elements.file.files[0];if(!body&&!file)return;if(file&&file.size>25*1024*1024){status('Allegato troppo grande: massimo 25 MB',true);return}busy=true;document.getElementById('sendBtn').disabled=true;status('Invio in corso...');let path=null;try{if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';path=selected+'/'+crypto.randomUUID()+'/'+safe;await uploadAttachment(path,file,percent=>status('Caricamento allegato: '+percent+'%'))}const id=crypto.randomUUID();const payload={id,user_id:selected,sender_id:me.id,body,file_path:path,file_name:file?.name||null};const {error}=await db.from('messages').insert(payload);if(error)throw error;form.reset();const fileLabel=form.querySelector('[data-file-name]');if(fileLabel)fileLabel.textContent='';status('Richiesta inviata.');await showMessages()}catch(e){status('Invio non completato: '+friendly(e)+(path?' (allegato caricato; invio del messaggio da verificare)':''),true)}finally{busy=false;document.getElementById('sendBtn').disabled=false}}
+async function send(ev){ev.preventDefault();if(busy||!selected)return;const form=ev.target,body=form.elements.text.value.trim(),file=form.elements.file.files[0];if(!body&&!file)return;if(file&&file.size>25*1024*1024){status('Allegato troppo grande: massimo 25 MB',true);return}busy=true;document.getElementById('sendBtn').disabled=true;status('Invio in corso...');let path=null;try{if(file){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120)||'file';path=selected+'/'+crypto.randomUUID()+'/'+safe;await uploadAttachment(path,file,percent=>status('Caricamento allegato: '+percent+'%'))}const id=crypto.randomUUID();const payload={id,user_id:selected,sender_id:profile.id,body,file_path:path,file_name:file?.name||null};const {error}=await db.from('messages').insert(payload);if(error)throw error;form.reset();const fileLabel=form.querySelector('[data-file-name]');if(fileLabel)fileLabel.textContent='';status('Richiesta inviata.');await showMessages()}catch(e){status('Invio non completato: '+friendly(e)+(path?' (allegato caricato; invio del messaggio da verificare)':''),true)}finally{busy=false;document.getElementById('sendBtn').disabled=false}}
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&filePickerActive){
     filePickerReturned=true;

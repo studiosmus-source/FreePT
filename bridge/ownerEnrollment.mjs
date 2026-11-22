@@ -21,7 +21,7 @@ export function createBridgeOwnerEnrollmentHandler({
      typeof rpcClient?.rpc!=='function'||
      typeof newDeviceId!=='function'||typeof randomBytesFn!=='function')
     throw Error('bridge_owner_enrollment_dependencies_invalid');
-  async function ownerId(token){
+  async function ownerIdentity(token){
     const rejected=reason=>{
       // Diagnostics are best-effort: a broken logger must not change auth behavior.
       try { onAuthDiagnostic(reason); } catch { /* fail closed */ }
@@ -32,13 +32,25 @@ export function createBridgeOwnerEnrollmentHandler({
       const user=response?.data?.user;
       if(response?.error||!UUID.test(user?.id))
         return rejected('token_invalid');
-      const answer=await profilesClient.from('profiles')
+      let profile=await profilesClient.from('profiles')
         .select('id,role,status').eq('id',user.id).maybeSingle();
-      if(answer?.error)return rejected('profile_query_failed');
-      if(answer?.data?.id!==user.id)return rejected('profile_missing');
-      if(answer.data.status!=='approved')return rejected('profile_not_approved');
-      if(!['user','admin'].includes(answer.data.role))return rejected('profile_role_invalid');
-      return user.id;
+      if(profile?.error)return rejected('profile_query_failed');
+      if(profile?.data?.id!==user.id){
+        // A paired PC has a separate revocable Auth session, but its Bridge
+        // devices belong to the already-approved phone profile.
+        const link=await profilesClient.from('freept_pc_device_links')
+          .select('profile_id').eq('auth_user_id',user.id)
+          .is('revoked_at',null).maybeSingle();
+        if(link?.error)return rejected('profile_link_query_failed');
+        if(!UUID.test(link?.data?.profile_id||''))return rejected('profile_missing');
+        profile=await profilesClient.from('profiles')
+          .select('id,role,status').eq('id',link.data.profile_id).maybeSingle();
+        if(profile?.error)return rejected('profile_query_failed');
+      }
+      if(!UUID.test(profile?.data?.id||''))return rejected('profile_missing');
+      if(profile.data.status!=='approved')return rejected('profile_not_approved');
+      if(!['user','admin'].includes(profile.data.role))return rejected('profile_role_invalid');
+      return {profileId:profile.data.id,authUserId:user.id};
     }catch{return rejected('auth_or_profile_exception');}
   }
   return async function handleBridgeOwnerEnrollment(req){
@@ -56,12 +68,12 @@ export function createBridgeOwnerEnrollmentHandler({
         !ALLOWED.test(body.label)||!body.label.trim()):
        (Object.keys(body).length!==1||!UUID.test(body.deviceId)))
       return fail(400,'invalid_request');
-    const owner=await ownerId(token);
+    const owner=await ownerIdentity(token);
     if(!owner)return fail(403,'bridge_owner_denied');
     try{
       if(path.endsWith('/delete')){
         const deleted=await rpcClient.rpc('bridge_server_delete_device',{
-          p_device_id:body.deviceId,p_owner_id:owner
+          p_device_id:body.deviceId,p_owner_id:owner.profileId
         });
         if(deleted?.error||deleted?.data!==true)
           return fail(403,'bridge_owner_denied');
@@ -77,7 +89,8 @@ export function createBridgeOwnerEnrollmentHandler({
         .update('freept-bridge-device-v1\0').update(deviceId).update('\0')
         .update(salt).update(secret).digest('hex');
       const created=await rpcClient.rpc('bridge_server_enroll_device',{
-        p_device_id:deviceId,p_owner_id:owner,p_label:body.label.trim(),
+        p_device_id:deviceId,p_owner_id:owner.profileId,
+        p_owner_auth_user_id:owner.authUserId,p_label:body.label.trim(),
         p_salt_hex:salt,p_verifier_hex:verifier
       });
       if(created?.error||created?.data!==deviceId)

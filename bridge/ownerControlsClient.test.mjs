@@ -43,6 +43,31 @@ test('owner reads only own device and grants',async()=>{
   assert.deepEqual(await f.client.device(DEVICE),{enabled:false});
   assert.deepEqual(await f.client.recipients(DEVICE),[{receiverId:ADMIN,active:true}]);
 });
+test('paired PC reads only devices owned by its canonical phone profile',async()=>{
+  const PC='44444444-4444-4444-8444-444444444444';
+  const calls=[];
+  const db={
+    from(table){
+      assert.equal(table,'bridge_devices');
+      return {select:()=>({eq:(column,value)=>{
+        calls.push({column,value});
+        return {eq:(nextColumn,nextValue)=>{
+          calls.push({column:nextColumn,value:nextValue});
+          return {maybeSingle:async()=>({
+            data:{id:DEVICE,owner_id:OWNER,bridge_enabled:true},error:null
+          })};
+        }};
+      }})};
+    },
+    async rpc(){return {data:null,error:null};}
+  };
+  const auth={getSession:async()=>({data:{session:{
+    access_token:'a'.repeat(40),user:{id:PC,is_anonymous:true}
+  }}})};
+  const client=createBridgeOwnerControls({db,auth,getProfileId:async()=>OWNER});
+  assert.deepEqual(await client.device(DEVICE),{enabled:true});
+  assert.deepEqual(calls,[{column:'id',value:DEVICE},{column:'owner_id',value:OWNER}]);
+});
 test('bad identities and foreign device abort before any privileged RPC',async()=>{
   const f=fixture({owner:ADMIN});
   await assert.rejects(()=>f.client.grant(DEVICE,ADMIN),/device_unavailable/);

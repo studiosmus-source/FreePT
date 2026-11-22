@@ -19,11 +19,14 @@ on:
       - 'supabase/migrations/20261109_bridge_*.sql'
       - 'supabase/migrations/20261118_bridge_*.sql'
       - 'supabase/migrations/20261121_bridge_*.sql'
+      - 'supabase/migrations/20261122_*.sql'
+      - 'bridge/postgres-ci-pc-account-*.sql'
       - 'supabase/bootstrap/**'
       - 'supabase/bridge_preflight.sql'
       - 'supabase/bridge_staging_install_once.sql'
       - 'supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql'
       - 'supabase/bridge_sql_safety.test.mjs'
+      - 'supabase/pc_account_link_sql_safety.test.mjs'
       - 'package.json'
       - 'src/**'
       - 'index.html'
@@ -38,11 +41,14 @@ on:
       - 'supabase/migrations/20261109_bridge_*.sql'
       - 'supabase/migrations/20261118_bridge_*.sql'
       - 'supabase/migrations/20261121_bridge_*.sql'
+      - 'supabase/migrations/20261122_*.sql'
+      - 'bridge/postgres-ci-pc-account-*.sql'
       - 'supabase/bootstrap/**'
       - 'supabase/bridge_preflight.sql'
       - 'supabase/bridge_staging_install_once.sql'
       - 'supabase/bridge_production_install_CANDIDATE_DO_NOT_RUN.sql'
       - 'supabase/bridge_sql_safety.test.mjs'
+      - 'supabase/pc_account_link_sql_safety.test.mjs'
       - 'package.json'
       - 'src/**'
       - 'index.html'
@@ -64,7 +70,7 @@ jobs:
       - name: Bridge model tests
         run: npm run test:bridge
       - name: Check isolated staging SQL bundle invariants
-        run: node --test supabase/bridge_sql_safety.test.mjs
+        run: node --test supabase/bridge_sql_safety.test.mjs supabase/pc_account_link_sql_safety.test.mjs
       - name: Syntax check every Bridge module and FreePT entrypoint
         run: |
           for file in bridge/*.mjs desktop/*.mjs src/main.js; do
@@ -273,3 +279,40 @@ jobs:
       - name: Verify family activation RPC exists
         run: |
           psql -v ON_ERROR_STOP=1 -Atqc "select to_regprocedure('public.bridge_owner_activate_family(uuid)') is not null" | grep -qx 't'
+
+  pc-account-link-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bridge_ci
+          POSTGRES_PASSWORD: bridge_ci_only
+          POSTGRES_DB: pc_link_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bridge_ci -d pc_link_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: bridge_ci
+      PGPASSWORD: bridge_ci_only
+      PGDATABASE: pc_link_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Create disposable FreePT identities and install TEST Bridge schema
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-pc-account-link-bootstrap.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/bridge_staging_install_once.sql
+      - name: Install the isolated PC account-linking migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261122_pc_account_linking_staging.sql
+      - name: Verify shared chat, attachments and per-PC Bridge revocation
+        run: psql -v ON_ERROR_STOP=1 -f bridge/postgres-ci-pc-account-linking.sql

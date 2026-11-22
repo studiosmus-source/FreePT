@@ -16,6 +16,7 @@ function harness(){
   ]);
   const context={
     document:{getElementById:id=>panels.get(id)||null},
+    closePcLinkDialog(){},
     removed
   };
   runInNewContext(cleanupSource+'\nthis.clean=closeAdminOverlays;',context);
