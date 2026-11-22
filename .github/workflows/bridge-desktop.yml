@@ -90,10 +90,10 @@ jobs:
         run: npm install --no-save --package-lock=false electron-builder@26.18.0
       - name: Package Windows TEST app
         if: matrix.target == 'win'
-        run: npx electron-builder --config desktop/electron-builder.yml --win nsis --x64
+        run: npx electron-builder --config desktop/electron-builder.yml --win nsis --x64 --publish never
       - name: Package macOS TEST app
         if: matrix.target == 'mac'
-        run: npx electron-builder --config desktop/electron-builder.yml --mac dmg --${{ matrix.arch }}
+        run: npx electron-builder --config desktop/electron-builder.yml --mac dmg --${{ matrix.arch }} --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: FreePT-Bridge-TEST-${{ matrix.target }}-${{ matrix.arch }}

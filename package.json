@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test:bridge": "node --test bridge/*.test.mjs",
     "test:desktop": "node --test desktop/*.test.mjs",
-    "desktop:build": "npm run build && npx --yes electron-builder@26.18.0 --config desktop/electron-builder.yml",
+    "desktop:build": "npm run build && npx --yes electron-builder@26.18.0 --config desktop/electron-builder.yml --publish never",
     "bridge:staging": "node bridge/runStaging.mjs",
     "bridge:serve:staging": "node bridge/runHttpsStaging.mjs",
     "bridge:serve:production": "node bridge/runProduction.mjs"
