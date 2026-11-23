@@ -34,4 +34,21 @@ if __name__ == "__main__":
     if not APP_DELEGATE.is_file():
         raise SystemExit("Missing generated Capacitor AppDelegate")
     APP_DELEGATE.write_text(patch(APP_DELEGATE.read_text()))
+    # Compile the isolated native Files plugin as part of the already compiled
+    # AppDelegate source. This avoids fragile modifications to Xcode pbxproj.
+    native = Path("ios-support/FreePTIOSFiles.swift")
+    storyboard = Path("ios/App/App/Base.lproj/Main.storyboard")
+    if not native.is_file() or not storyboard.is_file():
+        raise SystemExit("Missing native Files plugin or iOS storyboard")
+    source = APP_DELEGATE.read_text()
+    if "class FreePTIOSFiles:" in source:
+        raise SystemExit("Files plugin already installed")
+    APP_DELEGATE.write_text(source + "\\n" + native.read_text())
+    board = storyboard.read_text()
+    old = 'customClass="CAPBridgeViewController" customModule="Capacitor"'
+    new = 'customClass="FreePTIOSBridgeViewController" customModule="App"'
+    if board.count(old) != 1:
+        raise SystemExit("Unrecognized generated Capacitor storyboard")
+    storyboard.write_text(board.replace(old, new))
+    print("Installed native iOS Files plugin and registration")
     print("Installed iOS APNs registration callbacks")
