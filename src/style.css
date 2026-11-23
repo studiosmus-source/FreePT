@@ -265,3 +265,5 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 .important-alert-body{font-size:clamp(18px,4.6vw,24px);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .important-alert-fullscreen button{font-size:18px;padding:16px;margin-top:8px;background:#f8c16c;color:#172338;font-weight:700}
 .important-alert-fullscreen .important-alert-state{color:#e4e8ef}
+.important-alert-fullscreen-content{position:relative;padding-top:42px}
+.important-alert-fullscreen .important-alert-close{position:absolute;top:0;right:0;display:flex;align-items:center;justify-content:center;width:42px;height:42px;padding:0;margin:0;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:50%;font-size:28px;font-weight:400}
