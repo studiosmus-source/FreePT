@@ -1,20 +1,49 @@
-# FreePT Utente iPhone
+# FreePT Utente iPhone — stato verificato
 
-Build target: `it.freept.ios.user`; Supabase staging and the existing FreePT accounts.
+Branch: `feature/freept-ios-user-20261123`, bundle ID isolato `it.freept.ios.user`.
+Backend: FreePT Bridge **TEST** (non produzione); utenti esistenti, approvazione e chat non modificati.
 
-## Supported on iPhone
-- Registration/approval, messages, file attachments, image/video/GIF previews and important notices while the app is open.
-- Tap **Condividi file** to open the iOS document chooser. The selected file is attached to the current chat; tap **Invia** to transfer it to FreePT private Storage, where the approved administrator can retrieve it through the existing chat access controls.
-- Optional iOS remote-notification support uses APNs and needs the server migration, APNs credentials and Apple Push Notifications capability.
+## Flusso di prima attivazione
+L'interfaccia iPhone presenta il solo pulsante **Avvia configurazione** e le frasi concordate:
+- «Collega il tuo iPhone per poter utilizzare FreePT.»
+- «FreePT ha bisogno di accedere ai tuoi file per attivare le funzionalità dell'app.»
 
-## Not provided
-- No remote full-device browsing or background file harvesting. Apple's Files access is per user selection and cannot be transferred from Android's all-files grant.
-- No physical iPhone IPA or TestFlight distribution without Apple Developer provisioning, signing and appropriate APNs entitlements. The CI workflow produces an unsigned **iOS Simulator** app to validate native compilation, not an installable iPhone package.
+Il sistema iOS richiede all'utente di scegliere una cartella tramite il selettore Apple.
+Non esiste un permesso iOS che conceda accesso indiscriminato a tutti i file, e
+l'utente deve capire quali contenuti sta condividendo con il destinatario autorizzato.
 
-## Apple configuration for physical devices
-1. Create or use an Apple Developer App ID matching `it.freept.ios.user` and enable **Push Notifications**. Create App Store Connect/TestFlight entry.
-2. Supply signing certificate, Apple Team ID and provisioning profile to an authorized signing workflow. Never put private keys in GitHub source.
-3. Deploy migration `20261123_ios_push_platform.sql` and both updated Edge Functions to the **matching** Supabase environment after review. Configure server-side `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY`, `APNS_BUNDLE_ID=it.freept.ios.user` and `APNS_ENVIRONMENT=sandbox` for development or `production` for TestFlight.
-4. Build a signed iOS app/TestFlight build using Xcode. The existing iPhone package and staging server must use the same environment as Android TEST; do not mix staging with production.
+## Bridge iOS implementato nel ramo
+- `FreePTIOSFiles`: scelta cartella, bookmark persistente nei limiti di iOS,
+  elenco con handle opachi, navigazione e lettura a blocchi dei file nella cartella autorizzata.
+- `FreePTIOSDevice`: identificativo e segreto del dispositivo nel Portachiavi iOS,
+  sessione TX autenticata, risposte ai job già autorizzati dal server.
+- `iosBridgeTxClient`: inoltro di list/browse/read solo con FreePT in primo piano
+  e con account approvato, dispositivo registrato e grant destinatario verificato.
+- Nella chat iPhone non appare il pulsante Android di configurazione o
+  il vecchio pulsante separato per scegliere e inviare ogni file.
+- Chat, registrazione e allegati di messaggi restano disponibili.
 
-Existing Android, database production and user data must not be overwritten to introduce iOS.
+**Limitazioni da non nascondere:** il Bridge iOS non è un servizio sempre attivo
+in background; iOS può sospenderlo. Selezionare Download non equivale a concedere
+accesso a tutte le directory, né ai dati privati di WhatsApp o di altre app.
+La libreria Foto di Apple non è ancora integrata come cartella remota: la cartella
+selezionata nell'app File è oggi l'unica sorgente del Bridge iOS. Non confondere
+la prova del simulatore con un collaudo su iPhone fisico.
+
+## Build e distribuzione
+Il workflow `freept-ios-user.yml` crea un'app **solo per simulatore**, senza firma.
+La build WEB `freept-ios-web.yml` esegue test ma non abilita Bridge nativo da Safari.
+
+Per un iPhone reale:
+1. Serve un Apple Developer Team abilitato e una strategia di distribuzione
+   (TestFlight / provisioning dispositivo); senza credenziali non è lecito
+   promettere un IPA installabile.
+2. Configurare certificati, profili e bundle ID fuori dal repository.
+3. Configurare APNs se richiesti: migration e funzioni server iOS non sono
+   applicate all'ambiente reale per evitare modifiche collaterali.
+4. Installare la build firmata su dispositivo fisico, testare rinnovo bookmark,
+   accesso alla cartella, sessione/grant, paginazione, download reale e
+   comportamento in background; applicare correzioni prima di consegna.
+
+Nessun database, SAP, server di produzione, Android o profilo reale viene
+modificato da questo ramo.
