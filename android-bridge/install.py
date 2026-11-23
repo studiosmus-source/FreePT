@@ -117,6 +117,13 @@ gradle_source = gradle_path.read_text()
 firebase_dependency = "implementation 'com.google.firebase:firebase-messaging:24.1.2'"
 if gradle_source.count("dependencies {") != 1 or "firebase-messaging" in gradle_source:
     raise SystemExit("Unexpected Firebase Gradle configuration; refuse stacked patch")
+if target == "staging":
+    # The installed test package is versionCode 1. A strictly newer version
+    # is required for native self-updater and in-place upgrade detection.
+    if gradle_source.count("versionCode 1") != 1 or gradle_source.count('versionName "1.0"') != 1:
+        raise SystemExit("Unexpected generated staging APK version; refusing upgrade")
+    gradle_source = gradle_source.replace("versionCode 1", "versionCode 2", 1)
+    gradle_source = gradle_source.replace('versionName "1.0"', 'versionName "1.1.0"', 1)
 main.write_text(source)
 gradle_path.write_text(gradle_source.replace(
     "dependencies {", "dependencies {" + chr(10) + "    " + firebase_dependency, 1
