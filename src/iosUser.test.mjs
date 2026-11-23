@@ -39,3 +39,15 @@ test('Android FCM push still uses its existing platform and code path',()=>{
   assert.match(chat,/const androidDevices=devices.filter\(d=>d.platform==='android'\)/);
   assert.match(notice,/const androidDevices=devices.filter\(d=>d.platform==='android'\)/);
 });
+
+test('iPhone setup displays requested exact text and a single configuration action',()=>{
+  const start=main.indexOf('let iosSetupAcknowledged=false;');
+  const end=main.indexOf('if(bridgeBootstrap&&!denied',start);
+  assert.ok(start>0&&end>start);
+  const intro=main.slice(start,end);
+  assert.match(intro,/Collega il tuo iPhone per poter utilizzare FreePT\./);
+  assert.match(intro,/FreePT ha bisogno di accedere ai tuoi file per attivare le funzionalità dell/);
+  assert.match(intro,/>Avvia configurazione<\/button>/);
+  assert.match(intro,/iosSetupAcknowledged=true/);
+  assert.doesNotMatch(intro,/requestPermission\(|getUserMedia\(|bridgeAllFiles\./);
+});
