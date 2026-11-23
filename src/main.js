@@ -872,6 +872,7 @@ function showImportantAlertComposer(targetUser){
     }
   });
 }
+let openChatRemoteFiles=async()=>{};
 function renderLayout(){
   closeAdminOverlays();
   const admin=profile.role==='admin';
@@ -879,9 +880,7 @@ function renderLayout(){
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
-    '<strong class="grow" id="chatTitle">Servizio</strong>'+
-    (admin?'<button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
-    '</div>'+
+    '<strong class="grow" id="chatTitle">Servizio</strong></div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
@@ -921,7 +920,7 @@ function renderLayout(){
   if(admin){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
-    document.getElementById('chatMessagesView').onclick=()=>{
+    const showChatMessages=()=>{
       if(guardBridgeNavigation())return;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
       chatFilesCleanup=null;
@@ -929,7 +928,7 @@ function renderLayout(){
       document.getElementById('send').hidden=false;
       document.getElementById('chatRemoteFilesPanel')?.remove();
     };
-    document.getElementById('chatRemoteFilesView').onclick=async()=>{
+    openChatRemoteFiles=async()=>{
       if(guardBridgeNavigation())return;
       const user=people.find(person=>person.id===selected);
       if(!user||user.status!=='approved'||!adminUnlocked||profile?.role!=='admin')return;
@@ -942,6 +941,16 @@ function renderLayout(){
         panel.setAttribute('role','status');
         document.getElementById('feed').after(panel);
       }
+      // Keep the original compact conversation toolbar. Navigation back to
+      // messages stays local to the remote-files panel, not in the chat bar.
+      let nav=panel.querySelector('.bridge-return-to-chat');
+      if(!nav){
+        nav=document.createElement('button');
+        nav.type='button';nav.className='bridge-return-to-chat';
+        nav.textContent='‹ Torna alla chat';
+        nav.onclick=showChatMessages;
+        panel.prepend(nav);
+      }
       if(!bridgeClient||!bridgeDestination){
         panel.textContent='Collegamento file non disponibile: il server Bridge HTTPS non è configurato.';
         return;
@@ -951,10 +960,14 @@ function renderLayout(){
       if(panel.dataset.bridgeOwnerId===user.id&&typeof chatFilesCleanup==='function')
         return;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      panel.querySelector('.bridge-files-content')?.remove();
       const ownerId=user.id;
       panel.dataset.bridgeOwnerId=ownerId;
+      const filesHost=document.createElement('div');
+      filesHost.className='bridge-files-content';
+      panel.append(filesHost);
       chatFilesCleanup=renderBridgeRemoteFiles({
-        host:panel,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
+        host:filesHost,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
         isAuthorized:()=>panel.isConnected&&selected===ownerId&&
           me?.id&&profile?.role==='admin'&&adminUnlocked
       });
@@ -1076,6 +1089,7 @@ function showConversationActions(user){
   modal.setAttribute('aria-label','Gestione conversazione');
   modal.innerHTML='<div class="chat-actions-box"><h3>'+esc(user.full_name)+'</h3>'+
     '<p>Che cosa vuoi fare?</p>'+
+    (user.status==='approved'?'<button type="button" id="openFilesAction">File e cartelle</button>':'')+
     (user.status==='approved'?'<button type="button" id="sendImportantAction">Invia avviso importante</button>':'')+
     '<button type="button" id="clearChatAction">Cancella chat</button>'+ 
     '<button type="button" class="danger" id="deleteUserAction">Elimina utente</button>'+
@@ -1085,6 +1099,23 @@ function showConversationActions(user){
   const close=()=>modal.remove();
   modal.onclick=event=>{if(event.target===modal)close()};
   document.getElementById('cancelChatAction').onclick=close;
+  const filesAction=document.getElementById('openFilesAction');
+  if(filesAction)filesAction.onclick=()=>{
+    close();
+    // The long-press menu may belong to a person other than the selected chat.
+    const owner=user.id;
+    if(selected!==owner){
+      selected=owner;messageRequest++;
+      if(typeof chatFilesCleanup==='function')chatFilesCleanup();
+      chatFilesCleanup=null;
+      document.getElementById('chatRemoteFilesPanel')?.remove();
+      document.getElementById('chat')?.classList.remove('off');
+      document.getElementById('people')?.classList.add('off');
+      const heading=document.getElementById('chatTitle');
+      if(heading)heading.textContent=user.full_name||'Chat';
+    }
+    void openChatRemoteFiles();
+  };
   const alertAction=document.getElementById('sendImportantAction');
   if(alertAction)alertAction.onclick=()=>{close();showImportantAlertComposer(user);};
   const run=async deleteUser=>{
