@@ -3,7 +3,8 @@
  * registration time, so a delayed FCM callback cannot register a token
  * against a different account after logout/account switching.
  */
-export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
+export function createPushRegistration({plugin,db,getApprovedUser,onMessage,platform='android'}){
+  if(platform!=='android'&&platform!=='ios')throw Error('push_platform_invalid');
   let listenersReady=false;
   let token=null;
   let tokenOwner=null;
@@ -24,7 +25,7 @@ export function createPushRegistration({plugin,db,getApprovedUser,onMessage}){
             if(!current?.id||current.id===closingOwner||!result?.value)return;
             const owner=current.id;
             const {error}=await db.from('push_devices').upsert({
-              token:result.value,user_id:owner,platform:'android',
+              token:result.value,user_id:owner,platform,
               updated_at:new Date().toISOString()
             },{onConflict:'token'});
             if(error)throw error;
