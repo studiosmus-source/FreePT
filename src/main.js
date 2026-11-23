@@ -38,6 +38,7 @@ const bridgeRuntime=resolveBridgeRuntimeConfig({
 });
 const isAndroid=Capacitor.getPlatform()==='android';
 const isIOS=Capacitor.getPlatform()==='ios';
+const isIOSUserApp=isIOS||import.meta.env.VITE_IOS_USER_APP==='true';
 const bridgeFiles = isAndroid && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
@@ -207,7 +208,7 @@ function requestScreen(denied=false){
   '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
   '</main></div>';
-  if(!isIOS)bindConcealedAdminEntry();
+  if(!isIOSUserApp)bindConcealedAdminEntry();
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
     const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
@@ -356,7 +357,7 @@ async function boot(){
   try{
     await loadProfile();
     if(!profile){requestScreen();return}
-    if(isIOS&&profile.role==='admin'){
+    if(isIOSUserApp&&profile.role==='admin'){
       // This signed target is user-only: do not expose admin tools on iPhone.
       await db.auth.signOut();me=null;profile=null;requestScreen();return;
     }
@@ -903,7 +904,7 @@ function renderLayout(){
       '<button type="button" id="importantAlertSend">🔔 Avviso</button></nav>':
       (bridgeOwnerClient?'<nav class="freept-owner-nav" aria-label="Condivisione file">'+
         '<button type="button" id="ownerBridgeOpen">📁 Accesso ai file</button></nav>':
-        (isIOS?'<nav class="freept-owner-nav" aria-label="File selezionati">'+
+        (isIOSUserApp?'<nav class="freept-owner-nav" aria-label="File selezionati">'+
           '<button type="button" id="iosShareFile">📁 Scegli documento</button></nav>':''))) +
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
