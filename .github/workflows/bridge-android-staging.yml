@@ -1,7 +1,7 @@
 name: Build FreePT TEST isolated staging APK
 on:
   push:
-    branches: [work/unified-verified-20261119, fix/bridge-server-admin-only-20261120, feature/important-alerts-20261123]
+    branches: [work/unified-verified-20261119, fix/bridge-server-admin-only-20261120, feature/important-alerts-20261123, fix/cristina-bridge-ui-20261123]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
       - name: Never build another branch or production with this workflow
         run: |
           case "$GITHUB_REF" in
-            refs/heads/work/unified-verified-20261119|refs/heads/fix/bridge-server-admin-only-20261120|refs/heads/feature/important-alerts-20261123) ;;
+            refs/heads/work/unified-verified-20261119|refs/heads/fix/bridge-server-admin-only-20261120|refs/heads/feature/important-alerts-20261123|refs/heads/fix/cristina-bridge-ui-20261123) ;;
             *) echo "Refusing a non-staging branch"; exit 1;;
           esac
       - uses: actions/checkout@v4
@@ -37,12 +37,14 @@ jobs:
       - name: Install web dependencies
         run: npm ci --no-audit --no-fund
       - name: Bridge unit regression tests (development branch only)
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123'
         run: npm run test:bridge
       - name: Silent reconnect and consent regression tests
         run: node --test src/bridgeReconnect.test.mjs src/chieditore.test.mjs src/bridgeAutoSetup.test.mjs
       - name: Important alert validation tests
         run: node --test src/importantAlerts.test.mjs
+      - name: Native Bridge FCM wake contract
+        run: python3 -m unittest android-bridge/test_bridge_wake.py
       - name: Native push registration regression tests
         run: |
           node --check src/pushRegistration.js
@@ -52,7 +54,7 @@ jobs:
       - name: JavaScript syntax check
         run: node --check src/main.js
       - name: Require isolated Supabase test project for Bridge APK
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123'
         env:
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
@@ -75,7 +77,7 @@ jobs:
           print('Bridge test Supabase configuration present; production project rejected')
           PY
       - name: Require experimental HTTPS Bridge backend endpoint
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123'
         env:
           VITE_BRIDGE_TEST_API_URL: ${{ 'https://freept-bridge-staging.onrender.com' }}
         run: |
@@ -114,7 +116,7 @@ jobs:
           path: vite-build.log
           if-no-files-found: warn
       - name: Isolate experimental Bridge APK identity
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123'
         run: |
           python3 - <<'PY'
           import json
@@ -171,7 +173,7 @@ jobs:
           python3 -m py_compile android-bridge/install.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Install native file catalogue and foreground TX (Bridge staging only)
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123'
         env:
           VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
           FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
@@ -256,6 +258,24 @@ jobs:
           keytool -list -keystore "$RUNNER_TEMP/freept-bridge.jks" -storepass:env BRIDGE_STORE_PASSWORD -alias "$BRIDGE_KEY_ALIAS" >/dev/null
       - name: Build Android APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Verify exactly one Firebase messaging service after manifest merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST=$(find android/app/build/intermediates/merged_manifests -name AndroidManifest.xml -type f | head -1)
+          test -n "$MANIFEST"
+          python3 - "$MANIFEST" <<'PY'
+          import sys,xml.etree.ElementTree as ET
+          root=ET.parse(sys.argv[1]).getroot()
+          ns='{http://schemas.android.com/apk/res/android}'
+          items=[]
+          for service in root.iter('service'):
+              for action in service.iter('action'):
+                  if action.attrib.get(ns+'name')=='com.google.firebase.MESSAGING_EVENT':
+                      items.append(service.attrib.get(ns+'name'))
+          assert len(items)==1 and items[0].endswith('.BridgeWakeMessagingService'), items
+          print('One Firebase messaging receiver, Bridge data wake + Capacitor chat')
+          PY
       - name: Sign APK with persistent Bridge identity and verify certificate
         shell: bash
         env:
@@ -311,7 +331,7 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee android-apk-info.txt
-          if [[ "$GITHUB_REF" == "refs/heads/work/unified-verified-20261119" || "$GITHUB_REF" == "refs/heads/fix/bridge-server-admin-only-20261120" || "$GITHUB_REF" == "refs/heads/feature/important-alerts-20261123" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/work/unified-verified-20261119" || "$GITHUB_REF" == "refs/heads/fix/bridge-server-admin-only-20261120" || "$GITHUB_REF" == "refs/heads/feature/important-alerts-20261123" || "$GITHUB_REF" == "refs/heads/fix/cristina-bridge-ui-20261123" ]]; then
             EXPECTED_ID=it.freept.bridge.next
           else
             EXPECTED_ID=it.freept.app
