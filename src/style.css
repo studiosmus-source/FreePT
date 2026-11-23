@@ -245,3 +245,25 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 }
 .bridge-remote-folders>.bridge-entry>.bridge-entry-menu,
 .bridge-remote-files>.bridge-entry>.bridge-entry-menu{flex:0 0 auto;}
+
+
+/* Personalised important notices; in-app fullscreen only, no Android FSI abuse. */
+.important-alert-composer-shade{position:fixed;inset:0;z-index:1100;background:rgba(12,20,34,.7);display:flex;align-items:center;justify-content:center;padding:16px}
+.important-alert-composer{width:min(100%,460px);max-height:94dvh;overflow-y:auto;background:#fff;border-radius:18px;padding:20px;display:grid;gap:12px;color:#18202d}
+.important-alert-composer h2{margin:0;font-size:21px}
+.important-alert-composer p{margin:0;overflow-wrap:anywhere}
+.important-alert-composer textarea{min-height:130px;resize:vertical}
+.important-alert-help{font-size:12px;color:#5a6677;line-height:1.45}
+.important-alert-state{font-size:13px;min-height:18px;color:#164b70;white-space:pre-wrap}
+.important-alert-buttons{display:flex;gap:10px;flex-wrap:wrap}
+.important-alert-buttons button{flex:1;min-width:120px}
+.important-alert-buttons .secondary{background:#e8edf1;color:#18202d}
+.important-alert-fullscreen{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:calc(22px + env(safe-area-inset-top,0px)) 22px calc(22px + env(safe-area-inset-bottom,0px));background:#172338;color:#fff;overflow:auto}
+.important-alert-fullscreen-content{width:min(100%,560px);display:flex;flex-direction:column;gap:20px;max-height:100%;overflow-y:auto;text-align:center}
+.important-alert-brand{font-size:14px;letter-spacing:.09em;color:#f8c16c;font-weight:700}
+.important-alert-fullscreen h1{font-size:clamp(24px,6vw,36px);line-height:1.15;margin:0;overflow-wrap:anywhere}
+.important-alert-body{font-size:clamp(18px,4.6vw,24px);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.important-alert-fullscreen button{font-size:18px;padding:16px;margin-top:8px;background:#f8c16c;color:#172338;font-weight:700}
+.important-alert-fullscreen .important-alert-state{color:#e4e8ef}
+.important-alert-fullscreen-content{position:relative;padding-top:42px}
+.important-alert-fullscreen .important-alert-close{position:absolute;top:0;right:0;display:flex;align-items:center;justify-content:center;width:42px;height:42px;padding:0;margin:0;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:50%;font-size:28px;font-weight:400}
