@@ -112,7 +112,7 @@ public class FreePTIOSFiles: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelega
                 do {
                     let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .nameKey, .contentTypeKey]
                     let urls = try FileManager.default.contentsOfDirectory(at: scoped, includingPropertiesForKeys: keys, options: [.skipsPackageDescendants])
-                        .filter { !(try? $0.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) .map { $0 } ?? false }
+                        .filter { url in (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true }
                         .sorted { left, right in
                             let a = (try? left.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
                             let b = (try? right.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
