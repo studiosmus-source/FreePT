@@ -886,7 +886,7 @@ function renderLayout(){
       '<button type="button" id="chatRemoteFilesView">📁 File remoti</button>'+
       '<button type="button" id="importantAlertSend">🔔 Avviso</button></nav>':
       (bridgeOwnerClient?'<nav class="freept-owner-nav" aria-label="Condivisione file">'+
-        '<button type="button" id="ownerBridgeOpen">📁 Condividi file</button></nav>':'')) +
+        '<button type="button" id="ownerBridgeOpen">📁 Accesso ai file</button></nav>':'')) +
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
