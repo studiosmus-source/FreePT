@@ -25,7 +25,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Test iOS contracts, existing Bridge and notification flows
         run: |
-          node --test src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
+          node --test src/iosBridgeTxClient.test.mjs src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
           npm run test:bridge
           python3 -m unittest ios-support/test_patch_appdelegate.py
           node --check src/main.js
@@ -59,6 +59,9 @@ jobs:
           python3 ios-support/patch_appdelegate.py
           test -f ios/App/App/AppDelegate.swift
           grep -q capacitorDidRegisterForRemoteNotifications ios/App/App/AppDelegate.swift
+          grep -q 'class FreePTIOSFiles:' ios/App/App/AppDelegate.swift
+          grep -q 'class FreePTIOSDevice:' ios/App/App/AppDelegate.swift
+          grep -q 'customClass="FreePTIOSBridgeViewController"' ios/App/App/Base.lproj/Main.storyboard
           xcodebuild -version
       - name: Compile unsigned iOS Simulator app
         run: |
