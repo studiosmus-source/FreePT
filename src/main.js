@@ -6,6 +6,7 @@ import './style.css';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import {createPushRegistration} from './pushRegistration.js';
+import {mountImportantAlertComposer,renderImportantAlert} from './importantAlerts.js';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
@@ -113,6 +114,7 @@ const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
     if(profile?.role==='admin'&&!adminUnlocked)return;
     if(profile?.role==='admin')void listPeople().then(renderPeople).catch(()=>{});
     else if(selected)void showMessages(false).catch(()=>{});
+    void checkImportantAlerts().catch(()=>{});
   }
 }):null;
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
@@ -384,7 +386,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}void pushRegistration?.init().catch(()=>{});sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
+async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}void pushRegistration?.init().catch(()=>{});void checkImportantAlerts();sub=db.channel('freept-sync').on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(selected)await showMessages(false)}).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},async()=>{if(profile.role==='admin'){await listPeople();renderPeople()}}).on('postgres_changes',{event:'INSERT',schema:'public',table:'important_alerts'},()=>{void checkImportantAlerts()}).subscribe();document.addEventListener('visibilitychange',refreshOnVisible,{once:true})}
 async function refreshOnVisible(){
   if(document.visibilityState==='visible'){
     if(profile?.role==='admin'&&Capacitor.isNativePlatform()&&!adminUnlocked){
@@ -402,6 +404,7 @@ async function refreshOnVisible(){
         renderPeople();
       }
       if(selected&&!bridgeTransferActive()) await showMessages(false);
+      await checkImportantAlerts();
       if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}
     } catch(e){ status(friendly(e),true) }
   }
@@ -413,6 +416,9 @@ function closeAdminOverlays(){
   document.getElementById('chatRemoteFilesPanel')?.remove();
   document.getElementById('adminBridgePanel')?.remove();
   document.getElementById('chatActions')?.remove();
+  document.getElementById('importantAlertComposer')?.remove();
+  document.getElementById('importantAlertScreen')?.remove();
+  importantAlertShown=null;
   document.getElementById('ownerBridgePanel')?.remove();
 }
 
@@ -813,6 +819,52 @@ async function showOwnerBridgeFolder(){
   await refresh();
 }
 
+let importantAlertChecking=false;
+let importantAlertShown=null;
+async function checkImportantAlerts(){
+  if(importantAlertChecking||importantAlertShown||document.visibilityState!=='visible'||
+     !me?.id||profile?.role!=='user'||profile?.status!=='approved')return;
+  importantAlertChecking=true;
+  const owner=me.id;
+  try{
+    const {data,error}=await db.from('important_alerts')
+      .select('id,title,body,created_at').eq('recipient_id',owner)
+      .is('read_at',null).order('created_at',{ascending:true}).limit(1);
+    if(error){if(error.code!=='42P01'&&error.code!=='PGRST205')console.warn('FreePT alert fetch failed',error.code);return;}
+    const alert=data?.[0];
+    if(!alert||me?.id!==owner||profile?.role!=='user'||importantAlertShown)return;
+    importantAlertShown=alert.id;
+    renderImportantAlert({host:document.body,alert,onAcknowledge:async id=>{
+      if(me?.id!==owner||profile?.role!=='user')throw Error('Sessione cambiata.');
+      const {data:updated,error:ackError}=await db.from('important_alerts')
+        .update({read_at:new Date().toISOString()}).eq('id',id)
+        .eq('recipient_id',owner).is('read_at',null).select('id');
+      if(ackError)throw ackError;
+      if(!updated?.length)throw Error('Conferma non registrata.');
+      importantAlertShown=null;
+      queueMicrotask(()=>void checkImportantAlerts());
+    }});
+  }finally{importantAlertChecking=false;}
+}
+function showImportantAlertComposer(){
+  if(profile?.role!=='admin'||profile?.status!=='approved'||!adminUnlocked||!me?.id)return;
+  const user=people.find(p=>p.id===selected&&p.status==='approved');
+  if(!user)return;
+  const owner=me.id;
+  const recipient=user.id;
+  mountImportantAlertComposer({host:document.body,recipientName:user.full_name||'Utente',
+    onSend:async payload=>{
+      if(me?.id!==owner||profile?.role!=='admin'||!adminUnlocked||selected!==recipient)
+        throw Error('La conversazione selezionata è cambiata.');
+      const {data,error}=await db.functions.invoke('freept-important-alert',{
+        body:{recipientId:recipient,...payload}
+      });
+      if(error)throw Error('Servizio notifiche non disponibile.');
+      if(!data?.saved)throw Error('Conferma del server mancante.');
+      return data;
+    }
+  });
+}
 function renderLayout(){
   closeAdminOverlays();
   const admin=profile.role==='admin';
@@ -821,7 +873,7 @@ function renderLayout(){
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
     '<strong class="grow" id="chatTitle">Servizio</strong>'+
-    (admin?'<button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
+    (admin?'<button type="button" id="importantAlertSend">Avviso</button><button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
     '</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
@@ -862,6 +914,7 @@ function renderLayout(){
   if(admin){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
+    document.getElementById('importantAlertSend').onclick=showImportantAlertComposer;
     document.getElementById('chatMessagesView').onclick=()=>{
       if(guardBridgeNavigation())return;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
@@ -1256,6 +1309,7 @@ setInterval(async () => {
       await listPeople();
       renderPeople();
     } else if(profile.status==='approved' && profile.role==='user'){
+      void checkImportantAlerts();
       void bindBootstrapAfterApproval();
       void startProvisionedTxWhenAllowed();
     }
