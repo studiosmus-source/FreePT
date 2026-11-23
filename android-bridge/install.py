@@ -124,6 +124,10 @@ if target == "staging":
         raise SystemExit("Unexpected generated staging APK version; refusing upgrade")
     gradle_source = gradle_source.replace("versionCode 1", "versionCode 2", 1)
     gradle_source = gradle_source.replace('versionName "1.0"', 'versionName "1.1.0"', 1)
+    if os.environ.get("FREEPT_CLASSIC_UI_FIX") == "1":
+        gradle_source = gradle_source.replace("versionCode 2", "versionCode 3", 1)
+        gradle_source = gradle_source.replace('versionName "1.1.0"', 'versionName "1.2.0"', 1)
+
 main.write_text(source)
 gradle_path.write_text(gradle_source.replace(
     "dependencies {", "dependencies {" + chr(10) + "    " + firebase_dependency, 1
