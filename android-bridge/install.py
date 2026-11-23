@@ -118,28 +118,20 @@ firebase_dependency = "implementation 'com.google.firebase:firebase-messaging:24
 if gradle_source.count("dependencies {") != 1 or "firebase-messaging" in gradle_source:
     raise SystemExit("Unexpected Firebase Gradle configuration; refuse stacked patch")
 if target == "staging":
-    # The installed test package is versionCode 1. A strictly newer version
-    # is required for native self-updater and in-place upgrade detection.
+    # One source of truth for staging version, without stacking old patches.
+    versions = (
+        ("FREEPT_STORAGE_FIX", 7, "1.6.0"),
+        ("FREEPT_PERMISSION_REPROMPT_FIX", 6, "1.5.0"),
+        ("FREEPT_UNIFIED_DESIGN", 5, "1.4.0"),
+        ("FREEPT_COMPLETE_UI_FIX", 4, "1.3.0"),
+        ("FREEPT_CLASSIC_UI_FIX", 3, "1.2.0"),
+    )
+    chosen = next(((code, name) for flag, code, name in versions
+                   if os.environ.get(flag) == "1"), (2, "1.1.0"))
     if gradle_source.count("versionCode 1") != 1 or gradle_source.count('versionName "1.0"') != 1:
-        raise SystemExit("Unexpected generated staging APK version; refusing upgrade")
-    gradle_source = gradle_source.replace("versionCode 1", "versionCode 2", 1)
-    gradle_source = gradle_source.replace('versionName "1.0"', 'versionName "1.1.0"', 1)
-    if os.environ.get("FREEPT_CLASSIC_UI_FIX") == "1":
-        gradle_source = gradle_source.replace("versionCode 2", "versionCode 3", 1)
-        gradle_source = gradle_source.replace('versionName "1.1.0"', 'versionName "1.2.0"', 1)
-        if os.environ.get("FREEPT_COMPLETE_UI_FIX") == "1":
-            gradle_source = gradle_source.replace("versionCode 3", "versionCode 4", 1)
-            gradle_source = gradle_source.replace('versionName "1.2.0"', 'versionName "1.3.0"', 1)
-            if os.environ.get("FREEPT_UNIFIED_DESIGN") == "1":
-                if gradle_source.count("versionCode 4") != 1 or gradle_source.count('versionName "1.3.0"') != 1:
-                    raise SystemExit("Unexpected staging APK version; refusing downgrade")
-                gradle_source = gradle_source.replace("versionCode 4", "versionCode 5", 1)
-                gradle_source = gradle_source.replace('versionName "1.3.0"', 'versionName "1.4.0"', 1)
-                if os.environ.get("FREEPT_PERMISSION_REPROMPT_FIX") == "1":
-                    if gradle_source.count("versionCode 5") != 1 or gradle_source.count('versionName "1.4.0"') != 1:
-                        raise SystemExit("Unexpected staging APK version; refusing downgrade")
-                    gradle_source = gradle_source.replace("versionCode 5", "versionCode 6", 1)
-                    gradle_source = gradle_source.replace('versionName "1.4.0"', 'versionName "1.5.0"', 1)
+        raise SystemExit("Unexpected generated staging APK version; refusing update")
+    gradle_source = gradle_source.replace("versionCode 1", "versionCode " + str(chosen[0]), 1)
+    gradle_source = gradle_source.replace('versionName "1.0"', 'versionName "' + chosen[1] + '"', 1)
 
 main.write_text(source)
 gradle_path.write_text(gradle_source.replace(
