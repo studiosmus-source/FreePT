@@ -1,7 +1,7 @@
 name: FreePT iOS User simulator (unsigned)
 on:
   push:
-    branches: [feature/freept-ios-user-20261123]
+    branches: [feature/freept-ios-user-20261123, feature/freept-ios-shared-folder-bridge-20261123]
   workflow_dispatch:
 permissions:
   contents: read
