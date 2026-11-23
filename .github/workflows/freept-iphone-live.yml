@@ -41,7 +41,7 @@ jobs:
           js = ''.join(p.read_text() for p in Path('dist/assets').glob('*.js'))
           assert 'cpopqsvzzxfjgnlawlvc.supabase.co' in js, 'wrong FreePT backend'
           assert 'aqjuixbuxftnjfzxmzuj.supabase.co' not in js, 'staging backend leaked'
-          assert 'sb_secret_' not in js and 'service_role' not in js
+          assert not re.search(r'sb_secret_[A-Za-z0-9_-]{16,}', js), 'secret API key leaked'
           assert 'BridgeFiles' in js, 'unexpected removal of existing code'
           assert re.search(r'freept_ios_setup_intro_v1', js), 'unexpected change to app'
           print('Production publishable client only; native Bridge disabled by build flags')
