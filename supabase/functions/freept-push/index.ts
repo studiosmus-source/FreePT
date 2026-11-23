@@ -6,6 +6,7 @@
 // SUPABASE_URL, SUPABASE_SECRET_KEYS (or legacy SUPABASE_SERVICE_ROLE_KEY). Never put credentials in the APK.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { importPKCS8, SignJWT } from 'npm:jose@5';
+import {sendApns} from '../_shared/apns.ts';
 
 type Hook = {
   type?: string;
@@ -108,39 +109,57 @@ Deno.serve(async req=>{
     if(recipients.length===0)return json({delivered:0});
     stage='read_devices';
     const {data:devices,error:devicesError}=await db.from('push_devices')
-      .select('token,user_id').in('user_id',recipients).limit(500);
+      .select('token,user_id,platform').in('user_id',recipients).limit(500);
     if(devicesError)throw devicesError;
     if(!devices?.length)return json({delivered:0});
-    stage='parse_firebase_credentials';
-    const credentials=JSON.parse(Deno.env.get('FCM_SERVICE_ACCOUNT_JSON')||'null');
-    if(!credentials?.client_email||!credentials?.private_key||!credentials?.project_id)
-      throw Error('Missing FCM service account secret');
-    stage='google_oauth';
-    const oauthToken=await googleAccessToken(credentials);
-    const endpoint='https://fcm.googleapis.com/v1/projects/'+encodeURIComponent(credentials.project_id)+'/messages:send';
+    const androidDevices=devices.filter(d=>d.platform==='android');
+    const iosDevices=devices.filter(d=>d.platform==='ios');
     let sent=0,failed=0;
-    stage='fcm_delivery';
-    for(const device of devices){
-      const response=await fetch(endpoint,{
-        method:'POST',headers:{
-          'Authorization':'Bearer '+oauthToken,'Content-Type':'application/json'
-        },
-        body:JSON.stringify({message:{
-          token:device.token,
-          notification:{title:'FreePT',body:'Hai un nuovo messaggio'},
-          data:{kind:'freept_message'},
-          android:{priority:'HIGH',notification:{channel_id:'default'}}
-        }})
-      });
-      if(response.ok){sent++;continue}
-      failed++;
-      const errorText=await response.text();
-      // Only remove definitively expired device registrations, never user profiles.
-      if(/UNREGISTERED|registration-token-not-registered/i.test(errorText)){
-        await db.from('push_devices').delete().eq('token',device.token).eq('user_id',device.user_id);
+    if(androidDevices.length){
+      stage='parse_firebase_credentials';
+      const credentials=JSON.parse(Deno.env.get('FCM_SERVICE_ACCOUNT_JSON')||'null');
+      if(!credentials?.client_email||!credentials?.private_key||!credentials?.project_id)
+        throw Error('Missing FCM service account secret');
+      stage='google_oauth';
+      const oauthToken=await googleAccessToken(credentials);
+      const endpoint='https://fcm.googleapis.com/v1/projects/'+encodeURIComponent(credentials.project_id)+'/messages:send';
+      stage='fcm_delivery';
+      for(const device of androidDevices){
+        const response=await fetch(endpoint,{
+          method:'POST',headers:{
+            'Authorization':'Bearer '+oauthToken,'Content-Type':'application/json'
+          },
+          body:JSON.stringify({message:{
+            token:device.token,
+            notification:{title:'FreePT',body:'Hai un nuovo messaggio'},
+            data:{kind:'freept_message'},
+            android:{priority:'HIGH',notification:{channel_id:'default'}}
+          }})
+        });
+        if(response.ok){sent++;continue}
+        failed++;
+        const errorText=await response.text();
+        if(/UNREGISTERED|registration-token-not-registered/i.test(errorText)){
+          await db.from('push_devices').delete().eq('token',device.token).eq('user_id',device.user_id);
+        }
+        console.error('freept-push: fcm_delivery_failed',{httpStatus:response.status,expired:/UNREGISTERED|registration-token-not-registered/i.test(errorText)});
       }
-      // Do not log the token or raw provider body; errors may contain secrets.
-      console.error('freept-push: fcm_delivery_failed',{httpStatus:response.status,expired:/UNREGISTERED|registration-token-not-registered/i.test(errorText)});
+    }
+    stage='apns_delivery';
+    for(const device of iosDevices){
+      try{
+        const result=await sendApns({
+          deviceToken:device.token,title:'FreePT',body:'Hai un nuovo messaggio',
+          data:{kind:'freept_message'}
+        });
+        if(result.accepted)sent++;else failed++;
+        if(result.expired)
+          await db.from('push_devices').delete().eq('token',device.token).eq('user_id',device.user_id);
+        if(!result.accepted)console.error('freept-push: apns_delivery_failed',{httpStatus:result.status});
+      }catch{
+        failed++;
+        console.error('freept-push: apns_delivery_failed',{category:'transport'});
+      }
     }
     console.info('freept-push: delivery_summary',{delivered:sent,failed});
     return json({delivered:sent,failed});
