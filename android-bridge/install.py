@@ -216,13 +216,17 @@ if 'xmlns:tools=' not in manifest_text:
     )
 remove_capacitor_receiver = ('<service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" '
     'tools:node="remove" />')
+# Firebase SDK also contributes a generic messaging service through its own
+# manifest. It must not compete with our one authenticated Bridge + chat entry.
+remove_firebase_receiver = ('<service android:name="com.google.firebase.messaging.FirebaseMessagingService" '
+    'tools:node="remove" />')
 wake_receiver = ('<service android:name=".BridgeWakeMessagingService" '
     'android:exported="false"><intent-filter>'
     '<action android:name="com.google.firebase.MESSAGING_EVENT" />'
     '</intent-filter></service>')
 candidate = manifest_text.replace("</application>",
     "    " + service + "\n    " + boot_receiver + "\n    " +
-    remove_capacitor_receiver + "\n    " + wake_receiver +
+    remove_capacitor_receiver + "\n    " + remove_firebase_receiver + "\n    " + wake_receiver +
     "\n    </application>", 1)
 # Validate generated XML before modifying the source file.
 import xml.etree.ElementTree as ET
