@@ -4,7 +4,7 @@ on:
     branches: [feature/freept-ios-user-20261123]
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   web:
     runs-on: ubuntu-latest
@@ -58,3 +58,27 @@ jobs:
         with:
           name: FreePT-iOS-package-lock-web
           path: package-lock.json
+
+      - name: Publish reviewed staging-only assets to dedicated GitHub preview branch
+        if: github.ref == 'refs/heads/feature/freept-ios-user-20261123'
+        run: |
+          set -euo pipefail
+          cp -R dist "$RUNNER_TEMP/freept-ios-dist"
+          target="$RUNNER_TEMP/freept-ios-preview-worktree"
+          if git ls-remote --exit-code origin refs/heads/ios-preview-assets > /dev/null; then
+            git fetch origin refs/heads/ios-preview-assets
+            git worktree add -B ios-preview-assets "$target" FETCH_HEAD
+          else
+            git worktree add --detach "$target"
+            git -C "$target" checkout --orphan ios-preview-assets
+            git -C "$target" rm -rf . > /dev/null
+          fi
+          mkdir -p "$target"
+          cp -R "$RUNNER_TEMP/freept-ios-dist/." "$target/"
+          git -C "$target" config user.name 'FreePT iPhone CI'
+          git -C "$target" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$target" add -A
+          if ! git -C "$target" diff --cached --quiet; then
+            git -C "$target" commit -m 'build(ios): update staged Safari preview assets [skip ci]'
+          fi
+          git -C "$target" push origin HEAD:refs/heads/ios-preview-assets
