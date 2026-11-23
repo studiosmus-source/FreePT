@@ -20,7 +20,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Test client, server contracts and Bridge regressions
         run: |
-          node --test src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
+          node --test src/iosBridgeTxClient.test.mjs src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
           node --check src/main.js
           npm run test:bridge
           python3 -m unittest ios-support/test_patch_appdelegate.py
