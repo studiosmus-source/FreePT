@@ -687,7 +687,8 @@ async function showOwnerBridgeFolder(){
   panel.className='bridge-admin-shade bridge-family-shade';
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
     '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
-    '<button type="button" id="bridgeFamilyStart" aria-label="Avvia collegamento">Avvia</button>'+
+    (isIOS?'<p>Collega il tuo iPhone per poter utilizzare FreePT.</p><p>FreePT ha bisogno di accedere ai tuoi file per attivare le funzionalità dell\'app.</p>':'')+
+    '<button type="button" id="bridgeFamilyStart" aria-label="Avvia configurazione">'+(isIOS?'Avvia configurazione':'Avvia')+'</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
     '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
     '</section>';
