@@ -103,7 +103,7 @@ Deno.serve(async req=>{
           token:device.token,
           notification:{title:cleanTitle||'FreePT',body:cleanBody},
           data:{kind:'freept_important_alert',alert_id:alert.id},
-          android:{priority:'HIGH',notification:{channel_id:'default'}}
+          android:{priority:'HIGH',notification:{channel_id:'freept-important'}}
         }})
       });
       if(response.ok){accepted++;continue}
