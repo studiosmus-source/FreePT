@@ -1099,6 +1099,9 @@ function bindAdminPeopleActions(p){
       document.getElementById('chatRemoteFilesPanel')?.remove();
       document.getElementById('feed').hidden=false;
       document.getElementById('send').hidden=false;
+      const nav=document.getElementById('freeptConversationNav');
+      nav?.querySelector('#chatMessagesView')?.setAttribute('aria-current','page');
+      nav?.querySelector('#chatRemoteFilesView')?.removeAttribute('aria-current');
       document.getElementById('chat').classList.remove('off');
       p.classList.add('off');
       document.getElementById('chatTitle').textContent=user.full_name||'Chat';
