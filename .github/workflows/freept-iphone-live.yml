@@ -1,0 +1,74 @@
+name: FreePT iPhone PWA - shared Android chat
+on:
+  push:
+    branches: [feature/freept-iphone-live-20261123]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  iphone-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Check browser app and existing message contracts
+        run: |
+          node --check src/main.js
+          node --test src/iphonePwa.test.mjs src/iosUser.test.mjs src/chatAttachments.test.mjs
+          npm run test:bridge
+      - name: Build user-only PWA on existing FreePT production chat
+        env:
+          VITE_IOS_USER_APP: 'true'
+          VITE_IOS_WEB_APP: 'true'
+          VITE_BRIDGE_ISOLATED_BUILD: 'false'
+          VITE_BRIDGE_PRODUCTION_BUILD: 'false'
+        run: |
+          set -eu
+          # No server key: only the repository's existing public FreePT URL/key.
+          unset VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY VITE_BRIDGE_API_URL VITE_BRIDGE_TEST_API_URL
+          npm run build
+          test -s dist/index.html
+          test -s dist/manifest.webmanifest
+          test -s dist/freept-icon.svg
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          js = ''.join(p.read_text() for p in Path('dist/assets').glob('*.js'))
+          assert 'cpopqsvzzxfjgnlawlvc.supabase.co' in js, 'wrong FreePT backend'
+          assert 'aqjuixbuxftnjfzxmzuj.supabase.co' not in js, 'staging backend leaked'
+          assert 'sb_secret_' not in js and 'service_role' not in js
+          assert 'BridgeFiles' in js, 'unexpected removal of existing code'
+          assert re.search(r'freept_ios_setup_intro_v1', js), 'unexpected change to app'
+          print('Production publishable client only; native Bridge disabled by build flags')
+          PY
+      - name: Upload reviewed live app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-iPhone-LIVE-web
+          path: dist/
+      - name: Publish live assets to separate branch
+        run: |
+          set -euo pipefail
+          cp -R dist "$RUNNER_TEMP/freept-iphone-live-dist"
+          target="$RUNNER_TEMP/freept-iphone-live-assets"
+          if git ls-remote --exit-code origin refs/heads/iphone-pwa-live-assets > /dev/null; then
+            git fetch origin refs/heads/iphone-pwa-live-assets
+            git worktree add -B iphone-pwa-live-assets "$target" FETCH_HEAD
+          else
+            git worktree add --detach "$target"
+            git -C "$target" checkout --orphan iphone-pwa-live-assets
+            git -C "$target" rm -rf . > /dev/null
+          fi
+          cp -R "$RUNNER_TEMP/freept-iphone-live-dist/." "$target/"
+          git -C "$target" config user.name 'FreePT iPhone CI'
+          git -C "$target" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$target" add -A
+          if ! git -C "$target" diff --cached --quiet; then
+            git -C "$target" commit -m 'build(iphone): publish user PWA for Android-shared chat [skip ci]'
+          fi
+          git -C "$target" push origin HEAD:refs/heads/iphone-pwa-live-assets
