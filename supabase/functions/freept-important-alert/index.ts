@@ -2,6 +2,7 @@
 // This function is separate from chat pushes and never stores Firebase credentials in the APK.
 import {createClient} from 'npm:@supabase/supabase-js@2';
 import {importPKCS8,SignJWT} from 'npm:jose@5';
+import {sendApns} from '../_shared/apns.ts';
 const cors={
   'Access-Control-Allow-Origin':'*',
   'Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type',
@@ -84,35 +85,55 @@ Deno.serve(async req=>{
       .select('id').single();
     if(insertError)throw insertError;
     stage='lookup_devices';
-    const {data:devices,error:deviceError}=await db.from('push_devices').select('token')
+    const {data:devices,error:deviceError}=await db.from('push_devices').select('token,platform')
       .eq('user_id',recipientId).limit(10);
     if(deviceError)throw deviceError;
     if(!devices?.length)return json({saved:true,accepted:0,rejected:0});
-    stage='firebase';
-    const credentials=JSON.parse(Deno.env.get('FCM_SERVICE_ACCOUNT_JSON')||'null');
-    if(!credentials?.client_email||!credentials?.private_key||!credentials?.project_id)
-      throw Error('Missing Firebase configuration');
-    const access=await googleAccessToken(credentials);
-    const endpoint='https://fcm.googleapis.com/v1/projects/'+encodeURIComponent(credentials.project_id)+'/messages:send';
+    const androidDevices=devices.filter(d=>d.platform==='android');
+    const iosDevices=devices.filter(d=>d.platform==='ios');
     let accepted=0,rejected=0;
-    for(const device of devices){
-      const response=await fetch(endpoint,{
-        method:'POST',
-        headers:{Authorization:'Bearer '+access,'Content-Type':'application/json'},
-        body:JSON.stringify({message:{
-          token:device.token,
-          notification:{title:cleanTitle||'FreePT',body:cleanBody},
-          data:{kind:'freept_important_alert',alert_id:alert.id},
-          android:{priority:'HIGH',notification:{channel_id:'freept-important'}}
-        }})
-      });
-      if(response.ok){accepted++;continue}
-      rejected++;
-      const providerText=await response.text();
-      if(/UNREGISTERED|registration-token-not-registered/i.test(providerText)){
-        await db.from('push_devices').delete().eq('token',device.token).eq('user_id',recipientId);
+    if(androidDevices.length){
+      stage='firebase';
+      const credentials=JSON.parse(Deno.env.get('FCM_SERVICE_ACCOUNT_JSON')||'null');
+      if(!credentials?.client_email||!credentials?.private_key||!credentials?.project_id)
+        throw Error('Missing Firebase configuration');
+      const access=await googleAccessToken(credentials);
+      const endpoint='https://fcm.googleapis.com/v1/projects/'+encodeURIComponent(credentials.project_id)+'/messages:send';
+      for(const device of androidDevices){
+        const response=await fetch(endpoint,{
+          method:'POST',
+          headers:{Authorization:'Bearer '+access,'Content-Type':'application/json'},
+          body:JSON.stringify({message:{
+            token:device.token,
+            notification:{title:cleanTitle||'FreePT',body:cleanBody},
+            data:{kind:'freept_important_alert',alert_id:alert.id},
+            android:{priority:'HIGH',notification:{channel_id:'freept-important'}}
+          }})
+        });
+        if(response.ok){accepted++;continue}
+        rejected++;
+        const providerText=await response.text();
+        if(/UNREGISTERED|registration-token-not-registered/i.test(providerText)){
+          await db.from('push_devices').delete().eq('token',device.token).eq('user_id',recipientId);
+        }
+        console.error('freept-important-alert: fcm_rejected',{status:response.status});
       }
-      console.error('freept-important-alert: fcm_rejected',{status:response.status});
+    }
+    stage='apns_delivery';
+    for(const device of iosDevices){
+      try{
+        const result=await sendApns({
+          deviceToken:device.token,title:cleanTitle||'FreePT',body:cleanBody,
+          data:{kind:'freept_important_alert',alert_id:alert.id}
+        });
+        if(result.accepted)accepted++;else rejected++;
+        if(result.expired)
+          await db.from('push_devices').delete().eq('token',device.token).eq('user_id',recipientId);
+        if(!result.accepted)console.error('freept-important-alert: apns_rejected',{status:result.status});
+      }catch{
+        rejected++;
+        console.error('freept-important-alert: apns_rejected',{category:'transport'});
+      }
     }
     console.info('freept-important-alert: delivery_summary',{accepted,rejected});
     return json({saved:true,accepted,rejected});
