@@ -10,6 +10,7 @@ public class FreePTIOSDevice: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "BridgeIOSDevice"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "ownerRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "provision", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "connect", returnType: CAPPluginReturnPromise),
@@ -93,8 +94,8 @@ public class FreePTIOSDevice: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["cleared": true])
     }
 
-    private func post(_ path: String, _ json: [String: Any]) async throws -> [String: Any] {
-        guard path.hasPrefix("/bridge/tx/"),
+    private func post(_ path: String, _ json: [String: Any], bearer: String? = nil) async throws -> [String: Any] {
+        guard (path.hasPrefix("/bridge/tx/") || path.hasPrefix("/bridge/owner/")),
               let url = URL(string: path, relativeTo: endpoint)?.absoluteURL,
               url.scheme == "https", url.host == endpoint.host else {
             throw NSError(domain: "FreePTIOS", code: 30)
@@ -108,6 +109,7 @@ public class FreePTIOSDevice: CAPPlugin, CAPBridgedPlugin {
         request.httpBody = data
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let bearer { request.setValue("Bearer " + bearer, forHTTPHeaderField: "Authorization") }
         request.timeoutInterval = 32
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 32
@@ -122,6 +124,25 @@ public class FreePTIOSDevice: CAPPlugin, CAPBridgedPlugin {
         }
         return body
     }
+    @objc func ownerRequest(_ call: CAPPluginCall) {
+        guard let action = call.getString("action"),
+              ["enroll", "delete"].contains(action),
+              let payload = call.getObject("payload"),
+              let accessToken = call.getString("accessToken"),
+              accessToken.count >= 20 else {
+            call.reject("bridge_owner_native_invalid_request")
+            return
+        }
+        Task {
+            do {
+                let result = try await post("/bridge/owner/" + action, payload, bearer: accessToken)
+                call.resolve(result)
+            } catch {
+                call.reject("bridge_owner_native_network")
+            }
+        }
+    }
+
     private func authenticated() throws -> (String, String) {
         guard let device = activeDeviceId, let token = sessionToken else {
             throw NSError(domain: "FreePTIOS", code: 33)
