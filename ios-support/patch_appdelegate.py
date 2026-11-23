@@ -42,7 +42,7 @@ if __name__ == "__main__":
         supplement = native.read_text()
         if current.count("class FreePTIOSViewController:") != 0:
             raise SystemExit("Native folder Bridge was already installed")
-        APP_DELEGATE.write_text(current + "\\n" + supplement)
+        APP_DELEGATE.write_text(current + "\n" + supplement)
         storyboard = Path("ios/App/App/Base.lproj/Main.storyboard")
         if not storyboard.is_file():
             raise SystemExit("Missing generated Main.storyboard")
