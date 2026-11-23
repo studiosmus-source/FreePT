@@ -1,14 +1,12 @@
 /**
- * Minimal, non-intrusive update banner shown to every FreePT user (admin and
- * normal) once a newer APK is offered by the locked updater endpoint.
- *
- * It is deliberately quiet: one line, one «Avvia» button. The actual install
- * is driven by the native plugin and Android's own mandatory confirmations.
- * This module touches only its own DOM node and never blocks the chat UI.
+ * Single-pass, automatic, verified APK update check and download.
+ * No extra app-level "Avvia" confirmation: Android's mandatory package
+ * installer and its system permissions remain in control.
+ * No retries or background loops after errors/denials.
  */
 export function mountUpdaterBanner({host,updater,escape=(s=>String(s))}={}){
   if(!host||!updater||typeof updater.check!=='function')return ()=>{};
-  let node=null,busy=false,disposed=false;
+  let node=null,disposed=false;
   const remove=()=>{if(node){node.remove();node=null;}};
   const dispose=()=>{disposed=true;remove();};
   (async()=>{
@@ -20,33 +18,29 @@ export function mountUpdaterBanner({host,updater,escape=(s=>String(s))}={}){
     node.id='updateBanner';
     node.className='update-banner';
     node.setAttribute('role','status');
-    node.innerHTML='<span class="update-text">Aggiornamento disponibile ('+
-      escape(update.versionName)+')</span>'+
-      '<button type="button" id="updateStart">Avvia</button>'+
-      '<span class="update-progress" id="updateProgress"></span>';
+    const label=document.createElement('span');
+    label.className='update-text';
+    label.textContent='Aggiornamento disponibile ('+update.versionName+')';
+    const progress=document.createElement('span');
+    progress.className='update-progress';
+    progress.id='updateProgress';
+    progress.textContent='Scaricamento automatico… 0%';
+    node.append(label,progress);
     host.prepend(node);
-    const button=node.querySelector('#updateStart');
-    const progress=node.querySelector('#updateProgress');
-    button.onclick=async()=>{
-      if(busy)return;busy=true;button.disabled=true;
-      progress.textContent='Scaricamento… 0%';
-      try{
-        const outcome=await updater.downloadAndInstall(update,{
-          onProgress:pct=>{if(!disposed)progress.textContent='Scaricamento… '+pct+'%';}
-        });
-        if(disposed)return;
-        if(outcome&&outcome.needsPermission){
-          progress.textContent='Consenti l’installazione a FreePT, poi premi di nuovo Avvia.';
-          button.disabled=false;busy=false;return;
-        }
-        // Android's installer has taken over; keep a simple, calm instruction.
-        progress.textContent='Conferma l’installazione nella finestra di Android.';
-      }catch{
-        if(disposed)return;
-        progress.textContent='Aggiornamento non riuscito. Riprova più tardi.';
-        button.disabled=false;busy=false;
+    try{
+      const outcome=await updater.downloadAndInstall(update,{
+        onProgress:pct=>{if(!disposed)progress.textContent='Scaricamento automatico… '+pct+'%';}
+      });
+      if(disposed)return;
+      if(outcome?.needsPermission){
+        progress.textContent='Android richiede l’autorizzazione per installare gli aggiornamenti. Riapri FreePT dopo averla concessa.';
+        return;
       }
-    };
+      // Installation still requires the OS confirmation on standard Android devices.
+      progress.textContent='Completa l’installazione nella schermata di Android.';
+    }catch{
+      if(!disposed)progress.textContent='Aggiornamento non riuscito. Riprovare all’apertura successiva.';
+    }
   })();
   return dispose;
 }
