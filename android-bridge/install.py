@@ -119,8 +119,8 @@ if gradle_source.count("dependencies {") != 1 or "firebase-messaging" in gradle_
     raise SystemExit("Unexpected Firebase Gradle configuration; refuse stacked patch")
 main.write_text(source)
 gradle_path.write_text(gradle_source.replace(
-    "dependencies {", "dependencies {\\n    " + firebase_dependency, 1
-).replace("{\\n", "{\n"))
+    "dependencies {", "dependencies {" + chr(10) + "    " + firebase_dependency, 1
+))
 # Bootstrap is compile-time isolated; never enable it in a production build.
 for helper_name in ("BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"):
     main.with_name(helper_name + ".java").write_text(
