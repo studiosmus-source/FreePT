@@ -16,9 +16,9 @@ test('iPhone uses native user-only registration and rejects Android Bridge plugi
   assert.match(main,/if\(isIOSUserApp&&profile.role==='admin'\)/);
   assert.match(main,/if\(isAndroid\)\{\s*\/\/ Android notification channels/);
 });
-test('iPhone shares only a user-selected document via existing chat attachment',()=>{
-  assert.match(main,/id="iosShareFile"/);
-  assert.match(main,/iosShare.onclick=\(\)=>document.getElementById\('file'\)\?\.click\(\)/);
+test('iPhone retains chat attachments but removes the obsolete per-file share shortcut',()=>{
+  assert.doesNotMatch(main,/id="iosShareFile"/);
+  assert.match(main,/bridgeOwnerClient&&!isIOSUserApp/);
   assert.match(main,/file=form.elements.file.files\[0\]/);
   assert.match(main,/await uploadAttachment\(path,file/);
   assert.match(main,/db.from\('messages'\).insert\(payload\)/);
