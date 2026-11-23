@@ -27,7 +27,7 @@ jobs:
         run: |
           node --test src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
           npm run test:bridge
-          python3 -m unittest ios/test_patch_appdelegate.py
+          python3 -m unittest ios-support/test_patch_appdelegate.py
           node --check src/main.js
       - name: Verify staging-only environment
         env:
@@ -55,7 +55,7 @@ jobs:
           cp capacitor.ios.config.json capacitor.config.json
           npx cap add ios
           npx cap sync ios
-          python3 ios/patch_appdelegate.py
+          python3 ios-support/patch_appdelegate.py
           test -f ios/App/App/AppDelegate.swift
           grep -q capacitorDidRegisterForRemoteNotifications ios/App/App/AppDelegate.swift
           xcodebuild -version
