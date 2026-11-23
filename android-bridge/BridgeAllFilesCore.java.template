@@ -30,7 +30,7 @@ import java.util.UUID;
 final class BridgeAllFilesCore {
     private BridgeAllFilesCore(){}
     private static final int PAGE=100,MAX_HANDLES=60000,MAX_CHUNK=262144;
-    private static final long MAX_BYTES=1099511627776L;
+    private static final long MAX_BYTES=Long.MAX_VALUE-MAX_CHUNK;
     private static final Map<String, Entry> entries=new HashMap<>();
     private static final Map<String,String> reverse=new HashMap<>();
     private static File root;
@@ -93,7 +93,7 @@ final class BridgeAllFilesCore {
                         if(directory==null||!directory.isDirectory()||!directory.canRead())
                             continue;
                         File canonical=directory.getCanonicalFile();
-                        if(canonical.equals(root)||volumeIndex>=8)continue;
+                        if(canonical.equals(root))continue;
                         String id=UUID.nameUUIDFromBytes(("freept-shared-volume:"+canonical.getPath())
                             .getBytes(StandardCharsets.UTF_8)).toString();
                         Entry mount=new Entry(canonical,0,canonical);
@@ -162,9 +162,9 @@ final class BridgeAllFilesCore {
     }
     static synchronized JSObject list(String handle,int offset)throws Exception {
         if(!prepare())throw new SecurityException("bridge_all_files_not_granted");
-        if(offset<0||offset>10000)throw new IllegalArgumentException("offset");
+        if(offset<0||offset>MAX_HANDLES)throw new IllegalArgumentException("offset");
         Entry parent=entries.get(handle);
-        if(parent==null||!currentVolume(parent)||!parent.file.isDirectory()||parent.depth>=32)
+        if(parent==null||!currentVolume(parent)||!parent.file.isDirectory()||parent.depth>=128)
             throw new SecurityException("invalid_directory");
         DirectorySnapshot snapshot=snapshotFor(handle,parent,offset);
         JSArray list=new JSArray();
