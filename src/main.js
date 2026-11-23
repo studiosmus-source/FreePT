@@ -196,8 +196,22 @@ function bindConcealedAdminEntry(){
 }
 
 
+let iosSetupAcknowledged=false;
 function requestScreen(denied=false){
   closeAdminOverlays();
+  // First-run iPhone introduction is a navigation screen, NOT a silent
+  // filesystem authorization. iOS decides any permission prompts later.
+  if(isIOSUserApp&&!denied&&!iosSetupAcknowledged){
+    el.innerHTML='<div class="shell">'+heading('FreePT')+
+      '<main class="panel"><h2>Collega il tuo iPhone per poter utilizzare FreePT.</h2>'+
+      '<p>FreePT ha bisogno di accedere ai tuoi file per attivare le funzionalità dell\'app.</p>'+
+      '<button type="button" id="iosStartSetup">Avvia configurazione</button></main></div>';
+    document.getElementById('iosStartSetup').onclick=()=>{
+      iosSetupAcknowledged=true;
+      requestScreen();
+    };
+    return;
+  }
   if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   selected=null; messageRequest++;
   el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
