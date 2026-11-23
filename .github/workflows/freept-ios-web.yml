@@ -1,0 +1,60 @@
+name: FreePT iPhone Safari Web TEST
+on:
+  push:
+    branches: [feature/freept-ios-user-20261123]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Update package lock for iOS target
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install reproducible dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Test client, server contracts and Bridge regressions
+        run: |
+          node --test src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
+          node --check src/main.js
+          npm run test:bridge
+          python3 -m unittest ios/test_patch_appdelegate.py
+      - name: Enforce staging Supabase, never production
+        env:
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          u=urlparse(os.environ.get('VITE_SUPABASE_URL',''))
+          assert u.scheme=='https' and u.hostname and u.hostname.endswith('.supabase.co')
+          assert u.hostname!='cpopqsvzzxfjgnlawlvc.supabase.co'
+          assert os.environ.get('VITE_SUPABASE_PUBLISHABLE_KEY','').startswith('sb_publishable_')
+          print('Isolated iPhone TEST client enforced')
+          PY
+      - name: Compile iPhone Safari client
+        env:
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          npm run build
+          test -f dist/index.html
+          test -f dist/manifest.webmanifest
+      - name: Upload iOS web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-iPhone-Safari-WEB
+          path: dist/
+      - name: Upload resolved iOS dependency lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-iOS-package-lock-web
+          path: package-lock.json
