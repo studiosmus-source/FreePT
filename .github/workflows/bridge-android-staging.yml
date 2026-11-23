@@ -178,6 +178,7 @@ jobs:
           VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
           FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
           FREEPT_BRIDGE_INSTALL_TARGET: staging
+          FREEPT_CLASSIC_UI_FIX: ${{ github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' && '1' || '0' }}
         run: python3 android-bridge/install.py
       - name: Verify isolated bootstrap compile flags before native build
         shell: bash
