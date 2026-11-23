@@ -187,5 +187,6 @@ public class FreePTIOSBridgeViewController: CAPBridgeViewController {
     override public func capacitorDidLoad() {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(FreePTIOSFiles())
+        bridge?.registerPluginInstance(FreePTIOSDevice())
     }
 }
