@@ -58,8 +58,12 @@ test('active file transfer prevents navigation away and defers chat polling',()=
  assert.match(source,/setBridgeBusy\(false\)/);
  assert.match(main,/function bridgeTransferActive\(\)/);
  assert.match(main,/function guardBridgeNavigation\(\)/);
- assert.match(main,/chatMessagesView'\)\.onclick=\(\)=>\{\s*if\(guardBridgeNavigation\(\)\)return/);
- assert.match(main,/chatRemoteFilesView'\)\.onclick=async\(\)=>\{\s*if\(guardBridgeNavigation\(\)\)return/);
+ assert.match(main,/const showChatMessages=\(\)=>\{\s*if\(guardBridgeNavigation\(\)\)return/);
+ assert.match(main,/openChatRemoteFiles=async\(\)=>\{\s*if\(guardBridgeNavigation\(\)\)return/);
+ assert.match(main,/nav\.onclick=showChatMessages/);
+ assert.match(main,/id="openFilesAction"/);
+ assert.doesNotMatch(main,/id="chatRemoteFilesView"/);
+ assert.doesNotMatch(main,/id="chatMessagesView"/);
  assert.match(main,/id='back'|getElementById\('back'\)/);
  assert.match(main,/fetchingMessages \|\| bridgeTransferActive\(\)/);
 });
