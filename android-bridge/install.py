@@ -90,6 +90,7 @@ required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin", "BridgeDestinationNames",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
+    "BridgeWakeMessagingService",
     "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"
 ]
 for name in required_templates:
@@ -105,7 +106,28 @@ if (manifest_preflight.count("<application") != 1 or
         "android.permission.MANAGE_EXTERNAL_STORAGE" in manifest_preflight or
         "BridgeTxService" in manifest_preflight):
     raise SystemExit("Unexpected AndroidManifest.xml; refusing Bridge patch")
+# Firebase messaging's implementation dependency in the Capacitor plugin
+# is intentionally NOT exported to application Java compilation. Our native
+# FirebaseMessagingService subclass needs the app's own compile dependency.
+# Preflight prevents duplicate or unexpected Gradle modifications.
+gradle_path = Path("android/app/build.gradle")
+if not gradle_path.is_file():
+    raise SystemExit("Missing Android app Gradle file")
+gradle_source = gradle_path.read_text()
+firebase_dependency = "implementation 'com.google.firebase:firebase-messaging:24.1.2'"
+if gradle_source.count("dependencies {") != 1 or "firebase-messaging" in gradle_source:
+    raise SystemExit("Unexpected Firebase Gradle configuration; refuse stacked patch")
+if target == "staging":
+    # The installed test package is versionCode 1. A strictly newer version
+    # is required for native self-updater and in-place upgrade detection.
+    if gradle_source.count("versionCode 1") != 1 or gradle_source.count('versionName "1.0"') != 1:
+        raise SystemExit("Unexpected generated staging APK version; refusing upgrade")
+    gradle_source = gradle_source.replace("versionCode 1", "versionCode 2", 1)
+    gradle_source = gradle_source.replace('versionName "1.0"', 'versionName "1.1.0"', 1)
 main.write_text(source)
+gradle_path.write_text(gradle_source.replace(
+    "dependencies {", "dependencies {" + chr(10) + "    " + firebase_dependency, 1
+))
 # Bootstrap is compile-time isolated; never enable it in a production build.
 for helper_name in ("BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"):
     main.with_name(helper_name + ".java").write_text(
@@ -158,6 +180,7 @@ if xml.count("<application") != 1:
     raise SystemExit("Unexpected AndroidManifest.xml layout")
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
+             "BridgeWakeMessagingService",
              "BridgeTxControlPlugin", "BridgeTxBootReceiver", "FreePTUpdaterPlugin",
              "FreePTAdminSharePlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
@@ -186,10 +209,36 @@ boot_receiver = ('<receiver android:name=".BridgeTxBootReceiver" '
                  '</intent-filter></receiver>')
 if manifest_text.count("</application>") != 1:
     raise SystemExit("Unexpected AndroidManifest app closure")
-if "BridgeTxService" in manifest_text:
-    raise SystemExit("TX native service already registered")
-manifest.write_text(manifest_text.replace("</application>",
-    "    " + service + "\n    " + boot_receiver + "\n    </application>", 1))
+if "BridgeTxService" in manifest_text or "BridgeWakeMessagingService" in manifest_text:
+    raise SystemExit("Native service already registered")
+# Capacitor's push plugin registers MessagingService itself. Remove that
+# service through the manifest merger before registering our single subclass
+# so Firebase cannot nondeterministically select one of two receivers.
+if 'xmlns:tools=' not in manifest_text:
+    if '<manifest xmlns:android="http://schemas.android.com/apk/res/android"' not in manifest_text:
+        raise SystemExit("Unexpected AndroidManifest namespace; refuse FCM patch")
+    manifest_text = manifest_text.replace(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"',1
+    )
+remove_capacitor_receiver = ('<service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" '
+    'tools:node="remove" />')
+# Firebase SDK also contributes a generic messaging service through its own
+# manifest. It must not compete with our one authenticated Bridge + chat entry.
+remove_firebase_receiver = ('<service android:name="com.google.firebase.messaging.FirebaseMessagingService" '
+    'tools:node="remove" />')
+wake_receiver = ('<service android:name=".BridgeWakeMessagingService" '
+    'android:exported="false"><intent-filter>'
+    '<action android:name="com.google.firebase.MESSAGING_EVENT" />'
+    '</intent-filter></service>')
+candidate = manifest_text.replace("</application>",
+    "    " + service + "\n    " + boot_receiver + "\n    " +
+    remove_capacitor_receiver + "\n    " + remove_firebase_receiver + "\n    " + wake_receiver +
+    "\n    </application>", 1)
+# Validate generated XML before modifying the source file.
+import xml.etree.ElementTree as ET
+ET.fromstring(candidate)
+manifest.write_text(candidate)
 values = Path("android/app/src/main/res/values")
 values.mkdir(parents=True, exist_ok=True)
 (values / "freept_bridge.xml").write_text(

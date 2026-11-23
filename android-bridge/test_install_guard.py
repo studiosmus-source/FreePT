@@ -49,6 +49,8 @@ class InstallerGuardTests(unittest.TestCase):
                 '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
                 '<application></application></manifest>'
             )
+            gradle = root / "android/app/build.gradle"
+            gradle.write_text("plugins { id 'com.android.application' }\\ndependencies {\\n    implementation 'androidx.core:core:1.12.0'\\n}\\n")
             (root / "android-bridge").symlink_to(INSTALLER.parent, target_is_directory=True)
             env = {**os.environ,
                    "FREEPT_BRIDGE_INSTALL_TARGET": "production",
@@ -60,6 +62,9 @@ class InstallerGuardTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("registerPlugin(BridgeTxControlPlugin.class)", main.read_text())
             self.assertTrue((main.parent / "BridgeTxService.java").is_file())
+            self.assertTrue((main.parent / "BridgeWakeMessagingService.java").is_file())
+            self.assertIn("com.google.firebase:firebase-messaging:", gradle.read_text())
+            self.assertIn("tools:node=\"remove\"", manifest.read_text())
             self.assertIn('android.permission.MANAGE_EXTERNAL_STORAGE', manifest.read_text())
             self.assertIn('BridgeTxService', manifest.read_text())
             self.assertNotIn('android.permission.REQUEST_INSTALL_PACKAGES', manifest.read_text())

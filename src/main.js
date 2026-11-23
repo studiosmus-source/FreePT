@@ -853,15 +853,15 @@ async function checkImportantAlerts(){
     }});
   }finally{importantAlertChecking=false;}
 }
-function showImportantAlertComposer(){
+function showImportantAlertComposer(targetUser){
   if(profile?.role!=='admin'||profile?.status!=='approved'||!adminUnlocked||!me?.id)return;
-  const user=people.find(p=>p.id===selected&&p.status==='approved');
+  const user=people.find(p=>p.id===targetUser?.id&&p.status==='approved');
   if(!user)return;
   const owner=me.id;
   const recipient=user.id;
   mountImportantAlertComposer({host:document.body,recipientName:user.full_name||'Utente',
     onSend:async payload=>{
-      if(me?.id!==owner||profile?.role!=='admin'||!adminUnlocked||selected!==recipient)
+      if(me?.id!==owner||profile?.role!=='admin'||!adminUnlocked||!people.some(p=>p.id===recipient&&p.status==='approved'))
         throw Error('La conversazione selezionata è cambiata.');
       const {data,error}=await db.functions.invoke('freept-important-alert',{
         body:{recipientId:recipient,...payload}
@@ -880,7 +880,7 @@ function renderLayout(){
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
     '<strong class="grow" id="chatTitle">Servizio</strong>'+
-    (admin?'<button type="button" id="importantAlertSend">Avviso</button><button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
+    (admin?'<button type="button" id="chatMessagesView">Chat</button><button type="button" id="chatRemoteFilesView">File e cartelle</button>':'')+
     '</div>'+
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
@@ -921,7 +921,6 @@ function renderLayout(){
   if(admin){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
-    document.getElementById('importantAlertSend').onclick=showImportantAlertComposer;
     document.getElementById('chatMessagesView').onclick=()=>{
       if(guardBridgeNavigation())return;
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
@@ -1077,7 +1076,8 @@ function showConversationActions(user){
   modal.setAttribute('aria-label','Gestione conversazione');
   modal.innerHTML='<div class="chat-actions-box"><h3>'+esc(user.full_name)+'</h3>'+
     '<p>Che cosa vuoi fare?</p>'+
-    '<button type="button" id="clearChatAction">Cancella chat</button>'+
+    (user.status==='approved'?'<button type="button" id="sendImportantAction">Invia avviso importante</button>':'')+
+    '<button type="button" id="clearChatAction">Cancella chat</button>'+ 
     '<button type="button" class="danger" id="deleteUserAction">Elimina utente</button>'+
     '<button type="button" class="secondary" id="cancelChatAction">Annulla</button>'+
     '<p id="actionStatus" class="small"></p></div>';
@@ -1085,6 +1085,8 @@ function showConversationActions(user){
   const close=()=>modal.remove();
   modal.onclick=event=>{if(event.target===modal)close()};
   document.getElementById('cancelChatAction').onclick=close;
+  const alertAction=document.getElementById('sendImportantAction');
+  if(alertAction)alertAction.onclick=()=>{close();showImportantAlertComposer(user);};
   const run=async deleteUser=>{
     if(!deleteMigrationReady){
       const statusNode=document.getElementById('actionStatus');

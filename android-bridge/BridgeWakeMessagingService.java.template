@@ -1,0 +1,39 @@
+package __PACKAGE__;
+
+import android.content.Intent;
+import android.os.Build;
+import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
+import com.capacitorjs.plugins.pushnotifications.MessagingService;
+import com.google.firebase.messaging.RemoteMessage;
+
+/**
+ * The only FCM messaging entrypoint in the merged manifest.
+ * Chat notifications and registration still use Capacitor MessagingService.
+ * A bridge_wake contains no commands or credentials; TX reauthenticates.
+ */
+public final class BridgeWakeMessagingService extends MessagingService {
+    @Override public void onMessageReceived(@NonNull RemoteMessage message) {
+        if (!"bridge_wake".equals(message.getData().get("kind"))) {
+            super.onMessageReceived(message);
+            return;
+        }
+        // Do not start a service without previously stored, owner-granted access.
+        BridgeAllFilesCore.configure(this);
+        if (!BridgeAllFilesCore.granted() ||
+            !BridgeDeviceSecretStore.configured(this) ||
+            getSharedPreferences("freept_tx_control",0).getBoolean("paused",false)) {
+            Log.i("FreePTBridgeWake","wake_ignored_not_authorized");
+            return;
+        }
+        try {
+            ContextCompat.startForegroundService(this,new Intent(this,BridgeTxService.class));
+            Log.i("FreePTBridgeWake","foreground_start_requested");
+        } catch (RuntimeException limited) {
+            // Android 12+ may forbid a background start; never bypass system policy.
+            // The activity's existing resume path remains an independent recovery.
+            Log.w("FreePTBridgeWake","foreground_start_restricted="+limited.getClass().getSimpleName());
+        }
+    }
+}
