@@ -1,0 +1,9 @@
+{
+  "appId": "it.freept.ios.user",
+  "appName": "FreePT",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "automatic",
+    "scrollEnabled": true
+  }
+}
