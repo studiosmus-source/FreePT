@@ -31,9 +31,15 @@ test('only backend-authorized receiver gets access, before service starts',()=>{
   assert.match(setup,/await bridgeTxControl\.start\(\)/);
   assert.ok(setup.indexOf('await bridgeOwnerControls.activateFamily')<setup.indexOf('await bridgeTxControl.start()'));
 });
-test('initial prompt only for incomplete setup',()=>{
-  assert.match(source,/ownerSetupPromptedForAccount!==me\.id/);
-  assert.match(source,/!permission\?\.granted\|\|!device\?\.provisioned/);
+test('updating or opening FreePT cannot reopen permission on its own',()=>{
+  const begin=source.indexOf('function renderLayout(){');
+  const end=source.indexOf('function renderPeople(){',begin);
+  assert.ok(begin>=0&&end>begin);
+  const layout=source.slice(begin,end);
+  assert.doesNotMatch(layout,/ownerSetupPromptedForAccount/);
+  assert.doesNotMatch(layout,/await showOwnerBridgeFolder\(\)/);
+  assert.match(layout,/ownerOpen\.onclick=\(\)=>void showOwnerBridgeFolder\(\)/);
+  assert.doesNotMatch(layout,/bridgeAllFiles\.requestPermission\(\)/);
 });
 test('raw exception never appears on family screen',()=>{
   assert.match(setup,/catch\(error\)/);
