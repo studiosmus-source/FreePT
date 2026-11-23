@@ -39,15 +39,15 @@ const bridgeRuntime=resolveBridgeRuntimeConfig({
 const isAndroid=Capacitor.getPlatform()==='android';
 const isIOS=Capacitor.getPlatform()==='ios';
 const isIOSUserApp=isIOS||import.meta.env.VITE_IOS_USER_APP==='true';
-const bridgeFiles = isAndroid && bridgeRuntime.enabled
+const bridgeFiles = (isAndroid||isIOS) && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
 const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
 const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
-const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
-const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
+const bridgeDestination = isAndroid && bridgeFiles ? registerPlugin('BridgeDestination') : null;
+const bridgeRxKeys = isAndroid && bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
 const bootstrapEnabled=import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'&&import.meta.env.VITE_BRIDGE_BOOTSTRAP_ENABLED==='true';
-const bridgeBootstrap=bootstrapEnabled&&bridgeFiles?registerPlugin('BridgeBootstrap'):null;
+const bridgeBootstrap=bootstrapEnabled&&isAndroid&&bridgeFiles?registerPlugin('BridgeBootstrap'):null;
 let diagnosticCleanup=null;
 let diagnosticPassed=false;
 function diagnosticScreen(complete=()=>requestScreen()){
@@ -903,7 +903,7 @@ function renderLayout(){
       '<button type="button" id="chatRemoteFilesView">📁 File remoti</button>'+
       '<button type="button" id="importantAlertSend">🔔 Avviso</button></nav>':
       (bridgeOwnerClient?'<nav class="freept-owner-nav" aria-label="Condivisione file">'+
-        '<button type="button" id="ownerBridgeOpen">📁 Accesso ai file</button></nav>':
+        '<button type="button" id="ownerBridgeOpen">'+(isIOS?'📁 Condividi cartella':'📁 Accesso ai file')+'</button></nav>':
         (isIOSUserApp?'<nav class="freept-owner-nav" aria-label="File selezionati">'+
           '<button type="button" id="iosShareFile">📁 Scegli documento</button></nav>':''))) +
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
