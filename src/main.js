@@ -39,6 +39,7 @@ const bridgeRuntime=resolveBridgeRuntimeConfig({
 const isAndroid=Capacitor.getPlatform()==='android';
 const isIOS=Capacitor.getPlatform()==='ios';
 const isIOSUserApp=isIOS||import.meta.env.VITE_IOS_USER_APP==='true';
+const iosFiles = isIOS ? registerPlugin('BridgeIOSFiles') : null;
 const bridgeFiles = isAndroid && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
@@ -205,10 +206,26 @@ function requestScreen(denied=false){
     el.innerHTML='<div class="shell">'+heading('FreePT')+
       '<main class="panel"><h2>Collega il tuo iPhone per poter utilizzare FreePT.</h2>'+
       '<p>FreePT ha bisogno di accedere ai tuoi file per attivare le funzionalità dell\'app.</p>'+
-      '<button type="button" id="iosStartSetup">Avvia configurazione</button></main></div>';
-    document.getElementById('iosStartSetup').onclick=()=>{
-      iosSetupAcknowledged=true;
-      requestScreen();
+      '<button type="button" id="iosStartSetup">Avvia configurazione</button>'+
+      '<p id="iosSetupStatus" role="status" class="small"></p></main></div>';
+    document.getElementById('iosStartSetup').onclick=async()=>{
+      const button=document.getElementById('iosStartSetup');
+      if(button.disabled)return;
+      button.disabled=true;
+      try{
+        if(iosFiles){
+          const existing=await iosFiles.status();
+          const permission=existing?.granted?existing:await iosFiles.requestPermission();
+          if(permission?.granted!==true)return;
+        }
+        iosSetupAcknowledged=true;
+        requestScreen();
+      }catch{
+        const status=document.getElementById('iosSetupStatus');
+        if(status)status.textContent='Configurazione non completata.';
+      }finally{
+        if(button.isConnected)button.disabled=false;
+      }
     };
     return;
   }
