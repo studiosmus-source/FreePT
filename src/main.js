@@ -3,6 +3,7 @@ import {createBridgeAutoSetup} from './bridgeAutoSetup.js';
 import {mountBootstrapAdmin} from './bootstrapAdminUi.js';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
+import './designSystem.css';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import {createPushRegistration} from './pushRegistration.js';

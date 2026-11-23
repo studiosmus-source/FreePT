@@ -1,0 +1,119 @@
+/* FreePT design system v2 — one visual layer, isolated from legacy functional CSS.
+ * All interactive IDs/DOM and native Bridge permissions remain unchanged.
+ * Applies consistently to onboarding, admin, owner, explorer, modals and alerts.
+ */
+:root{color-scheme:light;--fp-ink:#17253b;--fp-muted:#62718a;--fp-navy:#12233e;--fp-blue:#1e628b;--fp-blue-dark:#174a72;--fp-blue-soft:#e7f2f9;--fp-page:#eff3f8;--fp-card:#fff;--fp-border:#dde5ef;--fp-shadow:0 8px 24px rgba(26,45,74,.06);--fp-radius:18px}
+html,body,#app{background:var(--fp-page);color:var(--fp-ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,textarea,select{font:inherit}
+button{background:var(--fp-blue);color:white;border:1px solid transparent;border-radius:13px;font-weight:650;min-height:43px;padding:10px 15px;box-shadow:none;transition:background-color .12s ease}
+button:active{transform:scale(.99)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #89c9f4;outline-offset:2px}
+button:disabled{opacity:.55}
+input,textarea,select{min-height:44px;border-radius:12px;border:1px solid #cbd6e4;background:white;color:var(--fp-ink);padding:11px 13px}
+input:focus,textarea:focus,select:focus{border-color:var(--fp-blue);outline-color:#89c9f4}
+.shell{background:var(--fp-card);width:100%;max-width:1050px;box-shadow:0 8px 32px #1e293b0a;margin-inline:auto;height:100dvh;min-height:0;overflow:hidden}
+.top{min-height:72px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;background:linear-gradient(115deg,#14253d,#1e4165);color:#fff;gap:10px;box-shadow:0 3px 16px #152b481f;z-index:2}
+.top h1{font-size:21px;font-weight:780;letter-spacing:.2px;min-width:0}
+.top button{background:#ffffff20;color:#fff;border:1px solid #ffffff24;padding:9px 13px;min-height:42px;border-radius:12px;font-weight:600}
+.top button:hover{background:#ffffff32}
+.workspace{flex:1;min-height:0;background:var(--fp-page);overflow:hidden}
+.people{background:#f8fafc;min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+.admin-people-tools{background:#f8fafc;padding:16px;gap:10px;border-bottom:1px solid var(--fp-border);position:sticky;top:0;z-index:3}
+.admin-people-tools strong{font-size:18px;color:var(--fp-ink);font-weight:760}
+.admin-people-tools input,.admin-people-tools select{background:white;color:var(--fp-ink);font-size:15px;border-radius:12px;min-height:46px}
+#adminPeopleResults{padding:8px 9px 22px}
+.person{border:1px solid transparent;border-radius:15px;text-align:left;margin:5px 0;padding:14px 15px;background:#fff;color:var(--fp-ink);box-shadow:0 1px 4px #1d39500c;line-height:1.4;min-height:74px;touch-action:pan-y}
+.person:hover,.person:focus-visible{background:#f1f7fb;border-color:#c7dcea}
+.person strong{font-size:16px;font-weight:720}
+.person small{font-size:12px;color:var(--fp-muted)}
+.chat-preview{color:var(--fp-muted);margin-top:6px;font-size:13px}
+.chat{background:#fff;min-height:0;overflow:hidden}
+#chat>.toolbar{background:white;min-height:64px;border-bottom:1px solid var(--fp-border);padding:10px 15px;align-items:center;gap:12px}
+#chatTitle{font-size:18px;font-weight:760;color:var(--fp-ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mobileBack{width:42px;min-width:42px;min-height:42px;border-radius:14px;background:var(--fp-blue-soft);color:var(--fp-blue-dark);font-size:22px;padding:4px}
+.freept-conversation-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:9px 12px 11px;background:#fff;border-bottom:1px solid var(--fp-border)}
+.freept-conversation-nav button{background:#f3f6fa;border:1px solid #e9eef4;border-radius:13px;color:#50617b;font-size:clamp(11px,3vw,14px);font-weight:700;line-height:1.3;min-height:48px;padding:9px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.freept-conversation-nav button[aria-current="page"]{color:var(--fp-blue-dark);background:var(--fp-blue-soft);border:1px solid #b5d8ef;box-shadow:inset 0 -3px 0 #3181b2}
+.freept-owner-nav{background:#fff;padding:10px 13px;border-bottom:1px solid var(--fp-border)}
+.freept-owner-nav button{background:var(--fp-blue-soft);color:var(--fp-blue-dark);border:1px solid #c8e0f0;min-height:49px;font-size:14px}
+.feed{min-height:0;padding:18px 13px;gap:11px;background:#f4f7fb;overscroll-behavior-y:contain}
+.bubble{max-width:min(86%,530px);border-radius:18px 18px 18px 5px;padding:12px 14px;line-height:1.43;background:#fff;color:var(--fp-ink);box-shadow:0 1px 5px #1a334512;overflow-wrap:anywhere}
+.bubble.mine{background:#dcefe9;border-radius:18px 18px 5px 18px}
+.bubble small{color:#66768b}
+.compose{background:#fff;padding:10px 11px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--fp-border);align-items:center;gap:8px}
+.compose textarea{min-height:46px;max-height:150px;border-radius:15px;padding:12px 13px;background:#f8fafc;resize:none;min-width:0}
+.compose #sendBtn{min-height:46px;padding-inline:15px;border-radius:14px}
+.compose .attach{display:grid;place-items:center;min-height:46px;width:46px;flex:0 0 46px;margin:0;background:#f3f7fb;color:var(--fp-blue-dark);border:1px solid var(--fp-border);border-radius:13px;font-size:22px;padding:0}
+.compose .chosen-file{font-size:12px;color:var(--fp-muted)}
+#chat #status,#chat #queued{background:#fff;color:var(--fp-muted)}
+#chatRemoteFilesPanel{background:#f5f8fc;padding:13px 14px 24px;min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+.bridge-return-to-chat{background:#fff;color:var(--fp-blue-dark);border:1px solid var(--fp-border);font-size:14px;padding:9px 12px;border-radius:12px;margin:2px 0 11px}
+.bridge-files-content{background:#fff;border:1px solid var(--fp-border);border-radius:17px;padding:14px;box-shadow:var(--fp-shadow);min-height:140px}
+.bridge-files-content>p{color:var(--fp-muted);line-height:1.5;overflow-wrap:anywhere}
+.bridge-files-content>p[role=status]{font-weight:600;color:#335875}
+.bridge-files-content>div:has(>button){display:flex;flex-wrap:wrap;gap:9px;margin-block:11px}
+.bridge-files-content>div:has(>button)>button{flex:1 1 150px;white-space:normal;font-size:14px}
+.bridge-remote-entries>.bridge-remote-folders,.bridge-remote-entries>.bridge-remote-files{display:block;width:100%;background:transparent;border:0;border-radius:0;padding:0}
+.bridge-remote-folders>.bridge-entry,.bridge-remote-files>.bridge-entry{border-bottom:1px solid var(--fp-border);background:#fff;border-radius:0}
+.bridge-entry>.bridge-entry-primary{color:var(--fp-ink);font-size:14px;font-weight:550}
+.bridge-list-section-heading{font-size:12px;font-weight:750;color:var(--fp-blue-dark);letter-spacing:.06em;text-transform:uppercase}
+.bridge-folder-completeness{background:#eaf3fb;color:#315675;border-radius:10px}
+.panel{width:min(100% - 24px,500px);margin:22px auto;max-width:500px;background:white;border:1px solid var(--fp-border);border-radius:22px;padding:23px 21px calc(23px + env(safe-area-inset-bottom,0px));box-shadow:var(--fp-shadow)}
+.panel h2{font-size:24px;color:var(--fp-ink);letter-spacing:-.025em}
+.panel p{line-height:1.5}
+.form{gap:13px}
+.form label{font-weight:600;color:#34465d}
+.request-shell,.shell:has(#adminForm){overflow-y:auto;overscroll-behavior-y:contain}
+.request-shell .panel{width:min(100% - 20px,530px);margin:14px auto}
+.disclaimer{background:#f5f8fc;border-color:var(--fp-border);border-radius:16px}
+.disclaimer-promise{color:var(--fp-blue-dark)}
+.notice{background:#fff3dc;color:#80561a;border:1px solid #f1d5a0;border-radius:14px}
+.waiting-copy{background:#f5f8fc;border-radius:15px}
+.admin-entry{background:#f1f7fb;color:var(--fp-blue-dark);border-color:var(--fp-border)}
+.bridge-admin-shade,.important-alert-composer-shade,.chat-actions-shade{background:#0a1832b5;backdrop-filter:blur(5px);padding:14px}
+.bridge-admin-panel,.important-alert-composer,.chat-actions-box{background:#fff;border-radius:22px;border:1px solid #edf1f7;box-shadow:0 24px 65px #060f2255;padding:21px;color:var(--fp-ink)}
+.bridge-admin-panel{width:min(100%,540px);max-height:calc(100dvh - 30px);overflow-y:auto}
+.bridge-admin-panel header{border-bottom:1px solid var(--fp-border);padding-bottom:13px}
+.bridge-admin-panel h2,.important-alert-composer h2{font-size:21px;font-weight:770;color:var(--fp-ink)}
+.bridge-admin-panel header button{background:#eef4fa;color:#284b6f;min-height:40px}
+.bridge-admin-panel nav{display:flex;gap:8px}
+.bridge-admin-panel nav button{min-width:0;flex:1 1 0;background:#eff4fa;color:#31536f}
+.bridge-admin-panel nav button[aria-pressed=true]{background:var(--fp-blue);color:white}
+.bridge-family-panel{width:min(100%,480px);max-height:calc(100dvh - 28px);padding:22px}
+.bridge-family-panel #bridgeFamilyStart{min-height:54px;background:var(--fp-blue);border-radius:14px}
+.bridge-family-panel #bridgeFamilyStatus{font-size:15px;color:var(--fp-blue-dark);line-height:1.55}
+.chat-actions-box{max-height:calc(100dvh - 28px);overflow-y:auto}
+.chat-actions-box .secondary,.important-alert-buttons .secondary{background:#e9eef5;color:var(--fp-ink)}
+.important-alert-composer{max-height:calc(100dvh - 28px);overflow-y:auto}
+.important-alert-composer textarea{min-height:150px;resize:vertical}
+.important-alert-help{background:#edf5fb;border-radius:12px;padding:10px 12px;color:#43607c}
+.important-alert-buttons{gap:10px}
+.important-alert-fullscreen{background:linear-gradient(155deg,#0f213e,#1d4564);color:#fff}
+.important-alert-fullscreen-content{gap:20px}
+.important-alert-brand{color:#f4cd82}
+.important-alert-close{border:1px solid #ffffff55}
+.attach-viewer-shade,.bridge-file-preview-overlay{z-index:1500}
+.attach-viewer-bar{background:#111e31}
+.update-banner{background:#eaf3fc;color:#1e4c72;border-bottom:1px solid #c6e0f2}
+@media(min-width:700px){
+ .people{width:310px;flex:0 0 310px;border-right:1px solid var(--fp-border)}
+ .chat{flex:1;min-width:0}
+ .workspace{display:flex}
+ .mobileBack{display:none}
+}
+@media(max-width:699px){
+ .workspace{display:flex;min-height:0;flex:1}
+ .people,.chat{width:100%}
+ .chat.off,.people.off{display:none}
+ .top{min-height:67px}
+}
+@media(max-width:360px){
+ .top{padding-inline:12px}
+ .top h1{font-size:19px}
+ .top button{padding:7px 9px;font-size:13px}
+ .freept-conversation-nav{gap:5px;padding:8px 7px}
+ .freept-conversation-nav button{font-size:11px}
+ .bridge-files-content{padding:10px}
+ .compose #sendBtn{padding-inline:10px}
+}
+@media(prefers-reduced-motion:reduce){button{transition:none}button:active{transform:none}}
