@@ -10,7 +10,9 @@ const notice=readFileSync(new URL('../supabase/functions/freept-important-alert/
 const chat=readFileSync(new URL('../supabase/functions/freept-push/index.ts',import.meta.url),'utf8');
 test('iPhone uses native user-only registration and rejects Android Bridge plugins',()=>{
   assert.match(main,/const isIOS=Capacitor.getPlatform\(\)==='ios'/);
-  assert.match(main,/const bridgeFiles = isAndroid && bridgeRuntime.enabled/);
+  assert.match(main,/const bridgeFiles = \(isAndroid\|\|isIOS\) && bridgeRuntime.enabled/);
+  assert.match(main,/const bridgeDestination = isAndroid && bridgeFiles/);
+  assert.match(main,/const bridgeBootstrap=bootstrapEnabled&&isAndroid&&bridgeFiles/);
   assert.match(main,/const freeptUpdater = isAndroid \?/);
   assert.match(main,/if\(!isIOSUserApp\)bindConcealedAdminEntry\(\)/);
   assert.match(main,/if\(isIOSUserApp&&profile.role==='admin'\)/);
