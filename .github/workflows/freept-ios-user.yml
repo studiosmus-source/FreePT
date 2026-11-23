@@ -71,6 +71,20 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee ios-xcodebuild.log
+      - name: Launch iOS Simulator binary (where runtime available)
+        run: |
+          set -euo pipefail
+          if ! xcrun simctl list devices available | grep -q 'iPhone'; then
+            echo 'No iPhone simulator runtime available on runner; native runtime test not executed'
+            exit 0
+          fi
+          SIM="$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin)["devices"]; print(next((x["udid"] for devices in d.values() for x in devices if "iPhone" in x.get("name","") and x.get("isAvailable",False)), ""))')"
+          test -n "$SIM"
+          xcrun simctl boot "$SIM"
+          xcrun simctl bootstatus "$SIM" -b
+          xcrun simctl install "$SIM" build/Build/Products/Debug-iphonesimulator/App.app
+          xcrun simctl launch "$SIM" it.freept.ios.user
+          xcrun simctl shutdown "$SIM"
       - name: Verify and archive simulator product
         run: |
           test -d build/Build/Products/Debug-iphonesimulator/App.app
