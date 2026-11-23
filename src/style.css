@@ -272,3 +272,13 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 #chat>.toolbar{align-items:center;min-height:52px}
 #chat>.toolbar #chatTitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chatRemoteFilesPanel>.bridge-return-to-chat{display:block;margin:8px 10px;padding:9px 12px;background:#e9eef3;color:#172338;text-align:left}
+
+
+/* FreePT unified conversation navigation: visible actions without toolbar crowding. */
+.freept-conversation-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:8px 10px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.freept-conversation-nav button{min-width:0;display:flex;justify-content:center;align-items:center;white-space:nowrap;font-size:clamp(12px,3.1vw,14px);font-weight:600;line-height:1.25;padding:12px 4px;border-radius:11px;background:transparent;color:#334155;border:1px solid transparent}
+.freept-conversation-nav button[aria-current="page"]{background:#e1effa;color:#164b70;border-color:#b6d6ec}
+.freept-conversation-nav button:focus-visible,.freept-owner-nav button:focus-visible{outline:3px solid #2563eb;outline-offset:2px}
+.freept-owner-nav{padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.freept-owner-nav button{width:100%;border-radius:12px;background:#e1effa;color:#164b70;font-size:14px;font-weight:650;padding:11px 12px}
+@media(max-width:360px){.freept-conversation-nav{gap:3px;padding:6px}.freept-conversation-nav button{font-size:11px;padding:10px 2px}}
