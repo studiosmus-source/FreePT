@@ -12,8 +12,8 @@ test('iPhone uses native user-only registration and rejects Android Bridge plugi
   assert.match(main,/const isIOS=Capacitor.getPlatform\(\)==='ios'/);
   assert.match(main,/const bridgeFiles = isAndroid && bridgeRuntime.enabled/);
   assert.match(main,/const freeptUpdater = isAndroid \?/);
-  assert.match(main,/if\(!isIOS\)bindConcealedAdminEntry\(\)/);
-  assert.match(main,/if\(isIOS&&profile.role==='admin'\)/);
+  assert.match(main,/if\(!isIOSUserApp\)bindConcealedAdminEntry\(\)/);
+  assert.match(main,/if\(isIOSUserApp&&profile.role==='admin'\)/);
   assert.match(main,/if\(isAndroid\)\{\s*\/\/ Android notification channels/);
 });
 test('iPhone shares only a user-selected document via existing chat attachment',()=>{
