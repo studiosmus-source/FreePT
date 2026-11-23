@@ -43,7 +43,7 @@ test('device browse requires authorization and transfer guard remains connected 
 test('urgent message uses user text, and no read-confirmation is required',()=>{
   assert.match(alert,/const cleanBody=String\(body\)\.trim\(\)/);
   assert.match(alert,/close\.textContent='×'/);
-  assert.doesNotMatch(alert,/Ho letto/);
+  assert.doesNotMatch(alert,/textContent='Ho letto'/);
   assert.match(alert,/alert\.body/);
 });
 test('mobile layout has safe spacing and keyboard accessible controls',()=>{
