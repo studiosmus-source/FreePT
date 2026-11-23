@@ -49,5 +49,7 @@ test('iPhone setup displays requested exact text and a single configuration acti
   assert.match(intro,/FreePT ha bisogno di accedere ai tuoi file per attivare le funzionalità dell/);
   assert.match(intro,/>Avvia configurazione<\/button>/);
   assert.match(intro,/iosSetupAcknowledged=true/);
-  assert.doesNotMatch(intro,/requestPermission\(|getUserMedia\(|bridgeAllFiles\./);
+  assert.match(intro,/iosFiles\.requestPermission\(\)/);
+  assert.match(intro,/permission\?\.granted!==true/);
+  assert.doesNotMatch(intro,/getUserMedia\(|bridgeAllFiles\./);
 });
