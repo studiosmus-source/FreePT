@@ -23,7 +23,7 @@ jobs:
           node --test src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
           node --check src/main.js
           npm run test:bridge
-          python3 -m unittest ios/test_patch_appdelegate.py
+          python3 -m unittest ios-support/test_patch_appdelegate.py
       - name: Enforce staging Supabase, never production
         env:
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
