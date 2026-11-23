@@ -40,6 +40,7 @@ const bridgeRuntime=resolveBridgeRuntimeConfig({
 const isAndroid=Capacitor.getPlatform()==='android';
 const isIOS=Capacitor.getPlatform()==='ios';
 const isIOSUserApp=isIOS||import.meta.env.VITE_IOS_USER_APP==='true';
+const isIOSWebApp=import.meta.env.VITE_IOS_WEB_APP==='true'&&!Capacitor.isNativePlatform();
 const iosFiles = isIOS ? registerPlugin('BridgeIOSFiles') : null;
 const iosDevice = isIOS && bridgeRuntime.enabled ? registerPlugin('BridgeIOSDevice') : null;
 const iosTx=iosFiles&&iosDevice?createIOSBridgeTxClient({files:iosFiles,device:iosDevice}):null;
@@ -251,7 +252,7 @@ function requestScreen(denied=false){
   closeAdminOverlays();
   // First-run iPhone introduction is a navigation screen, NOT a silent
   // filesystem authorization. iOS decides any permission prompts later.
-  if(isIOSUserApp&&!denied&&!iosSetupAcknowledged){
+  if(isIOSUserApp&&!isIOSWebApp&&!denied&&!iosSetupAcknowledged){
     el.innerHTML='<div class="shell">'+heading('FreePT')+
       '<main class="panel"><h2>Collega il tuo iPhone per poter utilizzare FreePT.</h2>'+
       '<p>FreePT ha bisogno di accedere ai tuoi file per attivare le funzionalità dell\'app.</p>'+
