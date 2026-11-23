@@ -41,7 +41,7 @@ test('Android FCM push still uses its existing platform and code path',()=>{
 });
 
 test('iPhone setup displays requested exact text and a single configuration action',()=>{
-  const start=main.indexOf('let iosSetupAcknowledged=false;');
+  const start=main.indexOf('let iosSetupAcknowledged=');
   const end=main.indexOf('if(bridgeBootstrap&&!denied',start);
   assert.ok(start>0&&end>start);
   const intro=main.slice(start,end);
