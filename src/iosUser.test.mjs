@@ -19,7 +19,7 @@ test('iPhone uses native user-only registration and rejects Android Bridge plugi
 test('iPhone shares only a user-selected document via existing chat attachment',()=>{
   assert.match(main,/id="iosShareFile"/);
   assert.match(main,/iosShare.onclick=\(\)=>document.getElementById\('file'\)\?\.click\(\)/);
-  assert.match(main,/const file=form.elements.file.files\[0\]/);
+  assert.match(main,/file=form.elements.file.files\[0\]/);
   assert.match(main,/await uploadAttachment\(path,file/);
   assert.match(main,/db.from\('messages'\).insert\(payload\)/);
   assert.doesNotMatch(main,/const bridgeFiles = Capacitor.isNativePlatform\(\)/);
