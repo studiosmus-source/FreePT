@@ -261,11 +261,18 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
           path=Path("android/app/build.gradle")
           raw=path.read_text()
-          substitutions=[
-              (r'(?m)^(\\s*versionCode\\s+)1(\\s*)        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+          old_code="versionCode 1"
+          old_name='versionName "1.0"'
+          if raw.count(old_code)!=1 or raw.count(old_name)!=1:
+              raise SystemExit("Unexpected generated version; refusing APK")
+          raw=raw.replace(old_code,"versionCode 2",1).replace(old_name,'versionName "1.1.0"',1)
+          path.write_text(raw)
+          print("Isolated APK versionCode 2 / versionName 1.1.0")
+          PY
+      - name: Build Android APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
       - name: Verify exactly one Firebase messaging service after manifest merge
         shell: bash
         run: |
