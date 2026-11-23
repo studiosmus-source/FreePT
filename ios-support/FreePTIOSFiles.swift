@@ -102,6 +102,18 @@ public class FreePTIOSFiles: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelega
             return
         }
         do {
+            if handle == "root" {
+                guard let root = rootURL() else { throw NSError(domain: "FreePTIOS", code: 5) }
+                let identifier = "11111111-1111-4111-8111-111111111112"
+                handles[identifier] = root
+                call.resolve(["entries": [[
+                    "handle": identifier,
+                    "name": root.lastPathComponent,
+                    "directory": true, "size": -1,
+                    "mime": "vnd.android.document/directory"
+                ]], "nextOffset": -1])
+                return
+            }
             let directory = try authorizedURL(handle)
             let coordinator = NSFileCoordinator(filePresenter: nil)
             var coordinatorError: NSError?
