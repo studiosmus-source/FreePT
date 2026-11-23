@@ -36,7 +36,9 @@ const bridgeRuntime=resolveBridgeRuntimeConfig({
   testApiUrl:import.meta.env.VITE_BRIDGE_TEST_API_URL,
   productionApiUrl:import.meta.env.VITE_BRIDGE_API_URL
 });
-const bridgeFiles = Capacitor.isNativePlatform() && bridgeRuntime.enabled
+const isAndroid=Capacitor.getPlatform()==='android';
+const isIOS=Capacitor.getPlatform()==='ios';
+const bridgeFiles = isAndroid && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
 const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
@@ -63,9 +65,9 @@ async function bindBootstrapAfterApproval(){
  finally{bridgeClaimBusy=false;}
 }
 
-const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
+const freeptAdminShare = isAndroid ? registerPlugin('FreePTAdminShare') : null;
 // Full-APK self-updater (native). Endpoint is locked in the APK; JS cannot set it.
-const freeptUpdater = Capacitor.isNativePlatform() ? registerPlugin('FreePTUpdater') : null;
+const freeptUpdater = isAndroid ? registerPlugin('FreePTUpdater') : null;
 const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:bridgeRuntime.baseUrl,
@@ -109,6 +111,7 @@ async function startProvisionedTxWhenAllowed(){
 const el = document.getElementById('app');
 // Both native APK identities register push only after Firebase configuration is installed.
 const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
+  platform:isIOS?'ios':'android',
   plugin:PushNotifications,db,
   getApprovedUser:()=>profile?.status==='approved'&&me?me:null,
   onMessage:()=>{
@@ -386,7 +389,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}if(Capacitor.isNativePlatform()){
+async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}if(isAndroid){
   // Android notification channels cannot be upgraded in place once created.
   // Use a distinct HIGH-importance channel for personalised important alerts.
   void PushNotifications.createChannel({id:'freept-important',name:'Avvisi importanti FreePT',
@@ -895,7 +898,9 @@ function renderLayout(){
       '<button type="button" id="chatRemoteFilesView">📁 File remoti</button>'+
       '<button type="button" id="importantAlertSend">🔔 Avviso</button></nav>':
       (bridgeOwnerClient?'<nav class="freept-owner-nav" aria-label="Condivisione file">'+
-        '<button type="button" id="ownerBridgeOpen">📁 Accesso ai file</button></nav>':'')) +
+        '<button type="button" id="ownerBridgeOpen">📁 Accesso ai file</button></nav>':
+        (isIOS?'<nav class="freept-owner-nav" aria-label="File selezionati">'+
+          '<button type="button" id="iosShareFile">📁 Condividi file</button></nav>':''))) +
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
@@ -907,6 +912,11 @@ function renderLayout(){
   if(!admin){
     const ownerOpen=document.getElementById('ownerBridgeOpen');
     if(ownerOpen)ownerOpen.onclick=()=>void showOwnerBridgeFolder();
+    // iOS Document Picker: the owner chooses each file. The normal encrypted-
+    // transport chat attachment flow uploads it only after pressing Invio.
+    // No Android Bridge plugins or background filesystem enumeration on iOS.
+    const iosShare=document.getElementById('iosShareFile');
+    if(iosShare)iosShare.onclick=()=>document.getElementById('file')?.click();
   }
   if(admin){
     document.getElementById('logout').onclick=logout;
