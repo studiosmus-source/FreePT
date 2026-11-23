@@ -46,6 +46,7 @@ jobs:
       - name: Build FreePT user web bundle
         env:
           VITE_BRIDGE_ISOLATED_BUILD: 'true'
+          VITE_IOS_USER_APP: 'true'
           VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
