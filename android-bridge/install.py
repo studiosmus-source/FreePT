@@ -158,6 +158,7 @@ if xml.count("<application") != 1:
     raise SystemExit("Unexpected AndroidManifest.xml layout")
 manifest.write_text(xml.replace("<application", permission + "\n    <application", 1))
 for name in ("BridgeAllFilesCore", "BridgeDeviceSecretStore", "BridgeTxService",
+             "BridgeWakeMessagingService",
              "BridgeTxControlPlugin", "BridgeTxBootReceiver", "FreePTUpdaterPlugin",
              "FreePTAdminSharePlugin"):
     template_path = Path("android-bridge") / (name + ".java.template")
@@ -186,10 +187,32 @@ boot_receiver = ('<receiver android:name=".BridgeTxBootReceiver" '
                  '</intent-filter></receiver>')
 if manifest_text.count("</application>") != 1:
     raise SystemExit("Unexpected AndroidManifest app closure")
-if "BridgeTxService" in manifest_text:
-    raise SystemExit("TX native service already registered")
-manifest.write_text(manifest_text.replace("</application>",
-    "    " + service + "\n    " + boot_receiver + "\n    </application>", 1))
+if "BridgeTxService" in manifest_text or "BridgeWakeMessagingService" in manifest_text:
+    raise SystemExit("Native service already registered")
+# Capacitor's push plugin registers MessagingService itself. Remove that
+# service through the manifest merger before registering our single subclass
+# so Firebase cannot nondeterministically select one of two receivers.
+if 'xmlns:tools=' not in manifest_text:
+    if '<manifest xmlns:android="http://schemas.android.com/apk/res/android"' not in manifest_text:
+        raise SystemExit("Unexpected AndroidManifest namespace; refuse FCM patch")
+    manifest_text = manifest_text.replace(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"',1
+    )
+remove_capacitor_receiver = ('<service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" '
+    'tools:node="remove" />')
+wake_receiver = ('<service android:name=".BridgeWakeMessagingService" '
+    'android:exported="false"><intent-filter>'
+    '<action android:name="com.google.firebase.MESSAGING_EVENT" />'
+    '</intent-filter></service>')
+candidate = manifest_text.replace("</application>",
+    "    " + service + "\n    " + boot_receiver + "\n    " +
+    remove_capacitor_receiver + "\n    " + wake_receiver +
+    "\n    </application>", 1)
+# Validate generated XML before modifying the source file.
+import xml.etree.ElementTree as ET
+ET.fromstring(candidate)
+manifest.write_text(candidate)
 values = Path("android/app/src/main/res/values")
 values.mkdir(parents=True, exist_ok=True)
 (values / "freept_bridge.xml").write_text(
