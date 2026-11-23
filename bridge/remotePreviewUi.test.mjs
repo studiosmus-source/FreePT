@@ -62,8 +62,11 @@ test('active file transfer prevents navigation away and defers chat polling',()=
  assert.match(main,/openChatRemoteFiles=async\(\)=>\{\s*if\(guardBridgeNavigation\(\)\)return/);
  assert.match(main,/nav\.onclick=showChatMessages/);
  assert.match(main,/id="openFilesAction"/);
- assert.doesNotMatch(main,/id="chatRemoteFilesView"/);
- assert.doesNotMatch(main,/id="chatMessagesView"/);
+ assert.match(main,/id="chatRemoteFilesView"/);
+ assert.match(main,/id="chatMessagesView"/);
+ assert.match(main,/id="importantAlertSend"/);
+ assert.match(main,/id="ownerBridgeOpen"/);
+ assert.match(main,/querySelector\('#chatRemoteFilesPanel \.bridge-files-content'\)/);
  assert.match(main,/id='back'|getElementById\('back'\)/);
  assert.match(main,/fetchingMessages \|\| bridgeTransferActive\(\)/);
 });
@@ -157,4 +160,18 @@ test('remote directory loading reports queued/sent states without infinite spinn
  assert.match(source,/progress\.elapsedSeconds/);
  assert.match(source,/bridge_remote_browse_timeout/);
  assert.match(source,/Premi Aggiorna per riprovare/);
+});
+
+test('chat, files, urgent alerts and owner file authorisation remain visible',()=>{
+ const main=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+ for(const feature of ['freeptConversationNav','chatMessagesView','chatRemoteFilesView','importantAlertSend','ownerBridgeOpen']){
+  assert.match(main,new RegExp('id="'+feature+'"'),feature);
+ }
+ assert.match(main,/showImportantAlertComposer\(user\)/);
+ assert.match(main,/showOwnerBridgeFolder\(\)/);
+ assert.match(css,/\.freept-conversation-nav\{display:grid/);
+ assert.match(css,/grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+ assert.match(main,/host:filesHost,db,bridgeClient/);
+ assert.match(main,/bridgeTransferActive\(\)/);
 });

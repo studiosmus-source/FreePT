@@ -127,6 +127,9 @@ if target == "staging":
     if os.environ.get("FREEPT_CLASSIC_UI_FIX") == "1":
         gradle_source = gradle_source.replace("versionCode 2", "versionCode 3", 1)
         gradle_source = gradle_source.replace('versionName "1.1.0"', 'versionName "1.2.0"', 1)
+        if os.environ.get("FREEPT_COMPLETE_UI_FIX") == "1":
+            gradle_source = gradle_source.replace("versionCode 3", "versionCode 4", 1)
+            gradle_source = gradle_source.replace('versionName "1.2.0"', 'versionName "1.3.0"', 1)
 
 main.write_text(source)
 gradle_path.write_text(gradle_source.replace(

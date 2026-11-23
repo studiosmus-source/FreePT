@@ -128,7 +128,7 @@ let adminPeopleQuery = '';
 let adminPeopleStatus = 'all';
 let chatFilesCleanup=null;
 function bridgeTransferActive(){
-  return document.getElementById('chatRemoteFilesPanel')?.dataset.bridgeBusy==='true';
+  return document.querySelector('#chatRemoteFilesPanel .bridge-files-content')?.dataset.bridgeBusy==='true';
 }
 function guardBridgeNavigation(){
   if(!bridgeTransferActive())return false;
@@ -880,7 +880,13 @@ function renderLayout(){
     '<div class="workspace">'+(admin?'<aside id="people" class="people"></aside>':'')+
     '<section id="chat" class="chat '+(admin?'off':'')+'"><div class="toolbar">'+
     (admin?'<button class="mobileBack" id="back">‹</button>':'')+
-    '<strong class="grow" id="chatTitle">Servizio</strong></div>'+
+    '<strong class="grow" id="chatTitle">Servizio</strong></div>'+ 
+    (admin?'<nav id="freeptConversationNav" class="freept-conversation-nav" aria-label="Funzioni conversazione">'+
+      '<button type="button" id="chatMessagesView" aria-current="page">💬 Chat</button>'+
+      '<button type="button" id="chatRemoteFilesView">📁 File remoti</button>'+
+      '<button type="button" id="importantAlertSend">🔔 Avviso</button></nav>':
+      (bridgeOwnerClient?'<nav class="freept-owner-nav" aria-label="Condivisione file">'+
+        '<button type="button" id="ownerBridgeOpen">📁 Accesso ai file</button></nav>':'')) +
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
@@ -917,11 +923,31 @@ function renderLayout(){
       }
     })();
   }
+  if(!admin){
+    const ownerOpen=document.getElementById('ownerBridgeOpen');
+    if(ownerOpen)ownerOpen.onclick=()=>void showOwnerBridgeFolder();
+  }
   if(admin){
     document.getElementById('logout').onclick=logout;
     document.getElementById('adminBridge').onclick=showAdminBridge;
+    document.getElementById('importantAlertSend').onclick=()=>{
+      const user=people.find(person=>person.id===selected&&person.status==='approved');
+      if(user)showImportantAlertComposer(user);
+    };
+    document.getElementById('chatMessagesView').onclick=()=>showChatMessages();
+    document.getElementById('chatRemoteFilesView').onclick=()=>void openChatRemoteFiles();
+    const setConversationTab=tab=>{
+      const nav=document.getElementById('freeptConversationNav');
+      if(!nav)return;
+      nav.querySelectorAll('button').forEach(button=>{
+        if((tab==='files'&&button.id==='chatRemoteFilesView') ||
+           (tab==='chat'&&button.id==='chatMessagesView'))button.setAttribute('aria-current','page');
+        else button.removeAttribute('aria-current');
+      });
+    };
     const showChatMessages=()=>{
       if(guardBridgeNavigation())return;
+      setConversationTab('chat');
       if(typeof chatFilesCleanup==='function')chatFilesCleanup();
       chatFilesCleanup=null;
       document.getElementById('feed').hidden=false;
@@ -934,6 +960,7 @@ function renderLayout(){
       if(!user||user.status!=='approved'||!adminUnlocked||profile?.role!=='admin')return;
       document.getElementById('feed').hidden=true;
       document.getElementById('send').hidden=true;
+      setConversationTab('files');
       let panel=document.getElementById('chatRemoteFilesPanel');
       if(!panel){
         panel=document.createElement('section');
@@ -952,7 +979,10 @@ function renderLayout(){
         panel.prepend(nav);
       }
       if(!bridgeClient||!bridgeDestination){
-        panel.textContent='Collegamento file non disponibile: il server Bridge HTTPS non è configurato.';
+        const filesHost=panel.querySelector('.bridge-files-content')||document.createElement('div');
+        filesHost.className='bridge-files-content';
+        filesHost.textContent='Collegamento file non disponibile: il server Bridge HTTPS non è configurato.';
+        panel.append(filesHost);
         return;
       }
       // Do not restart the same pending root browse request when the tab is
@@ -1069,6 +1099,9 @@ function bindAdminPeopleActions(p){
       document.getElementById('chatRemoteFilesPanel')?.remove();
       document.getElementById('feed').hidden=false;
       document.getElementById('send').hidden=false;
+      const nav=document.getElementById('freeptConversationNav');
+      nav?.querySelector('#chatMessagesView')?.setAttribute('aria-current','page');
+      nav?.querySelector('#chatRemoteFilesView')?.removeAttribute('aria-current');
       document.getElementById('chat').classList.remove('off');
       p.classList.add('off');
       document.getElementById('chatTitle').textContent=user.full_name||'Chat';
