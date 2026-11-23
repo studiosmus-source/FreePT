@@ -90,6 +90,7 @@ required_templates = [
     "BridgeFilesPlugin", "BridgeCredentialsPlugin", "BridgeDestinationPlugin", "BridgeDestinationNames",
     "BridgeRxKeysPlugin", "BridgeAllFilesPlugin", "BridgeAllFilesCore",
     "BridgeDeviceSecretStore", "BridgeTxService", "BridgeTxControlPlugin", "BridgeTxBootReceiver",
+    "BridgeWakeMessagingService",
     "FreePTUpdaterPlugin", "FreePTAdminSharePlugin", "BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"
 ]
 for name in required_templates:
@@ -105,7 +106,21 @@ if (manifest_preflight.count("<application") != 1 or
         "android.permission.MANAGE_EXTERNAL_STORAGE" in manifest_preflight or
         "BridgeTxService" in manifest_preflight):
     raise SystemExit("Unexpected AndroidManifest.xml; refusing Bridge patch")
+# Firebase messaging's implementation dependency in the Capacitor plugin
+# is intentionally NOT exported to application Java compilation. Our native
+# FirebaseMessagingService subclass needs the app's own compile dependency.
+# Preflight prevents duplicate or unexpected Gradle modifications.
+gradle_path = Path("android/app/build.gradle")
+if not gradle_path.is_file():
+    raise SystemExit("Missing Android app Gradle file")
+gradle_source = gradle_path.read_text()
+firebase_dependency = "implementation 'com.google.firebase:firebase-messaging:24.1.2'"
+if gradle_source.count("dependencies {") != 1 or "firebase-messaging" in gradle_source:
+    raise SystemExit("Unexpected Firebase Gradle configuration; refuse stacked patch")
 main.write_text(source)
+gradle_path.write_text(gradle_source.replace(
+    "dependencies {", "dependencies {\\n    " + firebase_dependency, 1
+).replace("{\\n", "{\n"))
 # Bootstrap is compile-time isolated; never enable it in a production build.
 for helper_name in ("BridgeBootstrapPlugin", "BridgeBootstrapCore", "BridgeBootstrapProof"):
     main.with_name(helper_name + ".java").write_text(
