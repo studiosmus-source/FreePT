@@ -43,7 +43,10 @@ if __name__ == "__main__":
     source = APP_DELEGATE.read_text()
     if "class FreePTIOSFiles:" in source:
         raise SystemExit("Files plugin already installed")
-    APP_DELEGATE.write_text(source + "\\n" + native.read_text())
+    device = Path("ios-support/FreePTIOSDevice.swift")
+    if not device.is_file():
+        raise SystemExit("Missing native Bridge transport")
+    APP_DELEGATE.write_text(source + "\n" + native.read_text() + "\n" + device.read_text())
     board = storyboard.read_text()
     old = 'customClass="CAPBridgeViewController" customModule="Capacitor"'
     new = 'customClass="FreePTIOSBridgeViewController" customModule="App"'
