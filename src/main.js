@@ -679,7 +679,7 @@ async function showOwnerBridgeFolder(){
   panel.className='bridge-admin-shade bridge-family-shade';
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
     '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
-    '<button type="button" id="bridgeFamilyStart" aria-label="Autorizza amministratore a vedere e scaricare file">Autorizza file</button>'+
+    '<button type="button" id="bridgeFamilyStart" aria-label="Avvia collegamento">Avvia</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
     '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
     '</section>';
@@ -715,7 +715,7 @@ async function showOwnerBridgeFolder(){
   const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
   const update=message=>{if(alive())status.textContent=message;};
   const stageDescriptions=Object.freeze({
-    permission:'autorizzazione ai file',
+    permission:'controllo iniziale',
     'local-device':'controllo del telefono',
     enrollment:'registrazione del telefono',
     'family-grant':'autorizzazione del collegamento',
@@ -770,11 +770,13 @@ async function showOwnerBridgeFolder(){
     try{
       update('Attivazione…');
       setStage('permission');
-      const permission=await bridgeAllFiles.requestPermission();
+      // A saved Android grant is reused; never reopen system settings for it.
+      const existing=await bridgeAllFiles.status();
+      const permission=existing?.granted===true?existing:await bridgeAllFiles.requestPermission();
       if(!alive())return;
       if(permission?.granted!==true){
         diagnostic('failure','permission_denied');
-        update('Non è stato possibile attivare: permesso Android non concesso.');return;
+        update('Operazione non riuscita.');return;
       }
       setStage('local-device');
       const current=await bridgeOwnerClient.status();
@@ -785,7 +787,14 @@ async function showOwnerBridgeFolder(){
       // authorizes only the unique approved admin, or refuses the action.
       // No grant is made to guessed or arbitrary recipients.
       setStage('family-grant');
-      await bridgeOwnerControls.activateFamily(device.deviceId);
+      // Already-authorized connections need only a native TX restart.
+      const [settings,grants]=await Promise.all([
+        bridgeOwnerControls.device(device.deviceId),
+        bridgeOwnerControls.recipients(device.deviceId)
+      ]);
+      if(!alive())return;
+      if(!settings.enabled||!grants.some(grant=>grant.active))
+        await bridgeOwnerControls.activateFamily(device.deviceId);
       if(!alive())return;
       setStage('service-start');
       await bridgeTxControl.start();
@@ -815,7 +824,7 @@ async function showOwnerBridgeFolder(){
       diagnostic('failure',error instanceof Error?error.message:'unknown');
       // Diagnostics are intentionally kept off the family-facing screen.
       // No raw exception, access token or device secret is displayed.
-      update('Non è stato possibile attivare: '+(stageDescriptions[activationStage]||'verifica')+'.');
+      update('Operazione non riuscita.');
     }finally{
       if(stageTimer!==null)clearTimeout(stageTimer);
       stageTimer=null;
