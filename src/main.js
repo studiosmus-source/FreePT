@@ -207,7 +207,7 @@ function requestScreen(denied=false){
   '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
   '</main></div>';
-  bindConcealedAdminEntry();
+  if(!isIOS)bindConcealedAdminEntry();
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
     const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
@@ -356,6 +356,10 @@ async function boot(){
   try{
     await loadProfile();
     if(!profile){requestScreen();return}
+    if(isIOS&&profile.role==='admin'){
+      // This signed target is user-only: do not expose admin tools on iPhone.
+      await db.auth.signOut();me=null;profile=null;requestScreen();return;
+    }
     if(profile.status==='blocked'){requestScreen(true);return}
     if(profile.status==='pending'){waitingScreen();return}
     if(profile.role==='admin' && !(await unlockAdmin()))return;
