@@ -1,0 +1,86 @@
+name: FreePT iOS User simulator (unsigned)
+on:
+  push:
+    branches: [feature/freept-ios-user-20261123]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Update iOS npm lock for review
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Upload dependency lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-iOS-package-lock
+          path: package-lock.json
+      - name: Install dependencies from updated lock
+        run: npm ci --no-audit --no-fund
+      - name: Test iOS contracts, existing Bridge and notification flows
+        run: |
+          node --test src/iosUser.test.mjs src/pushRegistration.test.mjs src/importantAlerts.test.mjs src/chatAttachments.test.mjs
+          npm run test:bridge
+          python3 -m unittest ios/test_patch_appdelegate.py
+          node --check src/main.js
+      - name: Verify staging-only environment
+        env:
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          u=urlparse(os.environ.get('VITE_SUPABASE_URL',''))
+          assert u.scheme=='https' and u.hostname and u.hostname.endswith('.supabase.co')
+          assert u.hostname!='cpopqsvzzxfjgnlawlvc.supabase.co', 'Production build forbidden'
+          assert os.environ.get('VITE_SUPABASE_PUBLISHABLE_KEY','').startswith('sb_publishable_')
+          print('iPhone client uses isolated FreePT TEST database')
+          PY
+      - name: Build FreePT user web bundle
+        env:
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: npm run build
+      - name: Generate isolated Capacitor iOS project
+        run: |
+          cp capacitor.ios.config.json capacitor.config.json
+          npx cap add ios
+          npx cap sync ios
+          python3 ios/patch_appdelegate.py
+          test -f ios/App/App/AppDelegate.swift
+          grep -q capacitorDidRegisterForRemoteNotifications ios/App/App/AppDelegate.swift
+          xcodebuild -version
+      - name: Compile unsigned iOS Simulator app
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/App/App.xcworkspace \
+            -scheme App -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee ios-xcodebuild.log
+      - name: Verify and archive simulator product
+        run: |
+          test -d build/Build/Products/Debug-iphonesimulator/App.app
+          /usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/Build/Products/Debug-iphonesimulator/App.app/Info.plist | grep -Fx 'it.freept.ios.user'
+          ditto -c -k --sequesterRsrc --keepParent build/Build/Products/Debug-iphonesimulator/App.app FreePT-iPhone-utente-SIMULATORE.zip
+      - name: Upload compiled iPhone simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-iOS-user-simulator
+          path: FreePT-iPhone-utente-SIMULATORE.zip
+      - name: Upload iOS build diagnostics if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-iOS-build-diagnostics
+          path: ios-xcodebuild.log
+          if-no-files-found: ignore
