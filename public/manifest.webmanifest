@@ -1,12 +1,20 @@
 {
   "name": "FreePT Utente",
   "short_name": "FreePT",
-  "description": "Chat e condivisione di file selezionati con FreePT",
+  "description": "Chat privata FreePT",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f4f7fb",
   "theme_color": "#14253d",
   "lang": "it",
-  "orientation": "any"
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/freept-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
