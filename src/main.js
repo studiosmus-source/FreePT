@@ -246,7 +246,7 @@ function bindConcealedAdminEntry(){
 }
 
 
-let iosSetupAcknowledged=false;
+let iosSetupAcknowledged=localStorage.getItem('freept_ios_setup_intro_v1')==='yes';
 function requestScreen(denied=false){
   closeAdminOverlays();
   // First-run iPhone introduction is a navigation screen, NOT a silent
@@ -268,6 +268,7 @@ function requestScreen(denied=false){
           if(permission?.granted!==true)return;
         }
         iosSetupAcknowledged=true;
+        localStorage.setItem('freept_ios_setup_intro_v1','yes');
         requestScreen();
       }catch{
         const status=document.getElementById('iosSetupStatus');
