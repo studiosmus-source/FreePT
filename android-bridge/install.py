@@ -135,6 +135,11 @@ if target == "staging":
                     raise SystemExit("Unexpected staging APK version; refusing downgrade")
                 gradle_source = gradle_source.replace("versionCode 4", "versionCode 5", 1)
                 gradle_source = gradle_source.replace('versionName "1.3.0"', 'versionName "1.4.0"', 1)
+                if os.environ.get("FREEPT_PERMISSION_REPROMPT_FIX") == "1":
+                    if gradle_source.count("versionCode 5") != 1 or gradle_source.count('versionName "1.4.0"') != 1:
+                        raise SystemExit("Unexpected staging APK version; refusing downgrade")
+                    gradle_source = gradle_source.replace("versionCode 5", "versionCode 6", 1)
+                    gradle_source = gradle_source.replace('versionName "1.4.0"', 'versionName "1.5.0"', 1)
 
 main.write_text(source)
 gradle_path.write_text(gradle_source.replace(
