@@ -34,4 +34,25 @@ if __name__ == "__main__":
     if not APP_DELEGATE.is_file():
         raise SystemExit("Missing generated Capacitor AppDelegate")
     APP_DELEGATE.write_text(patch(APP_DELEGATE.read_text()))
+    # The generated AppDelegate is already in the Xcode target. Append native
+    # user-picked-folder plugin there, avoiding untracked Xcode project edits.
+    native = Path("ios-support/bridge_folder_native.swift")
+    if native.is_file():
+        current = APP_DELEGATE.read_text()
+        supplement = native.read_text()
+        if current.count("class FreePTIOSViewController:") != 0:
+            raise SystemExit("Native folder Bridge was already installed")
+        APP_DELEGATE.write_text(current + "\\n" + supplement)
+        storyboard = Path("ios/App/App/Base.lproj/Main.storyboard")
+        if not storyboard.is_file():
+            raise SystemExit("Missing generated Main.storyboard")
+        content = storyboard.read_text()
+        old = 'customClass="CAPBridgeViewController" customModule="Capacitor"'
+        if content.count(old) != 1:
+            raise SystemExit("Unrecognized Capacitor root UIViewController")
+        content = content.replace(old,
+            'customClass="FreePTIOSViewController" customModule="App" customModuleProvider="target"', 1)
+        storyboard.write_text(content)
+        print("Installed iOS native selected-folder Bridge")
+
     print("Installed iOS APNs registration callbacks")
