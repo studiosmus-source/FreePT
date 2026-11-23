@@ -66,7 +66,7 @@ test('active file transfer prevents navigation away and defers chat polling',()=
  assert.match(main,/id="chatMessagesView"/);
  assert.match(main,/id="importantAlertSend"/);
  assert.match(main,/id="ownerBridgeOpen"/);
- assert.match(main,/querySelector\('#chatRemoteFilesPanel \\.bridge-files-content'\)/);
+ assert.match(main,/querySelector\('#chatRemoteFilesPanel \.bridge-files-content'\)/);
  assert.match(main,/id='back'|getElementById\('back'\)/);
  assert.match(main,/fetchingMessages \|\| bridgeTransferActive\(\)/);
 });
