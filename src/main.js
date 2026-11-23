@@ -11,6 +11,7 @@ import {mountImportantAlertComposer,renderImportantAlert} from './importantAlert
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
+import {createIOSBridgeTxClient} from './iosBridgeTxClient.js';
 import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
 import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
 import {renderOriginalTxRx} from './originalTxRxUi.js';
@@ -40,11 +41,13 @@ const isAndroid=Capacitor.getPlatform()==='android';
 const isIOS=Capacitor.getPlatform()==='ios';
 const isIOSUserApp=isIOS||import.meta.env.VITE_IOS_USER_APP==='true';
 const iosFiles = isIOS ? registerPlugin('BridgeIOSFiles') : null;
+const iosDevice = isIOS && bridgeRuntime.enabled ? registerPlugin('BridgeIOSDevice') : null;
+const iosTx=iosFiles&&iosDevice?createIOSBridgeTxClient({files:iosFiles,device:iosDevice}):null;
 const bridgeFiles = isAndroid && bridgeRuntime.enabled
   ? registerPlugin('BridgeFiles') : null;
 const bridgeAllFiles = bridgeFiles ? registerPlugin('BridgeAllFiles') : null;
 const bridgeTxControl = bridgeFiles ? registerPlugin('BridgeTxControl') : null;
-const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : null;
+const bridgeCredentials = bridgeFiles ? registerPlugin('BridgeCredentials') : iosDevice;
 const bridgeDestination = bridgeFiles ? registerPlugin('BridgeDestination') : null;
 const bridgeRxKeys = bridgeFiles ? registerPlugin('BridgeRxKeys') : null;
 const bootstrapEnabled=import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'&&import.meta.env.VITE_BRIDGE_BOOTSTRAP_ENABLED==='true';
@@ -110,6 +113,52 @@ async function startProvisionedTxWhenAllowed(){
     // Failed closed on expired login, missing staging backend or permissions.
   }finally{bridgeTxStartupInProgress=false;}
 }
+let iosProvisioning=false;
+let iosLastGrantCheck=0;
+let iosBridgeEnabled=false;
+async function activateIOSBridgeAfterApproval(){
+  if(!iosTx||!bridgeOwnerClient||!bridgeOwnerControls||
+     iosProvisioning||profile?.status!=='approved'||profile.role!=='user'||!me?.id||
+     document.visibilityState!=='visible')return;
+  iosProvisioning=true;
+  const owner=me.id;
+  try{
+    if((await iosFiles.status())?.granted!==true)return;
+    const current=await bridgeOwnerClient.status();
+    const device=current?.provisioned?current:await bridgeOwnerClient.enroll('Dispositivo FreePT');
+    if(me?.id!==owner||document.visibilityState!=='visible')return;
+    const settings=await bridgeOwnerControls.device(device.deviceId);
+    const grants=await bridgeOwnerControls.recipients(device.deviceId);
+    if(!settings.enabled||!grants.some(x=>x.active)){
+      await bridgeOwnerControls.activateFamily(device.deviceId);
+    }
+    if(me?.id!==owner)return;
+    iosBridgeEnabled=true;
+    iosLastGrantCheck=Date.now();
+    iosTx.start();
+  }catch{
+    iosBridgeEnabled=false;
+    // Setup may resume later; never break the chat or expose credentials.
+  }finally{iosProvisioning=false;}
+}
+if(iosTx){
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible')void activateIOSBridgeAfterApproval();
+    else {iosBridgeEnabled=false;void iosTx.stop();}
+  });
+  setInterval(async()=>{
+    if(document.visibilityState!=='visible'||!iosBridgeEnabled||
+       profile?.status!=='approved'||profile.role!=='user'||!me?.id)return;
+    if(Date.now()-iosLastGrantCheck>30000){
+      iosBridgeEnabled=false;
+      await iosTx.stop();
+      void activateIOSBridgeAfterApproval();
+      return;
+    }
+    await iosTx.step();
+  },2000);
+}
+
 const el = document.getElementById('app');
 // Both native APK identities register push only after Firebase configuration is installed.
 const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
@@ -399,7 +448,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
+async function logout(){if(iosTx){iosBridgeEnabled=false;await iosTx.stop();}if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
@@ -425,7 +474,7 @@ async function listPeople(){
     .sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||
       Date.parse(b.lastMessage?.created_at||b.created_at)-Date.parse(a.lastMessage?.created_at||a.created_at));
 }
-async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}if(isAndroid){
+async function renderWorkspace(){void bindBootstrapAfterApproval();if(bridgePendingOwnerId!==me?.id){bridgePendingJobs.clear();bridgePendingOwnerId=me?.id||null;}if(profile?.role==='admin'&&!adminUnlocked&&Capacitor.isNativePlatform())return;if(sub){db.removeChannel(sub);sub=null}if(profile.role==='admin')await listPeople();else selected=me.id;renderLayout();if(selected)await showMessages();if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();void activateIOSBridgeAfterApproval();}if(isAndroid){
   // Android notification channels cannot be upgraded in place once created.
   // Use a distinct HIGH-importance channel for personalised important alerts.
   void PushNotifications.createChannel({id:'freept-important',name:'Avvisi importanti FreePT',
@@ -451,7 +500,7 @@ async function refreshOnVisible(){
       }
       if(selected&&!bridgeTransferActive()) await showMessages(false);
       await checkImportantAlerts();
-      if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();}
+      if(profile?.role==='user'){void bindBootstrapAfterApproval();void startProvisionedTxWhenAllowed();void activateIOSBridgeAfterApproval();}
     } catch(e){ status(friendly(e),true) }
   }
   document.addEventListener('visibilitychange',refreshOnVisible,{once:true});
