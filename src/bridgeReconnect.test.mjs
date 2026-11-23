@@ -4,16 +4,25 @@ import {readFileSync} from 'node:fs';
 
 const source=readFileSync(new URL('./main.js',import.meta.url),'utf8');
 
-test('temporary server failures do not reopen device enrollment',()=>{
-  const start=source.indexOf('if(!admin&&bridgeOwnerClient&&me?.id&&ownerSetupPromptedForAccount!==me.id)');
-  const end=source.indexOf('if(admin){',start);
-  assert.ok(start>=0&&end>start,'owner enrollment section must exist');
-  const enrollment=source.slice(start,end);
-  assert.match(enrollment,/catch\s*\{\s*\/\/ Connectivity or server errors do not revoke/);
-  assert.match(enrollment,/catch\s*\{\s*\/\/ A temporary backend failure must not trigger/);
-  assert.doesNotMatch(enrollment,/incomplete\s*=\s*!settings\.enabled\s*\|\|\s*!grants\.some\(g=>g\.active\)\s*\|\|\s*!service\?\.running/);
+test('opening an existing user workspace never re-prompts file access or Bridge activation',()=>{
+  const start=source.indexOf('function renderLayout(){');
+  const end=source.indexOf('function renderPeople(){',start);
+  assert.ok(start>=0&&end>start);
+  const layout=source.slice(start,end);
+  assert.doesNotMatch(layout,/await showOwnerBridgeFolder\(\)/);
+  assert.doesNotMatch(layout,/\.requestPermission\(\)/);
+  assert.match(layout,/ownerOpen\.onclick=\(\)=>void showOwnerBridgeFolder\(\)/);
+  assert.doesNotMatch(layout,/ownerSetupPromptedForAccount/);
 });
-
+test('file consent is still initiated explicitly by its owner',()=>{
+  const start=source.indexOf('async function showOwnerBridgeFolder(){');
+  const end=source.indexOf('function showImportantAlertComposer(',start);
+  assert.ok(start>=0&&end>start);
+  const ownerConsent=source.slice(start,end);
+  assert.match(ownerConsent,/button\.onclick=async\(\)=>\{/);
+  assert.match(ownerConsent,/bridgeAllFiles\.requestPermission\(\)/);
+  assert.match(ownerConsent,/permission\?\.granted/);
+});
 test('service recovery checks consent and respects explicit pause',()=>{
   const start=source.indexOf('async function startProvisionedTxWhenAllowed()');
   const end=source.indexOf('const el = document.getElementById',start);

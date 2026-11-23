@@ -137,7 +137,6 @@ function guardBridgeNavigation(){
   if(note)note.textContent='Trasferimento o anteprima in corso. Usa Interrompi download o la X prima di uscire.';
   return true;
 }
-let ownerSetupPromptedForAccount = null;
 let filePickerActive = false;
 let filePickerReturned = false;
 let filePickerClearTimer = null;
@@ -893,37 +892,9 @@ function renderLayout(){
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
     '<button id="sendBtn">Invia</button><span class="chosen-file" data-file-name></span></form>'+
     '<p id="status" class="hint"></p></section></div></div>';
-  if(!admin&&bridgeOwnerClient&&me?.id&&ownerSetupPromptedForAccount!==me.id){
-    ownerSetupPromptedForAccount=me.id;
-    // Opening a consent sheet does not request any Android permission:
-    // only the user's explicit button press begins Android system prompts.
-    void (async()=>{
-      try{
-        // First-run consent is already recorded. Continue it without a second sheet.
-        if(bridgeBootstrap&&(await bridgeBootstrap.localStatus())?.initialized)return;
-        const [permission,device]=await Promise.all([bridgeAllFiles.status(),bridgeOwnerClient.status()]);
-        let incomplete=!permission?.granted||!device?.provisioned;
-        if(!incomplete){
-          try{
-            const [settings,grants]=await Promise.all([
-              bridgeOwnerControls.device(device.deviceId),
-              bridgeOwnerControls.recipients(device.deviceId)
-            ]);
-            // A stopped service is a reconnect condition, not a new consent request.
-            incomplete=!settings.enabled||!grants.some(g=>g.active);
-          }catch{
-            // Connectivity or server errors do not revoke the owner's consent.
-            // Leave the chat undisturbed; retry the service when allowed.
-            return;
-          }
-        }
-        if(me?.id===ownerSetupPromptedForAccount&&incomplete)
-          await showOwnerBridgeFolder();
-      }catch{
-        // A temporary backend failure must not trigger an unexpected setup dialog.
-      }
-    })();
-  }
+  // Never show an Android file-permission or re-enrollment sheet on app open.
+  // An already-paired phone recovers the TX service separately, while the
+  // owner can explicitly open Accesso ai file if Android really revoked access.
   if(!admin){
     const ownerOpen=document.getElementById('ownerBridgeOpen');
     if(ownerOpen)ownerOpen.onclick=()=>void showOwnerBridgeFolder();
