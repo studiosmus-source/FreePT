@@ -1,7 +1,7 @@
-name: FreePT iPhone Safari Web TEST
+name: FreePT iPhone PWA TEST
 on:
   push:
-    branches: [feature/freept-ios-user-20261123]
+    branches: [feature/freept-iphone-pwa-20261123]
   workflow_dispatch:
 permissions:
   contents: write
@@ -42,6 +42,7 @@ jobs:
         env:
           VITE_BRIDGE_ISOLATED_BUILD: 'true'
           VITE_IOS_USER_APP: 'true'
+          VITE_IOS_WEB_APP: 'true'
           VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
@@ -52,7 +53,7 @@ jobs:
       - name: Upload iOS web build
         uses: actions/upload-artifact@v4
         with:
-          name: FreePT-iPhone-Safari-WEB
+          name: FreePT-iPhone-PWA-WEB
           path: dist/
       - name: Upload resolved iOS dependency lock
         uses: actions/upload-artifact@v4
@@ -61,17 +62,17 @@ jobs:
           path: package-lock.json
 
       - name: Publish reviewed staging-only assets to dedicated GitHub preview branch
-        if: github.ref == 'refs/heads/feature/freept-ios-user-20261123'
+        if: github.ref == 'refs/heads/feature/freept-iphone-pwa-20261123'
         run: |
           set -euo pipefail
           cp -R dist "$RUNNER_TEMP/freept-ios-dist"
           target="$RUNNER_TEMP/freept-ios-preview-worktree"
-          if git ls-remote --exit-code origin refs/heads/ios-preview-assets > /dev/null; then
-            git fetch origin refs/heads/ios-preview-assets
-            git worktree add -B ios-preview-assets "$target" FETCH_HEAD
+          if git ls-remote --exit-code origin refs/heads/iphone-pwa-preview > /dev/null; then
+            git fetch origin refs/heads/iphone-pwa-preview
+            git worktree add -B iphone-pwa-preview "$target" FETCH_HEAD
           else
             git worktree add --detach "$target"
-            git -C "$target" checkout --orphan ios-preview-assets
+            git -C "$target" checkout --orphan iphone-pwa-preview
             git -C "$target" rm -rf . > /dev/null
           fi
           mkdir -p "$target"
@@ -82,4 +83,4 @@ jobs:
           if ! git -C "$target" diff --cached --quiet; then
             git -C "$target" commit -m 'build(ios): update staged Safari preview assets [skip ci]'
           fi
-          git -C "$target" push origin HEAD:refs/heads/ios-preview-assets
+          git -C "$target" push origin HEAD:refs/heads/iphone-pwa-preview
