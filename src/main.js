@@ -904,7 +904,7 @@ function renderLayout(){
       (bridgeOwnerClient?'<nav class="freept-owner-nav" aria-label="Condivisione file">'+
         '<button type="button" id="ownerBridgeOpen">📁 Accesso ai file</button></nav>':
         (isIOS?'<nav class="freept-owner-nav" aria-label="File selezionati">'+
-          '<button type="button" id="iosShareFile">📁 Condividi file</button></nav>':''))) +
+          '<button type="button" id="iosShareFile">📁 Scegli documento</button></nav>':''))) +
     '<div class="feed" id="feed"></div><div class="hint" id="queued"></div>'+
     '<form class="compose" id="send"><label class="attach" for="file">📎</label>'+
     '<input type="file" id="file" name="file"/><textarea name="text" placeholder="Scrivi un messaggio" maxlength="10000"></textarea>'+
