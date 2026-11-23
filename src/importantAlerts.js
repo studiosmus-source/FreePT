@@ -73,12 +73,16 @@ export function renderImportantAlert({host,alert,onAcknowledge}){
   }
   const body=document.createElement('p');body.className='important-alert-body';body.textContent=alert.body;
   const status=document.createElement('p');status.setAttribute('role','status');status.className='important-alert-state';
-  const button=document.createElement('button');button.type='button';button.textContent='Ho letto';
-  button.onclick=async()=>{
-    button.disabled=true;status.textContent='Conferma in corso…';
+  // Closing is not an explicit read receipt. No 'Ho letto' confirmation.
+  // Keep the server-side read_at field as an acknowledgement of dismissal only.
+  const close=document.createElement('button');
+  close.type='button';close.className='important-alert-close';
+  close.setAttribute('aria-label','Chiudi avviso');close.textContent='×';
+  close.onclick=async()=>{
+    close.disabled=true;status.textContent='Chiusura…';
     try{await onAcknowledge(alert.id);shade.remove();}
-    catch(error){status.textContent='Non riesco a confermare: '+(error?.message||'errore');button.disabled=false;}
+    catch(error){status.textContent='Impossibile chiudere: '+(error?.message||'errore');close.disabled=false;}
   };
-  content.append(body,status,button);shade.append(content);host.append(shade);button.focus();
+  content.append(close,body,status);shade.append(content);host.append(shade);close.focus();
   return ()=>shade.remove();
 }
