@@ -71,7 +71,7 @@ export function mountBootstrapAdmin({host,db,baseUrl,isAuthorized,fetchImpl=fetc
      if(approved&&deviceId){await bounded(post('revoke',{deviceId}),6000);clean=true;step('Revoca autorizzazione di prova','OK');}
      else if(active){await bounded(testNative.cancel(),6000);clean=true;step('Annullamento prova','OK');}
     }catch{step('Pulizia autorizzazione','da verificare — NON eliminare i dati app');}
-    if(startedTx){try{await bounded(testTx.stop(),6000);}catch{step('Arresto servizio di prova','non confermato');}}
+    if(startedTx){try{await bounded(testTx.stopDiagnostic(),6000);}catch{step('Arresto servizio di prova','non confermato');}}
     if(clean){try{await bounded(testNative.resetUnboundTest(),6000);step('Pulizia identità temporanea','OK');}
       catch{step('Pulizia identità temporanea','non confermata');}}
     await save();button.disabled=false;
