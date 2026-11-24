@@ -1164,14 +1164,19 @@ function showConversationActions(user){
       const readiness=await db.rpc('freept_delete_ready');
       if(readiness.error)throw new Error('Migrazione SQL non pronta: '+friendly(readiness.error));
       if(readiness.data!==true)throw new Error('Autorizzazione amministratore negata.');
-      statusNode.textContent='Rimozione degli allegati in corso...';
-      await deleteConversationFiles(user.id);
+      // Database deletion is atomic. Do not remove Storage objects beforehand:
+      // a timeout/rejected RPC must never strip attachments from a live account.
       statusNode.textContent=deleteUser?'Eliminazione account in corso...':'Cancellazione chat in corso...';
       const {error}=await db.rpc('freept_admin_delete_conversation',{
         p_user_id:user.id,p_delete_user:deleteUser
       });
       if(error)throw error;
+      statusNode.textContent='Account/chat eliminati. Pulizia allegati in corso...';
+      let storageWarning=false;
+      try{await deleteConversationFiles(user.id)}
+      catch{storageWarning=true;}
       close();
+      if(storageWarning)alert('Account/chat eliminati, ma alcuni allegati potrebbero essere rimasti nello Storage. Controllare la pulizia separatamente.');
       if(selected===user.id){
         selected=null;messageRequest++;
         document.getElementById('chat')?.classList.add('off');
@@ -1180,7 +1185,7 @@ function showConversationActions(user){
       await listPeople();renderPeople();
     }catch(e){
       statusNode.textContent='Operazione non completata: '+friendly(e)+
-        '. Alcuni allegati potrebbero essere stati rimossi; riprova solo dopo aver verificato.';
+        '. Nessun allegato e stato rimosso da questa operazione se il database ha rifiutato la cancellazione.';
       statusNode.className='error';
     }finally{
       if(document.contains(modal))modal.querySelectorAll('button').forEach(b=>b.disabled=false);
