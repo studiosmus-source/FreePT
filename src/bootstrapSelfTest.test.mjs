@@ -22,7 +22,7 @@ test('Admin self-test signs up transient synthetic device, uses admin Auth appro
 test('Admin self-test revokes, stops and clears only unbound diagnostic identity',()=>{
  assert.match(src,/post\('revoke',\{deviceId\}\)/);
  assert.match(src,/testTx.stopDiagnostic\(\)/);
- assert.match(src,/if\(clean\)\{try\{await testNative.resetUnboundTest\(\)/);
+ assert.match(src,/if\(clean\)\{try\{await bounded\(testNative.resetUnboundTest\(\),6000\)/);
  assert.match(plugin,/@PluginMethod public void resetUnboundTest/);
  assert.match(core,/if\(bound\(c\)\|\|BridgeDeviceSecretStore.configured\(c\)\)/);
 });
