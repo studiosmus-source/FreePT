@@ -1,6 +1,6 @@
 using FreePT.Windows;
 using System.Text;
-var folder=Path.Combine(Path.GetTempPath(),"freept-windows-test-"+Guid.NewGuid().ToString("N"));
+var folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"freept-windows-test-"+Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(folder);
 try{
  var child=Path.Combine(folder,"Cartella");
