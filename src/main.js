@@ -69,7 +69,7 @@ async function bindBootstrapAfterApproval(){
 const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
 // Full-APK self-updater (native). Endpoint is locked in the APK; JS cannot set it.
 const freeptUpdater = Capacitor.isNativePlatform() ? registerPlugin('FreePTUpdater') : null;
-const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
+const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth,credentials:bridgeCredentials}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:bridgeRuntime.baseUrl,
   auth:db.auth,credentials:bridgeCredentials
