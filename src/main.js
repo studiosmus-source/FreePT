@@ -9,6 +9,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import {createPushRegistration} from './pushRegistration.js';
 import {mountImportantAlertComposer,renderImportantAlert} from './importantAlerts.js';
 import {installWindowsBridgeEnrollment} from './windowsBridgeEnrollment.js';
+import {obtainRequestUser} from './staleSessionRecovery.js';
 import {isWindowsFreePT,normalizedWindowsEmail} from './windowsRegistration.js';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
@@ -224,14 +225,7 @@ function requestScreen(denied=false){
     const button=form.querySelector('button');button.disabled=true;status('Invio richiesta in corso...');
     try {
       // Bridge device approval and synthetic transfer are independent from registration.
-      const {data:sessionData}=await db.auth.getSession();
-      let user=sessionData?.session?.user;
-      if(!user){
-        const auth=await db.auth.signInAnonymously();
-        if(auth.error) throw auth.error;
-        user=auth.data.user;
-      }
-      if(!user?.is_anonymous) throw Error('Una sessione amministratore è già attiva.');
+      const user=await obtainRequestUser(db.auth);
       const {error}=await db.from('profiles').insert(win?{id:user.id,full_name:name,email}:{id:user.id,full_name:name,phone});
       if(error) throw error;
       await boot();
