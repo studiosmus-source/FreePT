@@ -30,7 +30,7 @@ test('network error does not erase active session',async()=>{
   getUser:async()=>({data:{user:null},error:{status:503,message:'Connection failed'}}),
   signOut:async()=>{changed=true;},
   signInAnonymously:async()=>{changed=true;}
- }),/Connection failed|object Object/);
+ }),error=>error.status===503);
  assert.equal(changed,false);
  assert.equal(isConfirmedDeletedAuthUser({status:403,message:'Permission denied'}),false);
 });
