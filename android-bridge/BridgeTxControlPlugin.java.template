@@ -13,6 +13,7 @@ public class BridgeTxControlPlugin extends Plugin {
     @PluginMethod public void status(PluginCall call){
         JSObject out=new JSObject();
         out.put("running",BridgeTxService.active);
+        out.put("connected",BridgeTxService.backendConnected);
         out.put("permissionGranted",BridgeAllFilesCore.granted());
         out.put("configured",BridgeDeviceSecretStore.configured(getContext()));
         out.put("paused",getContext().getSharedPreferences("freept_tx_control",0)
