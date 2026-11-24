@@ -102,23 +102,34 @@ async function readJson(req,limit){
 }
 export function createBridgeHttpsGateway({
   admin,owner,tx,bootstrap=null,config,staticAssets=null,
-  allowHttpInUnitTests=false,now=()=>Date.now()
+  allowHttpInUnitTests=false,now=()=>Date.now(),diagnostics=null
 }={}){
   if(typeof admin!=='function'||typeof owner!=='function'||typeof tx!=='function'||
      !config||!Array.isArray(config.origins)||config.origins.length===0||
-     typeof now!=='function')
+     typeof now!=='function'||
+     (diagnostics!==null&&typeof diagnostics?.begin!=='function'))
     throw Error('bridge_gateway_dependencies_invalid');
   const origins=new Set(config.origins);
   let windowStart=now(),globalCount=0;
   const server=createServer(async(req,res)=>{
+    // Observe only fixed Bridge POST routes, never arbitrary URLs or headers.
+    // Health checks and static assets remain unlogged.
+    const trace=req.method==='POST'&&Object.hasOwn(ROUTES,req.url)
+      ?diagnostics?.begin(req.url):null;
+    res.once('finish',()=>trace?.finish(res.statusCode));
+    res.once('close',()=>trace?.abort());
+    const respond=(status,body,origin)=>{
+      trace?.result(status,body);
+      write(res,status,body,origin);
+    };
     const rawOrigin=req.headers.origin;
     const origin=typeof rawOrigin==='string'&&origins.has(rawOrigin)?rawOrigin:null;
     if(rawOrigin!==undefined&&!origin){
-      write(res,403,{error:'origin_denied'},null);return;
+      respond(403,{error:'origin_denied'},null);return;
     }
     if(!allowHttpInUnitTests&&
        !(req.socket.encrypted||req.headers['x-forwarded-proto']==='https')){
-      write(res,403,{error:'https_required'},origin);return;
+      respond(403,{error:'https_required'},origin);return;
     }
     const asset=staticAssets?.get(req.url);
     if(asset&&req.method==='GET'){
@@ -129,14 +140,14 @@ export function createBridgeHttpsGateway({
       res.end(asset.body);return;
     }
     if(req.url==='/health'&&req.method==='GET'){
-      write(res,200,{status:'ok'},origin);return;
+      respond(200,{status:'ok'},origin);return;
     }
     const route=ROUTES[req.url];
-    if(route==='bootstrap'&&typeof bootstrap!=='function'){write(res,404,{error:'not_found'},origin);return;}
-    if(!route){write(res,404,{error:'not_found'},origin);return;}
+    if(route==='bootstrap'&&typeof bootstrap!=='function'){respond(404,{error:'not_found'},origin);return;}
+    if(!route){respond(404,{error:'not_found'},origin);return;}
     if(req.method==='OPTIONS'){
       // Never permit arbitrary origins or credential-bearing wildcard CORS.
-      if(!origin){write(res,403,{error:'origin_denied'},null);return;}
+      if(!origin){respond(403,{error:'origin_denied'},null);return;}
       res.writeHead(204,{
         'access-control-allow-origin':origin,
         'access-control-allow-methods':'POST',
@@ -146,12 +157,13 @@ export function createBridgeHttpsGateway({
         'vary':'Origin'
       });res.end();return;
     }
-    if(req.method!=='POST'){write(res,405,{error:'method_not_allowed'},origin);return;}
+    if(req.method!=='POST'){respond(405,{error:'method_not_allowed'},origin);return;}
     const time=now();
     if(time-windowStart>=60000){windowStart=time;globalCount=0;}
-    if(++globalCount>180){write(res,429,{error:'rate_limited'},origin);return;}
+    if(++globalCount>180){respond(429,{error:'rate_limited'},origin);return;}
     const parsed=await readJson(req,(req.url==='/bridge/tx/chunk'||req.url==='/bridge/bootstrap/chunk')?MAX_CHUNK_BODY:(req.url==='/bridge/tx/folder'||req.url==='/bridge/tx/browse')?MAX_CATALOGUE:MAX_SMALL);
-    if(parsed.error){write(res,parsed.error.status,parsed.error.body,origin);return;}
+    if(parsed.error){respond(parsed.error.status,parsed.error.body,origin);return;}
+    trace?.dispatch(parsed.body);
     try{
       const handler=route==='bootstrap'?bootstrap:route==='admin'?admin:route==='tx'?tx:owner;
       const response=await handler({
@@ -164,11 +176,11 @@ export function createBridgeHttpsGateway({
         throw Error('bridge_gateway_invalid_handler');
       const output=JSON.stringify(response.body);
       if(Buffer.byteLength(output)>MAX_RESPONSE){
-        write(res,502,{error:'response_too_large'},origin);return;
+        respond(502,{error:'response_too_large'},origin);return;
       }
-      write(res,response.status,response.body,origin);
+      respond(response.status,response.body,origin);
     }catch{
-      write(res,503,{error:'bridge_unavailable'},origin);
+      respond(503,{error:'bridge_unavailable'},origin);
     }
   });
   server.requestTimeout=15000;

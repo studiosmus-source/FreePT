@@ -14,12 +14,14 @@ import {createBridgeOwnerEnrollmentHandler} from './ownerEnrollment.mjs';
 import {createTrustedBridgeBackend} from './trustedBackend.mjs';
 import {validateBridgeStagingConfig} from './stagingServer.mjs';
 import {createBridgeHttpsGateway,validateBridgeGatewayConfig} from './httpsGateway.mjs';
+import {stagingBridgeDiagnostics} from './requestDiagnostics.mjs';
 
 export function createBridgeStagingHttpsService({
-  env,createClientFn=createClient
+  env,createClientFn=createClient,diagnosticOptions
 }={}){
   const dbConfig=validateBridgeStagingConfig(env);
   const httpConfig=validateBridgeGatewayConfig(env);
+  const diagnostics=stagingBridgeDiagnostics(env,diagnosticOptions);
   if(typeof createClientFn!=='function')
     throw Error('bridge_public_clients_invalid');
   const clientOptions={
@@ -43,7 +45,7 @@ export function createBridgeStagingHttpsService({
   const publish=report=>staticAssets.set('/test/server-e2e.json',{type:'application/json; charset=utf-8',body:JSON.stringify(report),csp:"default-src 'none'"});
   if(runAuthE2E)publish({phase:'starting'});
   const config=staticAssets?{...httpConfig,origins:[...new Set([...httpConfig.origins,TEST_CONSOLE_ORIGIN])]}:httpConfig;
-  const gateway=createBridgeHttpsGateway({admin,tx,owner,bootstrap,config,staticAssets});
+  const gateway=createBridgeHttpsGateway({admin,tx,owner,bootstrap,config,staticAssets,diagnostics});
   return Object.freeze({
     async start(){
       // Bound only to an ISOLATED managed proxy service that supplies HTTPS.

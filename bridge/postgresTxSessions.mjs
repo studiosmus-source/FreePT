@@ -9,6 +9,7 @@
  * so this optional early check is never the sole dispatch authorization.
  */
 import {randomBytes,createHash} from 'node:crypto';
+import {backendFailure} from './backendFailure.mjs';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX=/^[0-9a-f]{64}$/;
 function hashToken(token) {
@@ -25,8 +26,8 @@ export class BridgePostgresTxSessions {
   async #rpc(name,args) {
     let result;
     try { result=await this.rpcClient.rpc(name,args); }
-    catch {throw new Error('bridge_session_database_unavailable');}
-    if(!result||result.error)throw new Error('bridge_session_database_unavailable');
+    catch(error) {throw backendFailure('bridge_session_database_unavailable',error);}
+    if(!result||result.error)throw backendFailure('bridge_session_database_unavailable',result?.error,result?.status);
     return result.data;
   }
   async connect({deviceId,deviceSecret}) {
