@@ -1,3 +1,4 @@
+import {backendFailure} from './backendFailure.mjs';
 import {validateBridgeFolderPage,validateBridgeReadRequest,validateBridgeFileChunk} from '../src/bridgeFileProtocol.js';
 /**
  * Backend-only adapter for staging PostgreSQL job RPCs.
@@ -32,10 +33,10 @@ export class BridgePostgresJobsAdapter {
     let result;
     try {
       result = await this.rpcClient.rpc(name, args);
-    } catch {
-      throw new Error('bridge_jobs_database_unavailable');
+    } catch(error) {
+      throw backendFailure('bridge_jobs_database_unavailable',error);
     }
-    if (!result || result.error) throw new Error('bridge_jobs_database_unavailable');
+    if (!result || result.error) throw backendFailure('bridge_jobs_database_unavailable',result?.error,result?.status);
     return result.data;
   }
 
