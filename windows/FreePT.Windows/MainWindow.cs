@@ -111,7 +111,10 @@ internal sealed class MainWindow:Form {
         try{
             var webRoot=Path.Combine(AppContext.BaseDirectory,"www");
             if(!File.Exists(Path.Combine(webRoot,"index.html")))throw new FileNotFoundException();
-            await web.EnsureCoreWebView2Async();
+            Directory.CreateDirectory(LocalState.Folder);
+            var environment=await CoreWebView2Environment.CreateAsync(
+                userDataFolder:Path.Combine(LocalState.Folder,"webview"));
+            await web.EnsureCoreWebView2Async(environment);
             web.CoreWebView2.Settings.AreDevToolsEnabled=false;
             web.CoreWebView2.Settings.IsWebMessageEnabled=true;
             web.CoreWebView2.WebMessageReceived+=OnBridgeWebMessage;
