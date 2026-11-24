@@ -37,6 +37,18 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn('out.put("connected",BridgeTxService.backendConnected)', control)
         self.assertIn('out.put("running",BridgeTxService.active)', control)
 
+    def test_in_place_update_recovers_existing_authorized_bridge(self):
+        receiver = (ROOT / "BridgeTxBootReceiver.java.template").read_text()
+        installer = (ROOT / "install.py").read_text()
+        self.assertIn("Intent.ACTION_MY_PACKAGE_REPLACED", receiver)
+        self.assertIn("android.intent.action.MY_PACKAGE_REPLACED", installer)
+        self.assertIn("BridgeDeviceSecretStore.configured(context)", receiver)
+        self.assertIn("BridgeAllFilesCore.granted()", receiver)
+        self.assertIn('getBoolean("paused",false)', receiver)
+        self.assertIn("if(boot&&Build.VERSION.SDK_INT>=35)return;", receiver)
+        self.assertIn("ContextCompat.startForegroundService", receiver)
+        self.assertNotIn("finishOwnerEnrollment", receiver)
+
     def test_foreground_notification_remains_visible(self):
         source = (ROOT / "BridgeTxService.java.template").read_text()
         self.assertIn('setContentTitle("Servizio attivo")', source)
