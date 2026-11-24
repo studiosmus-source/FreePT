@@ -22,13 +22,12 @@ internal sealed class EnrollmentClient:IDisposable {
             ?"Account non autorizzato":"Richiesta non completata");
         return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
     }
-    internal async Task<BridgeConfig> Enroll(string email,string password,string[] roots){
-        if(string.IsNullOrWhiteSpace(email)||string.IsNullOrWhiteSpace(password))
-            throw new ArgumentException("Inserisci email e password FreePT");
-        using var login=await Send(Supabase+"auth/v1/token?grant_type=password",new{email,password});
-        string jwt=login.RootElement.GetProperty("access_token").GetString()??throw new JsonException();
-        // Check approved user role server-side before creating a device.
-        using var response=await Send(Bridge+"bridge/owner/enroll",new{label="PC Windows FreePT"},jwt);
+    internal async Task<BridgeConfig> Enroll(string accessToken,string[] roots){
+        if(string.IsNullOrWhiteSpace(accessToken)||accessToken.Length<20)
+            throw new ArgumentException("Accedi alla chat FreePT come utente approvato");
+        // Existing owner endpoint checks this exact Supabase session, including
+        // approved profile and ownership. No password or new identity is created.
+        using var response=await Send(Bridge+"bridge/owner/enroll",new{label="PC Windows FreePT"},accessToken);
         string deviceId=response.RootElement.GetProperty("deviceId").GetString()??throw new JsonException();
         string deviceSecret=response.RootElement.GetProperty("deviceSecret").GetString()??throw new JsonException();
         if(!Guid.TryParse(deviceId,out _)||
@@ -36,12 +35,12 @@ internal sealed class EnrollmentClient:IDisposable {
             throw new JsonException("Credenziali del Bridge non valide");
         var config=new BridgeConfig(deviceId,deviceSecret,roots);
         LocalState.Write(config);
-        // Family activation is owner initiated; if it fails, keep the device
-        // for an explicit retry rather than silently removing its credentials.
+        // Owner explicitly pressed activation; only an authorized profile can
+        // activate its own device. Failed activation leaves the account intact.
         try{
             using var activate=await Send(Supabase+"rest/v1/rpc/bridge_owner_activate_family",
-                new{p_device_id=deviceId},jwt);
-        }catch{ /* Owner may enable or grant access later; no hidden auto retries. */ }
+                new{p_device_id=deviceId},accessToken);
+        }catch{/* Server grants remain authoritative; activation may be retried from owner controls. */}
         return config;
     }
     public void Dispose()=>client.Dispose();
