@@ -44,6 +44,7 @@ jobs:
           if ($env:VITE_SUPABASE_URL -ne 'https://aqjuixbuxftnjfzxmzuj.supabase.co') { throw "Wrong Supabase TEST project" }
           if (!$env:VITE_SUPABASE_PUBLISHABLE_KEY.StartsWith('sb_publishable_')) { throw "Missing TEST publishable key" }
           npm ci --no-audit --no-fund
+          node --test src/windowsBridgeEnrollment.test.mjs
           npm run build
           if (!(Test-Path dist/index.html)) { throw "Vite build missing" }
           New-Item -ItemType Directory -Force -Path windows/FreePT.Windows/www | Out-Null
