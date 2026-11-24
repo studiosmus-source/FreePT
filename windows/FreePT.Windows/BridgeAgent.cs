@@ -12,7 +12,7 @@ public sealed class BridgeAgent: IAsyncDisposable {
     public event Action<string>? State;
     public bool IsRunning=>worker!=null&&!worker.IsCompleted;
     public BridgeAgent(BridgeConfig value) {
-        config=value;catalogue=new BridgeCatalogue(value.Roots);
+        config=value;catalogue=new BridgeCatalogue();
     }
     public void Start(){
         if(IsRunning)return;
