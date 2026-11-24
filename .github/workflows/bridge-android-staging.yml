@@ -180,6 +180,7 @@ jobs:
           VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
           FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
           FREEPT_BRIDGE_INSTALL_TARGET: staging
+          FREEPT_OTA_APK_UPDATE_URL: https://freept-ota.onrender.com/apk-update
           FREEPT_CLASSIC_UI_FIX: ${{ (github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123') && '1' || '0' }}
           FREEPT_COMPLETE_UI_FIX: ${{ (github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123') && '1' || '0' }}
           FREEPT_UNIFIED_DESIGN: ${{ (github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123') && '1' || '0' }}
