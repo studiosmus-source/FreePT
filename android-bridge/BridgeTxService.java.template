@@ -29,6 +29,7 @@ public final class BridgeTxService extends Service {
     private volatile HttpURLConnection connection;
 
     static volatile boolean active=false;
+    static volatile boolean backendConnected=false;
     @Override public IBinder onBind(Intent intent){return null;}
 
     @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -180,6 +181,7 @@ public final class BridgeTxService extends Service {
         // enumeration must not compete with background-only thread scheduling.
         Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT);
         active=true;
+        backendConnected=false;
         try{
             // Same foreground service, authenticated technical principal before
             // account binding. This lane only generates synthetic fixture bytes.
@@ -206,6 +208,7 @@ public final class BridgeTxService extends Service {
                     if(!token.matches("^[0-9a-f]{64}$"))
                         throw new SecurityException("invalid_session");
                     connectedOnce=true;
+                    backendConnected=true;
                     // After browsing or reading, briefly poll faster for a
                     // subsequent page/chunk. Keep the 2s idle cadence to
                     // protect the shared gateway's request rate limit.
@@ -226,12 +229,14 @@ public final class BridgeTxService extends Service {
                         }
                     }
                 }catch(SecurityException denied){
+                    backendConnected=false;
                     // TX sessions expire after 5 minutes. Only a previously
                     // successful connection may renew; a refused fresh login
                     // is a durable revocation and stops the service.
                     if(!connectedOnce)break;
                     try{Thread.sleep(1000);}catch(InterruptedException stop){break;}
                 }catch(Exception intermittent){
+                    backendConnected=false;
                     // Do not expose credentials, paths or exception messages.
                     Log.w("FreePTBridgeTX","worker_error="+intermittent.getClass().getSimpleName());
                     if(!running.get())break;
@@ -242,7 +247,7 @@ public final class BridgeTxService extends Service {
         }catch(Exception ignored){
             // Never expose device credentials, private paths or file contents in logs.
         }finally{
-            active=false;running.set(false);
+            backendConnected=false;active=false;running.set(false);
             stopSelf();
         }
     }
@@ -254,7 +259,7 @@ public final class BridgeTxService extends Service {
         if(conn!=null)conn.disconnect();
         Thread thread=worker;
         if(thread!=null){BridgeBootstrapCore.interrupt(thread);thread.interrupt();}
-        active=false;
+        backendConnected=false;active=false;
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf(startId);
     }
@@ -263,7 +268,7 @@ public final class BridgeTxService extends Service {
         HttpURLConnection conn=connection;
         if(conn!=null)conn.disconnect();
         if(worker!=null){BridgeBootstrapCore.interrupt(worker);worker.interrupt();}
-        active=false;
+        backendConnected=false;active=false;
         super.onDestroy();
     }
 }
