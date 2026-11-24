@@ -33,9 +33,28 @@ public sealed class BridgeCatalogue {
         try{return (File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0;}
         catch{return true;}
     }
+    private static readonly string[] DeniedRoots=new[]{
+        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\')+"\\AppData"
+    }.Where(x=>!string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath)
+      .ToArray();
+    static bool Protected(string full){
+        if(DeniedRoots.Any(root=>full.Equals(root,StringComparison.OrdinalIgnoreCase)||
+           full.StartsWith(root.TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase)))return true;
+        string leaf=Path.GetFileName(full.TrimEnd('\\'));
+        return leaf.Equals("System Volume Information",StringComparison.OrdinalIgnoreCase)||
+               leaf.Equals("$RECYCLE.BIN",StringComparison.OrdinalIgnoreCase)||
+               leaf.Equals("Recovery",StringComparison.OrdinalIgnoreCase);
+    }
     bool Allowed(string path){
         try{
             string full=Path.GetFullPath(path);
+            if(Protected(full))return false;
             if(!roots.Any(root=>full.Equals(root.TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase)||
                 full.StartsWith(root,StringComparison.OrdinalIgnoreCase)))return false;
             // Reject junctions/symlinks anywhere along a selected path.
