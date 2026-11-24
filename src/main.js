@@ -78,7 +78,12 @@ const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
 }):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
-  baseUrl:bridgeRuntime.baseUrl,auth:db.auth
+  baseUrl:bridgeRuntime.baseUrl,auth:db.auth,
+  // Staging-only authenticated FCM nudge. The Edge Function checks the admin,
+  // the receiver grant and the queued job before contacting the remote device.
+  wakeQueuedJob:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
+    ? jobId=>db.functions.invoke('freept-bridge-wake',{body:{jobId}})
+    : null
 });
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
