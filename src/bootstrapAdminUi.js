@@ -15,11 +15,12 @@ export function mountBootstrapAdmin({host,db,baseUrl,isAuthorized,fetchImpl=fetc
   button.onclick=async()=>{
    if(!isAuthorized())return;
    button.disabled=true;output.hidden=true;
-   let active=false,approved=false,deviceId=null,clean=false;
+   let active=false,approved=false,deviceId=null,clean=false,startedTx=false;
+   const bounded=(promise,ms=12000)=>Promise.race([Promise.resolve(promise),new Promise((_,reject)=>setTimeout(()=>reject(Error('bridge_test_timeout')),ms))]);
    const checks=[];
    const step=(name,state)=>{checks.push({name,state});if(isAuthorized())status.textContent=name+' — '+state;};
    const save=async()=>{
-    let local=null;try{local=await testNative.diagnosticReport({stages:[]});}catch{}
+    let local=null;try{local=await bounded(testNative.diagnosticReport({stages:[]}),5000);}catch{}
     if(isAuthorized()){
      output.textContent=JSON.stringify({test:'FreePT TEST Bridge',checks,
        native:local?{error:local.error,serviceActive:local.serviceActive,allFiles:local.allFiles,
@@ -29,20 +30,23 @@ export function mountBootstrapAdmin({host,db,baseUrl,isAuthorized,fetchImpl=fetc
    };
    try{
     step('Permesso file Android','verifica');
-    let permission=await testFiles.status();
-    if(!permission?.granted){await testFiles.requestPermission();permission=await testFiles.status();}
+    const previous=await bounded(testTx.status(),6000);
+    if(previous?.running)throw Error('servizio_gia_attivo_non_interrompere');
+    let permission=await bounded(testFiles.status());
+    if(!permission?.granted){await bounded(testFiles.requestPermission(),30000);permission=await bounded(testFiles.status());}
     if(!permission?.granted)throw Error('permesso_file_non_concesso');
     step('Permesso file Android','OK');
-    const state=await testNative.localStatus();
+    const state=await bounded(testNative.localStatus());
     if(state?.bound)throw Error('dispositivo_gia_associato');
-    const registration=await testNative.begin();
+    const registration=await bounded(testNative.begin(),20000);
     if(!/^[a-f0-9]{12}$/i.test(registration?.pairCode||''))throw Error('codice_test_non_valido');
     active=true;
     step('Richiesta HTTPS firmata','OK');
-    const started=await testTx.start();
+    const started=await bounded(testTx.start());
+    startedTx=true;
     if(started?.requested!==true)throw Error('avvio_servizio_rifiutato');
     step('Servizio Android','avvio richiesto');
-    const accepted=await post('approve',{pairCode:registration.pairCode});
+    const accepted=await bounded(post('approve',{pairCode:registration.pairCode}),15000);
     if(accepted?.approved!==true||typeof accepted.deviceId!=='string')throw Error('approvazione_test_non_riuscita');
     approved=true;deviceId=accepted.deviceId;
     step('Autorizzazione admin HTTPS','OK');
@@ -50,7 +54,7 @@ export function mountBootstrapAdmin({host,db,baseUrl,isAuthorized,fetchImpl=fetc
     for(let i=0;i<24;i++){
      if(!isAuthorized())throw Error('test_interrotto');
      await new Promise(resolve=>setTimeout(resolve,2500));
-     let s=await testNative.status();
+     let s=await bounded(testNative.status(),5000);
      if(s?.verified===true){done=true;break;}
      if(i===8)step('Trasferimento sintetico 300.000 byte','in corso');
     }
@@ -60,15 +64,15 @@ export function mountBootstrapAdmin({host,db,baseUrl,isAuthorized,fetchImpl=fetc
    }catch(error){
     // Never show bearer tokens, backend response bodies or device pairing secrets.
     const allowed=new Set(['permesso_file_non_concesso','dispositivo_gia_associato','codice_test_non_valido',
-      'avvio_servizio_rifiutato','approvazione_test_non_riuscita','test_interrotto','trasferimento_non_verificato_60s']);
+      'avvio_servizio_rifiutato','approvazione_test_non_riuscita','test_interrotto','trasferimento_non_verificato_60s','bridge_test_timeout','servizio_gia_attivo_non_interrompere']);
     step('Risultato',allowed.has(error?.message)?error.message:'ERRORE — consulta la diagnostica');
    }finally{
     try{
-     if(approved&&deviceId){await post('revoke',{deviceId});clean=true;step('Revoca autorizzazione di prova','OK');}
-     else if(active){await testNative.cancel();clean=true;step('Annullamento prova','OK');}
+     if(approved&&deviceId){await bounded(post('revoke',{deviceId}),6000);clean=true;step('Revoca autorizzazione di prova','OK');}
+     else if(active){await bounded(testNative.cancel(),6000);clean=true;step('Annullamento prova','OK');}
     }catch{step('Pulizia autorizzazione','da verificare — NON eliminare i dati app');}
-    try{await testTx.stop();}catch{step('Arresto servizio','non confermato');}
-    if(clean){try{await testNative.resetUnboundTest();step('Pulizia identità temporanea','OK');}
+    if(startedTx){try{await bounded(testTx.stop(),6000);}catch{step('Arresto servizio di prova','non confermato');}}
+    if(clean){try{await bounded(testNative.resetUnboundTest(),6000);step('Pulizia identità temporanea','OK');}
       catch{step('Pulizia identità temporanea','non confermata');}}
     await save();button.disabled=false;
    }
