@@ -8,6 +8,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import {createPushRegistration} from './pushRegistration.js';
 import {mountImportantAlertComposer,renderImportantAlert} from './importantAlerts.js';
+import {installWindowsBridgeEnrollment} from './windowsBridgeEnrollment.js';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
@@ -124,6 +125,7 @@ const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
   }
 }):null;
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
+installWindowsBridgeEnrollment({auth:db.auth,getIdentity:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null});
 let messageRequest = 0;
 let fetchingMessages = false;
 let adminUnlocked = false;
