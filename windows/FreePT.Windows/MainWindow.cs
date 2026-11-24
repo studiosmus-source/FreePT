@@ -40,7 +40,8 @@ internal sealed class MainWindow:Form {
         var top=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=false,WrapContents=true};
         var add=Button("Aggiungi cartella o disco");
         var remove=Button("Rimuovi selezione");
-        top.Controls.Add(add);top.Controls.Add(remove);
+        var save=Button("Salva cartelle condivise");
+        top.Controls.Add(add);top.Controls.Add(remove);top.Controls.Add(save);
         top.Controls.Add(new Label{Text="Condividi solo cartelle che autorizzi. Puoi includere unità USB.",
             AutoSize=true,Padding=new Padding(6,12,0,0)});
         layout.Controls.Add(top,0,1);
@@ -60,6 +61,17 @@ internal sealed class MainWindow:Form {
                 roots.Items.Add(picker.SelectedPath);
         };
         remove.Click+=(_,_)=>{if(roots.SelectedIndex>=0)roots.Items.RemoveAt(roots.SelectedIndex);};
+        save.Click+=async(_,_)=>{
+            if(config==null){Display("Salva le cartelle durante la prima associazione.");return;}
+            try{
+                var selected=roots.Items.Cast<string>().ToArray();
+                _=new BridgeCatalogue(selected);
+                config=config with{Roots=selected};
+                LocalState.Write(config);
+                await StartBridge();
+                Display("Cartelle aggiornate. Bridge riavviato.");
+            }catch{Display("Impossibile salvare le cartelle.");}
+        };
         start.Click+=async(_,_)=>await StartBridge();
         stop.Click+=async(_,_)=>{if(agent!=null)await agent.Stop();status.Text="Bridge fermo";};
         enroll.Click+=async(_,_)=>await Enroll();
