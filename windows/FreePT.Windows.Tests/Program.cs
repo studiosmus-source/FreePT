@@ -1,33 +1,52 @@
 using FreePT.Windows;
 using System.Text;
-var folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"freept-windows-test-"+Guid.NewGuid().ToString("N"));
+var folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+    "freept-windows-test-"+Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(folder);
 try{
- var child=Path.Combine(folder,"Cartella");
- Directory.CreateDirectory(child);
- var bytes=Encoding.UTF8.GetBytes("FreePT Windows test");
- File.WriteAllBytes(Path.Combine(child,"test.txt"),bytes);
- File.WriteAllText(Path.Combine(folder,".nascosto"),"ok");
- var catalog=new BridgeCatalogue(new[]{folder});
- var root=catalog.Browse("root",0);
- if(root.Entries.Length!=1||!root.Entries[0].Directory||root.NextOffset!=-1)throw new Exception("root contract");
- var page=catalog.Browse(root.Entries[0].Handle,0);
- if(page.Entries.Length!=2||!page.Entries[0].Directory||page.Entries[1].Name!=".nascosto")throw new Exception("ordering/hidden");
- var nested=catalog.Browse(page.Entries[0].Handle,0);
- if(nested.Entries.Length!=1||nested.Entries[0].Name!="test.txt")throw new Exception("nested");
- var chunk=catalog.Read(nested.Entries[0].Handle,0,262144);
- if(Convert.ToBase64String(bytes)!=chunk.Base64||chunk.BytesRead!=bytes.Length||!chunk.Eof)throw new Exception("chunk contract");
- try{catalog.Read(nested.Entries[0].Handle,0,262145);throw new Exception("oversized chunk accepted");}
- catch(ArgumentOutOfRangeException){}
- try{catalog.Browse("../",0);throw new Exception("path escape accepted");}
- catch(UnauthorizedAccessException){}
- // An explicit directory junction is prohibited when Windows supports it.
- var outside=Path.Combine(Path.GetTempPath(),"freept-outside-"+Guid.NewGuid().ToString("N"));
- Directory.CreateDirectory(outside);
- var link=Path.Combine(folder,"link");
- try{Directory.CreateSymbolicLink(link,outside);
-    var filtered=catalog.Browse(root.Entries[0].Handle,0);
-    if(filtered.Entries.Any(x=>x.Name=="link"))throw new Exception("symlink exposed");
- }catch(UnauthorizedAccessException){}finally{if(Directory.Exists(link))Directory.Delete(link);Directory.Delete(outside);}
- Console.WriteLine("FreePT Windows catalogue contracts OK");
+    var child=Path.Combine(folder,"Cartella");
+    Directory.CreateDirectory(child);
+    var bytes=Encoding.UTF8.GetBytes("FreePT Windows test");
+    File.WriteAllBytes(Path.Combine(child,"test.txt"),bytes);
+    File.WriteAllText(Path.Combine(folder,".nascosto"),"ok");
+    var catalog=new BridgeCatalogue();
+    var root=catalog.Browse("root",0);
+    if(root.Entries.Length<1||!root.Entries.All(x=>x.Directory))throw new Exception("auto drive enumeration");
+    var disk=Path.GetPathRoot(folder)!;
+    var volume=root.Entries.SingleOrDefault(x=>x.Name.Equals(disk.TrimEnd('\\'),StringComparison.OrdinalIgnoreCase))
+        ??throw new Exception("host volume not exposed");
+    var handle=volume.Handle;
+    var segments=Path.GetRelativePath(disk,folder).Split(Path.DirectorySeparatorChar,StringSplitOptions.RemoveEmptyEntries);
+    foreach(string segment in segments){
+        var page=catalog.Browse(handle,0);var offset=page.NextOffset;
+        FileEntry? matching=page.Entries.FirstOrDefault(x=>x.Directory&&x.Name.Equals(segment,StringComparison.OrdinalIgnoreCase));
+        while(matching==null&&offset>=0){
+            page=catalog.Browse(handle,offset);offset=page.NextOffset;
+            matching=page.Entries.FirstOrDefault(x=>x.Directory&&x.Name.Equals(segment,StringComparison.OrdinalIgnoreCase));
+        }
+        if(matching==null)throw new Exception("accessible Windows directory missing "+segment);
+        handle=matching.Handle;
+    }
+    var listed=catalog.Browse(handle,0);
+    if(listed.Entries.Length!=2||!listed.Entries[0].Directory||listed.Entries[1].Name!=".nascosto")
+        throw new Exception("directory-first/hidden");
+    var nested=catalog.Browse(listed.Entries[0].Handle,0);
+    if(nested.Entries.Length!=1||nested.Entries[0].Name!="test.txt")throw new Exception("nested");
+    var chunk=catalog.Read(nested.Entries[0].Handle,0,262144);
+    if(chunk.Base64!=Convert.ToBase64String(bytes)||chunk.BytesRead!=bytes.Length||!chunk.Eof)
+        throw new Exception("chunk contract");
+    try{catalog.Read(nested.Entries[0].Handle,0,262145);throw new Exception("oversized chunk accepted");}
+    catch(ArgumentOutOfRangeException){}
+    try{catalog.Browse("../",0);throw new Exception("path escape accepted");}
+    catch(UnauthorizedAccessException){}
+    var outside=Path.Combine(Path.GetTempPath(),"freept-outside-"+Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(outside);
+    var link=Path.Combine(folder,"link");
+    try{
+        Directory.CreateSymbolicLink(link,outside);
+        var filtered=catalog.Browse(handle,0);
+        if(filtered.Entries.Any(x=>x.Name=="link"))throw new Exception("symlink exposed");
+    }catch(UnauthorizedAccessException){}
+    finally{if(Directory.Exists(link))Directory.Delete(link);Directory.Delete(outside);}
+    Console.WriteLine("FreePT Windows automatic-volume catalogue OK");
 }finally{Directory.Delete(folder,true);}
