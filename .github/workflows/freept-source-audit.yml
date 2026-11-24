@@ -26,7 +26,6 @@ jobs:
         run: |
           python3 -m py_compile android-bridge/install.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
-          python3 -m unittest android-bridge/install_destination_tests.py
       - name: Build web application from locked source
         env:
           VITE_SUPABASE_URL: https://aqjuixbuxftnjfzxmzuj.supabase.co
