@@ -849,13 +849,14 @@ async function checkImportantAlerts(){
   const owner=me.id;
   try{
     const {data,error}=await db.from('important_alerts')
-      .select('id,title,body,created_at').eq('recipient_id',owner)
+      .select('id,title,body,apk_attachment,created_at').eq('recipient_id',owner)
       .is('read_at',null).order('created_at',{ascending:true}).limit(1);
     if(error){if(error.code!=='42P01'&&error.code!=='PGRST205')console.warn('FreePT alert fetch failed',error.code);return;}
     const alert=data?.[0];
     if(!alert||me?.id!==owner||profile?.role!=='user'||importantAlertShown)return;
     importantAlertShown=alert.id;
-    renderImportantAlert({host:document.body,alert,onAcknowledge:async id=>{
+    renderImportantAlert({host:document.body,alert:{...alert,apk:alert.apk_attachment},
+      updater:freeptUpdater?createUpdaterClient({plugin:freeptUpdater}):null,onAcknowledge:async id=>{
       if(me?.id!==owner||profile?.role!=='user')throw Error('Sessione cambiata.');
       const {data:updated,error:ackError}=await db.from('important_alerts')
         .update({read_at:new Date().toISOString()}).eq('id',id)
