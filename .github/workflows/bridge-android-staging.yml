@@ -41,6 +41,8 @@ jobs:
         run: npm run test:bridge
       - name: Silent reconnect and consent regression tests
         run: node --test src/bridgeReconnect.test.mjs src/chieditore.test.mjs src/bridgeAutoSetup.test.mjs
+      - name: Orphaned Bridge identity recovery safety tests
+        run: node --test bridge/orphanRecovery.test.mjs
       - name: Unified admin and user design regression tests
         run: node --test src/designSystem.test.mjs
       - name: Important alert validation tests
