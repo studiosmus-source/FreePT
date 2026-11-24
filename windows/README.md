@@ -23,8 +23,9 @@ Microsoft Edge WebView2 Runtime is required for the embedded chat.
 Do not install over any existing production FreePT deployment: this client targets TEST only.
 
 ## Scope of this phase
-Initial setup uses Supabase email/password authentication to enroll the owner. Password is used in memory for the sign-in request; it is not stored.
-If this user's FreePT account uses a different sign-in mechanism, that method still needs a Windows-compatible flow.
+Initial setup uses the approved user session in the embedded FreePT chat, requested only after the owner presses the Windows Bridge activation button. A short-lived, nonce-bound WebView2 message passes the access token in memory to the local native host, which then calls the existing authorized owner enrollment endpoint. No email/password fields, new Supabase sign-in, or account password storage are involved.
+
+**Account continuity limitation:** a first-time Windows WebView session is a new anonymous FreePT account, not automatically the same identity as the user's existing Android session. Admin approval of that Windows account is currently required. Cross-device account linking requires a separate secure flow and is not claimed complete.
 The chat UI is embedded in WebView2. Android-specific native download destinations and Bridge admin views are not yet adapted for desktop.
 
 The PC owner may edit shared roots and click **Salva cartelle condivise**.
