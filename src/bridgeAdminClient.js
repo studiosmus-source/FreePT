@@ -20,10 +20,15 @@ export function normalizeBridgeApiUrl(raw) {
   return url.origin;
 }
 
-export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
+export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch,wakeQueuedJob=null}={}) {
   const url=normalizeBridgeApiUrl(baseUrl);
   if(!url||typeof auth?.getSession!=='function'||typeof fetchImpl!=='function')
     return null;
+  // Best-effort wake only for authenticated, validated jobs. Never block a job on FCM.
+  const wake=jobId=>{
+    if(typeof wakeQueuedJob!=='function')return;
+    try{Promise.resolve(wakeQueuedJob(jobId)).catch(()=>{});}catch{/* push unavailable; normal polling remains valid */}
+  };
   const perform=async(action,id,{signal}={})=>{
     if(!UUID.test(id))throw Error('bridge_invalid_id');
     const {data,error}=await auth.getSession();
@@ -56,6 +61,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
        (action!=='list'&&body.jobId!==id)||
        (action==='cancel'&&body.state!=='cancelled'))
       throw Error('bridge_invalid_response');
+    if(action==='list'&&body.state==='queued')wake(body.jobId);
     return {jobId:body.jobId,deviceId:body.deviceId,state:body.state};
   };
   const getFolderPage=async jobId=>{
@@ -118,6 +124,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     const result=await readCall('browse',{deviceId,handle,offset},{signal});
     if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
        result.state!=='queued')throw Error('bridge_invalid_response');
+    if(!signal?.aborted)wake(result.jobId);
     return result;
   };
   const getBrowsePage=async(jobId,{signal}={})=>{
@@ -135,6 +142,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch}={}) {
     if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
        result.state!=='queued'||Object.keys(result).sort().join(',')!=='deviceId,jobId,state')
       throw Error('bridge_invalid_response');
+    wake(result.jobId);
     return result;
   };
   const getReadChunk=async(jobId)=>{
