@@ -120,7 +120,7 @@ if gradle_source.count("dependencies {") != 1 or "firebase-messaging" in gradle_
 if target == "staging":
     # One source of truth for staging version, without stacking old patches.
     versions = (
-        ("FREEPT_STORAGE_FIX", 12, "2.1.0"),
+        ("FREEPT_STORAGE_FIX", 13, "2.2.0"),
         ("FREEPT_PERMISSION_REPROMPT_FIX", 6, "1.5.0"),
         ("FREEPT_UNIFIED_DESIGN", 5, "1.4.0"),
         ("FREEPT_COMPLETE_UI_FIX", 4, "1.3.0"),
@@ -215,6 +215,8 @@ service = ('<service android:name=".BridgeTxService" '
 boot_receiver = ('<receiver android:name=".BridgeTxBootReceiver" '
                  'android:enabled="true" android:exported="false">'
                  '<intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" />'
+                 '</intent-filter><intent-filter>'
+                 '<action android:name="android.intent.action.MY_PACKAGE_REPLACED" />'
                  '</intent-filter></receiver>')
 if manifest_text.count("</application>") != 1:
     raise SystemExit("Unexpected AndroidManifest app closure")
