@@ -4,10 +4,10 @@ This Windows-only client reuses the existing Vite chat frontend and the isolated
 It is a first usable **TEST** build, not an independently verified production remote-access product.
 
 ## Security model
-- The PC owner signs in with their FreePT TEST account and explicitly selects directories or disks to share.
+- The PC owner signs in with their FreePT TEST account and enables the Bridge after administrator approval; ready Windows drives are then discovered automatically.
 - A new device is enrolled through the existing HTTPS owner endpoint. The server applies its approved-owner checks.
 - Device credentials are stored using Windows DPAPI (CurrentUser), not written to the browser, registry or logs.
-- Only those explicitly selected roots can be listed or read. Reparse points and Windows/program/application-data directories are excluded.
+- Only ready drives visible to the signed-in Windows account can be browsed. No privilege elevation or ACL bypass is attempted. Windows junctions/symlinks and FreePT's own private credential folder are excluded.
 - Existing server grants, enable/disable and revocation are authoritative. A revoked initial login stops the agent.
 - FreePT Windows never accepts shell commands, input control, writes, file deletion, or unsupervised privilege elevation.
 - The tray icon keeps the Bridge running while the UI is hidden; optional HKCU Run starts it at Windows user sign-in.
@@ -28,5 +28,5 @@ Initial setup uses the approved user session in the embedded FreePT chat, reques
 **Account continuity limitation:** a first-time Windows WebView session is a new anonymous FreePT account, not automatically the same identity as the user's existing Android session. Admin approval of that Windows account is currently required. Cross-device account linking requires a separate secure flow and is not claimed complete.
 The chat UI is embedded in WebView2. Android-specific native download destinations and Bridge admin views are not yet adapted for desktop.
 
-The PC owner may edit shared roots and click **Salva cartelle condivise**.
+No manual folder or drive selection is required. The Bridge dynamically discovers ready drives (including removable drives when Windows permits access). The owner may stop the Bridge at any time; that pause survives restarts.
 Remote browsing from Android uses the existing Bridge page/chunk protocol after device provisioning and grant activation.
