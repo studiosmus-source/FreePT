@@ -8,8 +8,6 @@ internal sealed class MainWindow:Form {
     private readonly Label status=new(){AutoSize=false,Dock=DockStyle.Top,Height=60,Text="Bridge non configurato",
         ForeColor=Color.FromArgb(26,74,88),Font=new Font("Segoe UI",11,FontStyle.Bold)};
     private readonly ListBox roots=new(){Dock=DockStyle.Fill,IntegralHeight=false};
-    private readonly TextBox email=new(){PlaceholderText="Email FreePT",Width=260};
-    private readonly TextBox password=new(){PlaceholderText="Password FreePT",UseSystemPasswordChar=true,Width=260};
     private readonly Button enroll=new(){Text="Attiva Bridge Windows",Width=250,Height=45};
     private readonly Button start=new(){Text="Avvia Bridge",Width=160,Height=43};
     private readonly Button stop=new(){Text="Ferma Bridge",Width=160,Height=43};
@@ -19,6 +17,8 @@ internal sealed class MainWindow:Form {
     private bool quitting=false;
     private readonly TabControl tabs=new(){Dock=DockStyle.Fill};
     private BridgeConfig? config;
+    private string? pendingNonce;
+    private TaskCompletionSource<string>? pendingToken;
     internal MainWindow(){
         Text="FreePT Windows TEST";MinimumSize=new Size(700,540);Size=new Size(1080,730);
         BackColor=Color.FromArgb(239,247,248);Font=new Font("Segoe UI",10);
@@ -49,7 +49,8 @@ internal sealed class MainWindow:Form {
         var stateRow=new FlowLayoutPanel{Dock=DockStyle.Fill};stateRow.Controls.Add(start);stateRow.Controls.Add(stop);
         layout.Controls.Add(stateRow,0,3);
         var credentials=new FlowLayoutPanel{Dock=DockStyle.Fill,WrapContents=true};
-        credentials.Controls.Add(email);credentials.Controls.Add(password);credentials.Controls.Add(enroll);
+        credentials.Controls.Add(new Label{Text="Accedi prima nella scheda Chat, poi seleziona le cartelle e premi Attiva Bridge.",AutoSize=true,MaximumSize=new Size(550,0)});
+        credentials.Controls.Add(enroll);
         layout.Controls.Add(credentials,0,4);
         layout.Controls.Add(startup,0,5);
         var bottom=new Panel{Dock=DockStyle.Bottom,Height=70,Padding=new Padding(16,10,16,8)};
@@ -83,7 +84,7 @@ internal sealed class MainWindow:Form {
         config=LocalState.Read();
         if(config!=null){
             foreach(var root in config.Roots)roots.Items.Add(root);
-            email.Enabled=password.Enabled=enroll.Enabled=false;
+            enroll.Enabled=false;
             status.Text="PC associato. Avvio del Bridge…";
         }
         startup.Checked=HasStartup();
@@ -112,7 +113,8 @@ internal sealed class MainWindow:Form {
             if(!File.Exists(Path.Combine(webRoot,"index.html")))throw new FileNotFoundException();
             await web.EnsureCoreWebView2Async();
             web.CoreWebView2.Settings.AreDevToolsEnabled=false;
-            web.CoreWebView2.Settings.IsWebMessageEnabled=false;
+            web.CoreWebView2.Settings.IsWebMessageEnabled=true;
+            web.CoreWebView2.WebMessageReceived+=OnBridgeWebMessage;
             web.CoreWebView2.SetVirtualHostNameToFolderMapping("app.freept.test",webRoot,
                 CoreWebView2HostResourceAccessKind.DenyCors);
             web.CoreWebView2.Navigate("https://app.freept.test/index.html");
@@ -121,6 +123,34 @@ internal sealed class MainWindow:Form {
             Display("Chat non disponibile: verifica Microsoft Edge WebView2 Runtime.");
         }
     }
+    private void OnBridgeWebMessage(object? sender,CoreWebView2WebMessageReceivedEventArgs e){
+        if(pendingToken==null||pendingNonce==null)return;
+        if(!Uri.TryCreate(e.Source,UriKind.Absolute,out var source)||
+           source.Scheme!="https"||source.Host!="app.freept.test")return;
+        try{
+            using var doc=JsonDocument.Parse(e.WebMessageAsJson);
+            var root=doc.RootElement;
+            if(root.GetProperty("kind").GetString()!="freept_win_pair_response"||
+               root.GetProperty("nonce").GetString()!=pendingNonce)return;
+            string? access=root.GetProperty("accessToken").GetString();
+            if(access==null||access.Length<20)
+                pendingToken.TrySetException(new InvalidOperationException(
+                    "Apri la chat e attendi l'approvazione del tuo account prima di associare il PC."));
+            else pendingToken.TrySetResult(access);
+        }catch{}
+    }
+    private async Task<string> AuthorizedSession(){
+        if(web.CoreWebView2==null)throw new InvalidOperationException("Chat non disponibile");
+        pendingNonce=Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        pendingToken=new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try{
+            web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new{
+                kind="freept_win_pair_request",nonce=pendingNonce}));
+            var ready=await Task.WhenAny(pendingToken.Task,Task.Delay(15000));
+            if(ready!=pendingToken.Task)throw new TimeoutException("La chat non ha risposto");
+            return await pendingToken.Task;
+        }finally{pendingToken=null;pendingNonce=null;}
+    }
     private async Task Enroll(){
         enroll.Enabled=false;
         try{
@@ -128,9 +158,8 @@ internal sealed class MainWindow:Form {
             _=new BridgeCatalogue(selected);
             using var owner=new EnrollmentClient(Key()??"");
             Display("Associazione al tuo account FreePT TEST…");
-            config=await owner.Enroll(email.Text.Trim(),password.Text,selected);
-            password.Clear();
-            email.Enabled=password.Enabled=false;
+            string accessToken=await AuthorizedSession();
+            config=await owner.Enroll(accessToken,selected);
             Display("PC registrato. Bridge in avvio…");
             await StartBridge();
         }catch(Exception e){Display("Associazione non riuscita: "+e.Message);}
