@@ -77,10 +77,10 @@ public sealed class BridgeCatalogue {
         if(offset<0||offset>MaxEntries)throw new ArgumentOutOfRangeException(nameof(offset));
         lock(gate){
             if(handle=="root"){
-                var nodes=roots.Select(root=>new FileEntry(Handle(root),
+                var rootNodes=roots.Select(root=>new FileEntry(Handle(root),
                     Path.GetPathRoot(root)?.TrimEnd('\\')==root.TrimEnd('\\')?root.TrimEnd('\\'):Path.GetFileName(root.TrimEnd('\\')),
                     true,-1,"vnd.android.document/directory")).ToArray();
-                return Slice(nodes,offset);
+                return Slice(rootNodes,offset);
             }
             if(!handles.TryGetValue(handle,out var parent)||!Allowed(parent)||!Directory.Exists(parent))
                 throw new UnauthorizedAccessException("Folder unavailable");
