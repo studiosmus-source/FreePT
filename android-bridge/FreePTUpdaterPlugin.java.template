@@ -156,7 +156,10 @@ public class FreePTUpdaterPlugin extends Plugin {
         final String url=call.getString("url","");
         final String sha=call.getString("sha256","").toLowerCase();
         final long expected=call.getLong("versionCode",0L);
-        if(!APK_URL.matcher(url).matches()||!SHA256.matcher(sha).matches()||expected<=0){
+        long current;
+        try{current=selfVersionCode();}catch(Exception error){call.reject("updater_app_info_failed");return;}
+        if(!APK_URL.matcher(url).matches()||!SHA256.matcher(sha).matches()||
+           expected<=current){
             call.reject("updater_invalid_request");return;
         }
         call.setKeepAlive(true);
@@ -215,7 +218,7 @@ public class FreePTUpdaterPlugin extends Plugin {
         if(got==null)throw new Exception("unreadable_apk");
         if(!getContext().getPackageName().equals(got.packageName))throw new Exception("package_mismatch");
         long gotCode=Build.VERSION.SDK_INT>=28?got.getLongVersionCode():(long)got.versionCode;
-        if(gotCode!=expected)throw new Exception("version_mismatch");
+        if(gotCode!=expected||gotCode<=selfVersionCode())throw new Exception("version_mismatch");
         if(!sameSigners(selfInfo(flags),got))throw new Exception("signature_mismatch");
     }
     private boolean sameSigners(PackageInfo a,PackageInfo b){
