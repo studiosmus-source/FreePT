@@ -3,7 +3,7 @@ using System.Net.Mime;
 using System.Text;
 using System.Text.Json.Serialization;
 namespace FreePT.Windows;
-// The owner chooses Windows roots. Never follow reparse points or escape those roots.
+// Only enumerate drives Windows exposes as ready to the signed-in user. No privilege escalation. Reparse points are never followed.
 public sealed record FileEntry(
  [property:JsonPropertyName("handle")]string Handle,
  [property:JsonPropertyName("name")]string Name,
@@ -18,45 +18,30 @@ public sealed record FileChunk(
  [property:JsonPropertyName("bytesRead")]int BytesRead,
  [property:JsonPropertyName("eof")]bool Eof);
 public sealed class BridgeCatalogue {
-    private readonly string[] roots;
     private readonly Dictionary<string,string> handles=new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string,string> reverse=new(StringComparer.OrdinalIgnoreCase);
     private readonly object gate=new();
     private const int PageSize=100, MaxEntries=10000, MaxHandles=60000;
-    public BridgeCatalogue(IEnumerable<string> selectedRoots){
-        roots=selectedRoots.Select(p=>Path.GetFullPath(p.TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar))
-            .Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToArray();
-        if(roots.Length==0||roots.Length>50)throw new ArgumentException("Scegli almeno una cartella esistente.");
-        foreach(var root in roots)if(IsLink(root))throw new ArgumentException("I collegamenti non possono essere condivisi.");
-    }
+    public BridgeCatalogue(){}
+    // Drives can appear and disappear (USB, mapped network volumes).
+    private static string[] Roots()=>DriveInfo.GetDrives()
+        .Where(d=>{try{return d.IsReady&&Directory.Exists(d.RootDirectory.FullName)&&!IsLink(d.RootDirectory.FullName);}catch{return false;}})
+        .Select(d=>Path.GetFullPath(d.RootDirectory.FullName))
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     static bool IsLink(string path){
         try{return (File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0;}
         catch{return true;}
     }
-    private static readonly string[] DeniedRoots=new[]{
-        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\')+"\\AppData"
-    }.Where(x=>!string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath)
-      .ToArray();
-    static bool Protected(string full){
-        if(DeniedRoots.Any(root=>full.Equals(root,StringComparison.OrdinalIgnoreCase)||
-           full.StartsWith(root.TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase)))return true;
-        string leaf=Path.GetFileName(full.TrimEnd('\\'));
-        return leaf.Equals("System Volume Information",StringComparison.OrdinalIgnoreCase)||
-               leaf.Equals("$RECYCLE.BIN",StringComparison.OrdinalIgnoreCase)||
-               leaf.Equals("Recovery",StringComparison.OrdinalIgnoreCase);
-    }
+    private static readonly string PrivateState=Path.GetFullPath(
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"FreePT.Windows"));
+    static bool Protected(string full)=>full.Equals(PrivateState,StringComparison.OrdinalIgnoreCase)||
+       full.StartsWith(PrivateState.TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar,
+           StringComparison.OrdinalIgnoreCase);
     bool Allowed(string path){
         try{
             string full=Path.GetFullPath(path);
             if(Protected(full))return false;
-            if(!roots.Any(root=>full.Equals(root.TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase)||
-                full.StartsWith(root,StringComparison.OrdinalIgnoreCase)))return false;
+            if(!Roots().Any(root=>full.StartsWith(root,StringComparison.OrdinalIgnoreCase)))return false;
             // Reject junctions/symlinks anywhere along a selected path.
             var walk=full;
             while(!string.IsNullOrEmpty(walk)){
@@ -77,9 +62,8 @@ public sealed class BridgeCatalogue {
         if(offset<0||offset>MaxEntries)throw new ArgumentOutOfRangeException(nameof(offset));
         lock(gate){
             if(handle=="root"){
-                var rootNodes=roots.Select(root=>new FileEntry(Handle(root),
-                    Path.GetPathRoot(root)?.TrimEnd('\\')==root.TrimEnd('\\')?root.TrimEnd('\\'):Path.GetFileName(root.TrimEnd('\\')),
-                    true,-1,"vnd.android.document/directory")).ToArray();
+                var rootNodes=Roots().Select(root=>new FileEntry(Handle(root),
+                    root.TrimEnd(Path.DirectorySeparatorChar),true,-1,"vnd.android.document/directory")).ToArray();
                 return Slice(rootNodes,offset);
             }
             if(!handles.TryGetValue(handle,out var parent)||!Allowed(parent)||!Directory.Exists(parent))
