@@ -102,3 +102,33 @@ test('expired job status is accepted but never mistaken for a successful cancell
  assert.equal((await f.client.getStatus(JOB)).state,'expired');
  await assert.rejects(()=>f.client.cancel(JOB),/bridge_invalid_response/);
 });
+
+test('queued remote browse triggers one best-effort wake without delaying the job',async()=>{
+ const wakes=[];
+ const auth={getSession:async()=>({data:{session:{access_token:token}},error:null})};
+ const api=createBridgeAdminClient({baseUrl:endpoint,auth,
+  fetchImpl:async()=>({ok:true,status:202,json:async()=>({jobId:JOB,deviceId:DEVICE,state:'queued'})}),
+  wakeQueuedJob:id=>{wakes.push(id);return Promise.reject(Error('fcm offline'));}
+ });
+ assert.equal((await api.requestBrowse(DEVICE)).jobId,JOB);
+ assert.deepEqual(wakes,[JOB]);
+});
+test('invalid or failed browse never triggers remote wake',async()=>{
+ const wakes=[];
+ const auth={getSession:async()=>({data:{session:{access_token:token}}})};
+ const api=createBridgeAdminClient({baseUrl:endpoint,auth,
+  fetchImpl:async()=>({ok:true,json:async()=>({jobId:'invalid',deviceId:DEVICE,state:'queued'})}),
+  wakeQueuedJob:id=>wakes.push(id)});
+ await assert.rejects(api.requestBrowse(DEVICE),/bridge_invalid_response/);
+ assert.deepEqual(wakes,[]);
+});
+test('queued file read triggers wake; status polling never triggers repeated wakes',async()=>{
+ const wakes=[];
+ const auth={getSession:async()=>({data:{session:{access_token:token}}})};
+ const api=createBridgeAdminClient({baseUrl:endpoint,auth,
+  fetchImpl:async()=>({ok:true,json:async()=>({jobId:JOB,deviceId:DEVICE,state:'queued'})}),
+  wakeQueuedJob:id=>wakes.push(id)});
+ await api.requestRead(DEVICE,{handle:DEVICE,offset:0,length:1});
+ await api.getStatus(JOB);
+ assert.deepEqual(wakes,[JOB]);
+});
