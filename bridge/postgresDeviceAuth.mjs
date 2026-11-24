@@ -5,6 +5,7 @@
  * Opening a session separately checks current verifier under device lock.
  */
 import {verifyTrustedDeviceSecret} from './deviceCredentials.mjs';
+import {backendFailure} from './backendFailure.mjs';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX=/^[0-9a-f]{64}$/;
 const SALT=/^[0-9a-f]{32}$/;
@@ -21,11 +22,11 @@ export function createPostgresDeviceAuthenticator({verifiersClient}) {
       response=await verifiersClient.from('bridge_device_verifiers')
         .select('device_id,salt_hex,verifier_hex')
         .eq('device_id',deviceId).maybeSingle();
-    } catch {
-      throw new Error('bridge_device_verifier_unavailable');
+    } catch(error) {
+      throw backendFailure('bridge_device_verifier_unavailable',error);
     }
     if(!response||response.error)
-      throw new Error('bridge_device_verifier_unavailable');
+      throw backendFailure('bridge_device_verifier_unavailable',response?.error,response?.status);
     const row=response.data;
     if(!row||typeof row!=='object'||Array.isArray(row)||
        row.device_id!==deviceId||!SALT.test(row.salt_hex)||
