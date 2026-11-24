@@ -28,6 +28,15 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn("BridgeDeviceSecretStore.configured(getContext())", source)
         self.assertIn("startForegroundService", source)
 
+    def test_backend_connection_status_is_not_confused_with_service_liveness(self):
+        service = (ROOT / "BridgeTxService.java.template").read_text()
+        control = (ROOT / "BridgeTxControlPlugin.java.template").read_text()
+        self.assertIn("static volatile boolean backendConnected=false;", service)
+        self.assertIn("backendConnected=true;", service)
+        self.assertGreaterEqual(service.count("backendConnected=false;"), 5)
+        self.assertIn('out.put("connected",BridgeTxService.backendConnected)', control)
+        self.assertIn('out.put("running",BridgeTxService.active)', control)
+
     def test_foreground_notification_remains_visible(self):
         source = (ROOT / "BridgeTxService.java.template").read_text()
         self.assertIn('setContentTitle("Servizio attivo")', source)
