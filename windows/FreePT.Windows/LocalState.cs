@@ -21,5 +21,12 @@ internal static class LocalState {
         byte[] payload=JsonSerializer.SerializeToUtf8Bytes(config);
         File.WriteAllBytes(Filename,ProtectedData.Protect(payload,null,DataProtectionScope.CurrentUser));
     }
+    private static string PausedFile=>Path.Combine(Folder,"paused.flag");
+    internal static bool IsPaused=>File.Exists(PausedFile);
+    internal static void SetPaused(bool paused){
+        Directory.CreateDirectory(Folder);
+        if(paused)File.WriteAllText(PausedFile,"paused");
+        else if(File.Exists(PausedFile))File.Delete(PausedFile);
+    }
     internal static void Clear(){if(File.Exists(Filename))File.Delete(Filename);}
 }
