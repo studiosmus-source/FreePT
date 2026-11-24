@@ -2,7 +2,7 @@ name: FreePT TEST complete non-destructive source audit
 on:
   push:
     branches: [fix/bridge-no-extra-permissions-storage-20261123]
-    paths: [.github/workflows/freept-source-audit.yml]
+    paths: [.github/workflows/freept-source-audit.yml, src/bootstrapSelfTest.test.mjs]
 permissions:
   contents: read
 jobs:
