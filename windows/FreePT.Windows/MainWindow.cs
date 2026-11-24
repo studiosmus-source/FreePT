@@ -7,7 +7,6 @@ internal sealed class MainWindow:Form {
     private readonly WebView2 web=new(){Dock=DockStyle.Fill};
     private readonly Label status=new(){AutoSize=false,Dock=DockStyle.Top,Height=60,Text="Bridge non configurato",
         ForeColor=Color.FromArgb(26,74,88),Font=new Font("Segoe UI",11,FontStyle.Bold)};
-    private readonly ListBox roots=new(){Dock=DockStyle.Fill,IntegralHeight=false};
     private readonly Button enroll=new(){Text="Attiva Bridge Windows",Width=250,Height=45};
     private readonly Button start=new(){Text="Avvia Bridge",Width=160,Height=43};
     private readonly Button stop=new(){Text="Ferma Bridge",Width=160,Height=43};
@@ -37,42 +36,31 @@ internal sealed class MainWindow:Form {
         var title=new Label{Dock=DockStyle.Fill,Text="Bridge Windows  •  File condivisi",
             Font=new Font("Segoe UI",18,FontStyle.Bold),ForeColor=Color.FromArgb(18,65,83)};
         layout.Controls.Add(title,0,0);
-        var top=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=false,WrapContents=true};
-        var add=Button("Aggiungi cartella o disco");
-        var remove=Button("Rimuovi selezione");
-        var save=Button("Salva cartelle condivise");
-        top.Controls.Add(add);top.Controls.Add(remove);top.Controls.Add(save);
-        top.Controls.Add(new Label{Text="Condividi solo cartelle che autorizzi. Puoi includere unità USB.",
-            AutoSize=true,Padding=new Padding(6,12,0,0)});
-        layout.Controls.Add(top,0,1);
-        layout.Controls.Add(roots,0,2);
+        var explainer=new Label{Dock=DockStyle.Fill,AutoSize=false,
+            Text="Accesso ai dischi disponibili per questo utente Windows. Nessuna scelta di cartelle richiesta. I permessi restano quelli di Windows; puoi sospendere il Bridge quando vuoi.",
+            Font=new Font("Segoe UI",11),ForeColor=Color.FromArgb(34,77,89)};
+        layout.Controls.Add(explainer,0,1);
+        var driveInfo=new ListBox{Dock=DockStyle.Fill,IntegralHeight=false,
+            SelectionMode=SelectionMode.None};
+        layout.Controls.Add(driveInfo,0,2);
+        void RefreshDrives(){
+            driveInfo.Items.Clear();
+            foreach(var disk in DriveInfo.GetDrives()){
+                try{
+                    if(disk.IsReady)driveInfo.Items.Add(disk.Name+"  ·  "+disk.DriveType);
+                }catch{}
+            }
+        }
+        RefreshDrives();
         var stateRow=new FlowLayoutPanel{Dock=DockStyle.Fill};stateRow.Controls.Add(start);stateRow.Controls.Add(stop);
         layout.Controls.Add(stateRow,0,3);
         var credentials=new FlowLayoutPanel{Dock=DockStyle.Fill,WrapContents=true};
-        credentials.Controls.Add(new Label{Text="Accedi prima nella scheda Chat, poi seleziona le cartelle e premi Attiva Bridge.",AutoSize=true,MaximumSize=new Size(550,0)});
+        credentials.Controls.Add(new Label{Text="Accedi prima nella scheda Chat e premi Attiva Bridge. Windows gestisce automaticamente i dischi accessibili.",AutoSize=true,MaximumSize=new Size(550,0)});
         credentials.Controls.Add(enroll);
         layout.Controls.Add(credentials,0,4);
         layout.Controls.Add(startup,0,5);
         var bottom=new Panel{Dock=DockStyle.Bottom,Height=70,Padding=new Padding(16,10,16,8)};
         bottom.Controls.Add(status);Controls.Add(bottom);bottom.BringToFront();
-        add.Click+=(_,_)=>{
-            using var picker=new FolderBrowserDialog{Description="Seleziona la cartella o il disco da condividere",
-                ShowNewFolderButton=false};
-            if(picker.ShowDialog(this)==DialogResult.OK&&!roots.Items.Contains(picker.SelectedPath))
-                roots.Items.Add(picker.SelectedPath);
-        };
-        remove.Click+=(_,_)=>{if(roots.SelectedIndex>=0)roots.Items.RemoveAt(roots.SelectedIndex);};
-        save.Click+=async(_,_)=>{
-            if(config==null){Display("Salva le cartelle durante la prima associazione.");return;}
-            try{
-                var selected=roots.Items.Cast<string>().ToArray();
-                _=new BridgeCatalogue(selected);
-                config=config with{Roots=selected};
-                LocalState.Write(config);
-                if(!LocalState.IsPaused)await StartBridge();
-                Display(LocalState.IsPaused?"Cartelle salvate. Bridge ancora sospeso.":"Cartelle aggiornate. Bridge riavviato.");
-            }catch{Display("Impossibile salvare le cartelle.");}
-        };
         start.Click+=async(_,_)=>await StartBridge(true);
         stop.Click+=async(_,_)=>{LocalState.SetPaused(true);if(agent!=null)await agent.Stop();status.Text="Bridge sospeso dal proprietario";};
         enroll.Click+=async(_,_)=>await Enroll();
@@ -83,7 +71,6 @@ internal sealed class MainWindow:Form {
         tray.ContextMenuStrip.Items.Add("Esci completamente",null,(_,_)=>Quit());
         config=LocalState.Read();
         if(config!=null){
-            foreach(var root in config.Roots)roots.Items.Add(root);
             enroll.Enabled=false;
             status.Text="PC associato. Avvio del Bridge…";
         }
@@ -157,12 +144,11 @@ internal sealed class MainWindow:Form {
     private async Task Enroll(){
         enroll.Enabled=false;
         try{
-            string[] selected=roots.Items.Cast<string>().ToArray();
-            _=new BridgeCatalogue(selected);
+            _=new BridgeCatalogue();
             using var owner=new EnrollmentClient(Key()??"");
             Display("Associazione al tuo account FreePT TEST…");
             string accessToken=await AuthorizedSession();
-            config=await owner.Enroll(accessToken,selected);
+            config=await owner.Enroll(accessToken,Array.Empty<string>());
             Display("PC registrato. Bridge in avvio…");
             await StartBridge(true);
         }catch(Exception e){Display("Associazione non riuscita: "+e.Message);}
@@ -171,7 +157,7 @@ internal sealed class MainWindow:Form {
     private async Task StartBridge(bool explicitStart=false){
         if(explicitStart)LocalState.SetPaused(false);
         if(LocalState.IsPaused){Display("Bridge sospeso dal proprietario");return;}
-        if(config==null){Display("Configura le cartelle ed effettua l'associazione iniziale.");return;}
+        if(config==null){Display("Accedi e attiva il Bridge per questo PC.");return;}
         try{
             if(agent!=null)await agent.DisposeAsync();
             agent=new BridgeAgent(config);
