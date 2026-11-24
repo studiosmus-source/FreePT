@@ -26,3 +26,12 @@ test('Admin self-test revokes, stops and clears only unbound diagnostic identity
  assert.match(plugin,/@PluginMethod public void resetUnboundTest/);
  assert.match(core,/if\(bound\(c\)\|\|BridgeDeviceSecretStore.configured\(c\)\)/);
 });
+
+test('Bridge self-test has bounded calls and never stops an already running TX service',()=>{
+ assert.match(src,/const bounded=/);
+ assert.match(src,/await bounded\(testTx.status\(\),6000\)/);
+ assert.match(src,/if\(previous\?\.running\)throw Error\('servizio_gia_attivo_non_interrompere'\)/);
+ assert.match(src,/if\(startedTx\)\{try\{await bounded\(testTx.stop\(\),6000\)/);
+ assert.match(src,/bridge_test_timeout/);
+ assert.match(src,/await bounded\(testNative.status\(\),5000\)/);
+});
