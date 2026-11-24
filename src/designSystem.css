@@ -1,47 +1,47 @@
-/* FreePT design system v2 — one visual layer, isolated from legacy functional CSS.
+/* FreePT design system v3 — one visual layer, isolated from legacy functional CSS.
  * All interactive IDs/DOM and native Bridge permissions remain unchanged.
  * Applies consistently to onboarding, admin, owner, explorer, modals and alerts.
  */
-:root{color-scheme:light;--fp-ink:#17253b;--fp-muted:#62718a;--fp-navy:#12233e;--fp-blue:#1e628b;--fp-blue-dark:#174a72;--fp-blue-soft:#e7f2f9;--fp-page:#eff3f8;--fp-card:#fff;--fp-border:#dde5ef;--fp-shadow:0 8px 24px rgba(26,45,74,.06);--fp-radius:18px}
-html,body,#app{background:var(--fp-page);color:var(--fp-ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+:root{color-scheme:light;--fp-ink:#172b3a;--fp-muted:#697f8e;--fp-navy:#0e273a;--fp-blue:#127b8f;--fp-blue-dark:#116174;--fp-blue-soft:#e5f5f5;--fp-page:#edf4f6;--fp-card:#fff;--fp-border:#dce9ec;--fp-shadow:0 8px 24px rgba(26,45,74,.06);--fp-radius:21px}
+html,body,#app{background:var(--fp-page);color:var(--fp-ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
 button,input,textarea,select{font:inherit}
-button{background:var(--fp-blue);color:white;border:1px solid transparent;border-radius:13px;font-weight:650;min-height:43px;padding:10px 15px;box-shadow:none;transition:background-color .12s ease}
+button{background:var(--fp-blue);color:white;border:1px solid transparent;border-radius:14px;font-weight:670;min-height:43px;padding:10px 15px;box-shadow:0 3px 10px #146a7e18;transition:background-color .12s ease,transform .12s ease}
 button:active{transform:scale(.99)}
-button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #89c9f4;outline-offset:2px}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #7bcfd0;outline-offset:2px}
 button:disabled{opacity:.55}
 input,textarea,select{min-height:44px;border-radius:12px;border:1px solid #cbd6e4;background:white;color:var(--fp-ink);padding:11px 13px}
-input:focus,textarea:focus,select:focus{border-color:var(--fp-blue);outline-color:#89c9f4}
+input:focus,textarea:focus,select:focus{border-color:var(--fp-blue);outline-color:#7bcfd0}
 .shell{background:var(--fp-card);width:100%;max-width:1050px;box-shadow:0 8px 32px #1e293b0a;margin-inline:auto;height:100dvh;min-height:0;overflow:hidden}
-.top{min-height:72px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;background:linear-gradient(115deg,#14253d,#1e4165);color:#fff;gap:10px;box-shadow:0 3px 16px #152b481f;z-index:2}
-.top h1{font-size:21px;font-weight:780;letter-spacing:.2px;min-width:0}
+.top{min-height:72px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;background:linear-gradient(115deg,#0d2336 0%,#16465c 64%,#14788b 100%);color:#fff;gap:10px;box-shadow:0 5px 24px #152b4830;z-index:2}
+.top h1{font-size:22px;font-weight:780;letter-spacing:-.035em;min-width:0}
 .top button{background:#ffffff20;color:#fff;border:1px solid #ffffff24;padding:9px 13px;min-height:42px;border-radius:12px;font-weight:600}
 .top button:hover{background:#ffffff32}
 .workspace{flex:1;min-height:0;background:var(--fp-page);overflow:hidden}
-.people{background:#f8fafc;min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
-.admin-people-tools{background:#f8fafc;padding:16px;gap:10px;border-bottom:1px solid var(--fp-border);position:sticky;top:0;z-index:3}
+.people{background:#f5fafb;min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+.admin-people-tools{background:#f5fafb;padding:16px;gap:10px;border-bottom:1px solid var(--fp-border);position:sticky;top:0;z-index:3}
 .admin-people-tools strong{font-size:18px;color:var(--fp-ink);font-weight:760}
 .admin-people-tools input,.admin-people-tools select{background:white;color:var(--fp-ink);font-size:15px;border-radius:12px;min-height:46px}
 #adminPeopleResults{padding:8px 9px 22px}
-.person{border:1px solid transparent;border-radius:15px;text-align:left;margin:5px 0;padding:14px 15px;background:#fff;color:var(--fp-ink);box-shadow:0 1px 4px #1d39500c;line-height:1.4;min-height:74px;touch-action:pan-y}
+.person{border:1px solid #dce9ec;border-radius:18px;text-align:left;margin:5px 0;padding:14px 15px;background:#fff;color:var(--fp-ink);box-shadow:0 4px 15px #1d395014;line-height:1.4;min-height:74px;touch-action:pan-y}
 .person:hover,.person:focus-visible{background:#f1f7fb;border-color:#c7dcea}
 .person strong{font-size:16px;font-weight:720}
 .person small{font-size:12px;color:var(--fp-muted)}
 .chat-preview{color:var(--fp-muted);margin-top:6px;font-size:13px}
-.chat{background:#fff;min-height:0;overflow:hidden}
+.chat{background:#f6fafb;min-height:0;overflow:hidden}
 #chat>.toolbar{background:white;min-height:64px;border-bottom:1px solid var(--fp-border);padding:10px 15px;align-items:center;gap:12px}
 #chatTitle{font-size:18px;font-weight:760;color:var(--fp-ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mobileBack{width:42px;min-width:42px;min-height:42px;border-radius:14px;background:var(--fp-blue-soft);color:var(--fp-blue-dark);font-size:22px;padding:4px}
 .freept-conversation-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:9px 12px 11px;background:#fff;border-bottom:1px solid var(--fp-border)}
 .freept-conversation-nav button{background:#f3f6fa;border:1px solid #e9eef4;border-radius:13px;color:#50617b;font-size:clamp(11px,3vw,14px);font-weight:700;line-height:1.3;min-height:48px;padding:9px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.freept-conversation-nav button[aria-current="page"]{color:var(--fp-blue-dark);background:var(--fp-blue-soft);border:1px solid #b5d8ef;box-shadow:inset 0 -3px 0 #3181b2}
+.freept-conversation-nav button[aria-current="page"]{color:var(--fp-blue-dark);background:var(--fp-blue-soft);border:1px solid #a9dddb;box-shadow:inset 0 -3px 0 #20aaa4}
 .freept-owner-nav{background:#fff;padding:10px 13px;border-bottom:1px solid var(--fp-border)}
 .freept-owner-nav button{background:var(--fp-blue-soft);color:var(--fp-blue-dark);border:1px solid #c8e0f0;min-height:49px;font-size:14px}
-.feed{min-height:0;padding:18px 13px;gap:11px;background:#f4f7fb;overscroll-behavior-y:contain}
-.bubble{max-width:min(86%,530px);border-radius:18px 18px 18px 5px;padding:12px 14px;line-height:1.43;background:#fff;color:var(--fp-ink);box-shadow:0 1px 5px #1a334512;overflow-wrap:anywhere}
-.bubble.mine{background:#dcefe9;border-radius:18px 18px 5px 18px}
+.feed{min-height:0;padding:18px 13px;gap:11px;background:radial-gradient(circle at 0% 0%,#e6f5f3,transparent 45%),linear-gradient(180deg,#f5f9fb,#edf5f6);overscroll-behavior-y:contain}
+.bubble{max-width:min(86%,530px);border-radius:18px 18px 18px 5px;padding:12px 14px;line-height:1.43;background:#fff;color:var(--fp-ink);box-shadow:0 3px 13px #1a334514;overflow-wrap:anywhere}
+.bubble.mine{background:linear-gradient(145deg,#dcf7ec,#d5eee9);border-radius:18px 18px 5px 18px}
 .bubble small{color:#66768b}
-.compose{background:#fff;padding:10px 11px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--fp-border);align-items:center;gap:8px}
-.compose textarea{min-height:46px;max-height:150px;border-radius:15px;padding:12px 13px;background:#f8fafc;resize:none;min-width:0}
+.compose{background:#fff;box-shadow:0 -5px 22px #1738440a;padding:10px 11px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--fp-border);align-items:center;gap:8px}
+.compose textarea{min-height:46px;max-height:150px;border-radius:15px;padding:12px 13px;background:#f5fafb;resize:none;min-width:0}
 .compose #sendBtn{min-height:46px;padding-inline:15px;border-radius:14px}
 .compose .attach{display:grid;place-items:center;min-height:46px;width:46px;flex:0 0 46px;margin:0;background:#f3f7fb;color:var(--fp-blue-dark);border:1px solid var(--fp-border);border-radius:13px;font-size:22px;padding:0}
 .compose .chosen-file{font-size:12px;color:var(--fp-muted)}
@@ -88,13 +88,28 @@ input:focus,textarea:focus,select:focus{border-color:var(--fp-blue);outline-colo
 .important-alert-composer textarea{min-height:150px;resize:vertical}
 .important-alert-help{background:#edf5fb;border-radius:12px;padding:10px 12px;color:#43607c}
 .important-alert-buttons{gap:10px}
-.important-alert-fullscreen{background:linear-gradient(155deg,#0f213e,#1d4564);color:#fff}
-.important-alert-fullscreen-content{gap:20px}
-.important-alert-brand{color:#f4cd82}
-.important-alert-close{border:1px solid #ffffff55}
+.important-alert-fullscreen{background:radial-gradient(circle at 78% 14%,#235e6d,transparent 52%),linear-gradient(160deg,#0c2236,#105365);color:#fff}
+.important-alert-fullscreen-content{gap:19px}
+.important-alert-brand{color:#8de1db;font-size:13px;letter-spacing:.13em;text-transform:uppercase}
+.important-alert-close{border:1px solid #ffffff66}
 .attach-viewer-shade,.bridge-file-preview-overlay{z-index:1500}
 .attach-viewer-bar{background:#111e31}
-.update-banner{background:#eaf3fc;color:#1e4c72;border-bottom:1px solid #c6e0f2}
+.update-banner{background:#e7f7f6;color:#146378;border-bottom:1px solid #bfe6e5}
+/* Alert release attachment and compact mobile file cards: visual-only. */
+.important-alert-apk-fields{display:grid;gap:10px;border:1px solid #d1e9e8;background:#f2faf9;border-radius:16px;padding:13px}
+.important-alert-apk-fields[hidden]{display:none!important}
+.important-alert-composer label:has(input[type=checkbox]){display:flex;align-items:center;gap:9px;font-weight:650;color:#295165;line-height:1.4;border-radius:13px;background:#f3fafb;padding:10px}
+.important-alert-composer input[type=checkbox]{width:20px;height:20px;min-height:20px;flex:none;accent-color:#118b94}
+.important-alert-apk-attachment{display:grid;gap:15px;padding:22px 18px;border:1px solid #ffffff55;border-radius:20px;background:#ffffff13;box-shadow:0 10px 35px #051b2530}
+.important-alert-apk-attachment strong{font-size:18px;line-height:1.45;color:#fff}
+.important-alert-apk-attachment button{border-radius:15px;min-height:54px;background:#a8efdf;color:#113948;box-shadow:0 7px 24px #061b2830}
+.bridge-remote-folders>.bridge-entry:active,.bridge-remote-files>.bridge-entry:active{background:#f0f9f9}
+.bridge-folder-completeness{border:1px solid #d0e7e6}
+.attach{border-radius:14px;border-color:#d5e5ea;background:#fff}
+.attach-thumb{border-radius:13px}
+.attach-download{border-radius:11px}
+.bridge-file-preview-header{background:#0b1b2c}
+@media(max-width:699px){.important-alert-composer,.bridge-admin-panel{border-radius:20px}.person{margin:6px 0}.bridge-files-content{padding:12px}}
 @media(min-width:700px){
  .people{width:310px;flex:0 0 310px;border-right:1px solid var(--fp-border)}
  .chat{flex:1;min-width:0}
