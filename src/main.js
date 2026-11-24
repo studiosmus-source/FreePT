@@ -9,6 +9,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import {createPushRegistration} from './pushRegistration.js';
 import {mountImportantAlertComposer,renderImportantAlert} from './importantAlerts.js';
 import {installWindowsBridgeEnrollment} from './windowsBridgeEnrollment.js';
+import {isWindowsFreePT,normalizedWindowsEmail} from './windowsRegistration.js';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
@@ -203,10 +204,11 @@ function requestScreen(denied=false){
   closeAdminOverlays();
   if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   selected=null; messageRequest++;
-  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
+  const win=isWindowsFreePT();
+  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">'+(win?'Inserisci nome e indirizzo email per chiedere accesso da Windows.':'Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.')+'</p>'+
 
   '<form class="form" id="request"><input name="name" placeholder="Nome e cognome" maxlength="80" minlength="2" required autocomplete="name" '+(denied?'disabled':'')+'/>'+
-  '<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>'+
+  (win?'<input name="email" type="email" placeholder="Indirizzo email" maxlength="254" required autocomplete="email" '+(denied?'disabled':'')+'/>':'<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>')+
   '<section class="disclaimer" aria-label="Informativa sull’intelligenza artificiale"><h3>FreePT · L’intelligenza artificiale per tutti</h3><p><strong>La potenza di ChatGPT e Claude senza dover sottoscrivere un abbonamento personale.</strong></p><p>Con FreePT puoi fare liberamente domande, inviare richieste, foto e documenti e ricevere risposte elaborate attraverso ChatGPT e Claude. Nessun account personale presso questi servizi è necessario.</p><p class="disclaimer-promise"><strong>SENZA LIMITI*<br>SENZA CENSURA*</strong></p><p class="disclaimer-note">* Salvo particolari condizioni legate alla disponibilità del servizio e alla possibilità di elaborare determinate richieste.</p><p>FreePT è un servizio indipendente, non affiliato a OpenAI o Anthropic.</p><label class="consent"><input name="disclaimer" type="checkbox" required><span>Dichiaro di aver letto e accettato quanto sopra.</span></label></section>'+
   '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
@@ -214,9 +216,11 @@ function requestScreen(denied=false){
   bindConcealedAdminEntry();
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
-    const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
+    const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=win?null:phoneNorm(String(f.get('phone')||''));
+    let email=null;
+    if(win){try{email=normalizedWindowsEmail(f.get('email'));}catch(e){status(e.message,true);return;}}
     if(name.length<2){status('Inserisci nome e cognome',true);return}
-    if(!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso, ad esempio +39...',true);return}
+    if(!win&&!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso, ad esempio +39...',true);return}
     const button=form.querySelector('button');button.disabled=true;status('Invio richiesta in corso...');
     try {
       // Bridge device approval and synthetic transfer are independent from registration.
@@ -228,7 +232,7 @@ function requestScreen(denied=false){
         user=auth.data.user;
       }
       if(!user?.is_anonymous) throw Error('Una sessione amministratore è già attiva.');
-      const {error}=await db.from('profiles').insert({id:user.id,full_name:name,phone});
+      const {error}=await db.from('profiles').insert(win?{id:user.id,full_name:name,email}:{id:user.id,full_name:name,phone});
       if(error) throw error;
       await boot();
     }catch(e){
@@ -330,7 +334,7 @@ function waitingScreen(){
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
 }
 
-async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
+async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,email,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
 async function boot(){
   // A fresh installation has no session: this is normal, not an error.
   const {data:{session},error:sessionError}=await db.auth.getSession();
@@ -370,13 +374,13 @@ async function boot(){
 async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
-    .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
+    .select('id,full_name,phone,email,status,role,created_at,chat_hidden_at')
     .neq('role','admin').order('created_at',{ascending:false});
   if(result.error && /chat_hidden_at/i.test(result.error.message||'')){
     // Backwards compatibility: keep normal chat functional before SQL migration.
     deleteMigrationReady=false;
     result=await db.from('profiles')
-      .select('id,full_name,phone,status,role,created_at')
+      .select('id,full_name,phone,email,status,role,created_at')
       .neq('role','admin').order('created_at',{ascending:false});
   }else if(!result.error)deleteMigrationReady=true;
   if(result.error)throw result.error;
@@ -1009,14 +1013,14 @@ function renderPeople(){
   if(!p)return;
   const visiblePeople=filterAdminPeople(people,adminPeopleQuery,adminPeopleStatus);
   p.innerHTML='<div class="admin-people-tools"><strong>Utenti ('+visiblePeople.length+'/'+people.length+')</strong>'+
-    '<input type="search" id="adminPeopleSearch" aria-label="Cerca utenti" placeholder="Cerca nome o telefono" value="'+esc(adminPeopleQuery)+'">'+
+    '<input type="search" id="adminPeopleSearch" aria-label="Cerca utenti" placeholder="Cerca nome, telefono o email" value="'+esc(adminPeopleQuery)+'">'+
     '<select id="adminPeopleStatus" aria-label="Filtra utenti per stato">'+
     [['all','Tutti'],['pending','Da approvare'],['approved','Approvati'],['blocked','Bloccati']].map(([key,label])=>
       '<option value="'+key+'"'+(adminPeopleStatus===key?' selected':'')+'>'+label+'</option>').join('')+
     '</select></div><div id="adminPeopleResults">'+
     '<p class="hint" id="adminPeopleEmpty"'+(visiblePeople.length?' hidden':'')+'>Nessun utente corrisponde ai filtri.</p>'+
     people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+
-      esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
+      esc(x.email||x.phone)+' · '+(x.email?'Windows':'Android')+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
       (x.lastMessage?'<span class="chat-preview">'+
         esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+
         '</span>':'')+
