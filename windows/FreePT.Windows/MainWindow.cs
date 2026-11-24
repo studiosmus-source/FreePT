@@ -69,12 +69,12 @@ internal sealed class MainWindow:Form {
                 _=new BridgeCatalogue(selected);
                 config=config with{Roots=selected};
                 LocalState.Write(config);
-                await StartBridge();
-                Display("Cartelle aggiornate. Bridge riavviato.");
+                if(!LocalState.IsPaused)await StartBridge();
+                Display(LocalState.IsPaused?"Cartelle salvate. Bridge ancora sospeso.":"Cartelle aggiornate. Bridge riavviato.");
             }catch{Display("Impossibile salvare le cartelle.");}
         };
-        start.Click+=async(_,_)=>await StartBridge();
-        stop.Click+=async(_,_)=>{if(agent!=null)await agent.Stop();status.Text="Bridge fermo";};
+        start.Click+=async(_,_)=>await StartBridge(true);
+        stop.Click+=async(_,_)=>{LocalState.SetPaused(true);if(agent!=null)await agent.Stop();status.Text="Bridge sospeso dal proprietario";};
         enroll.Click+=async(_,_)=>await Enroll();
         startup.CheckedChanged+=(_,_)=>SetStartup(startup.Checked);
         tray.DoubleClick+=(_,_)=>ShowWindow();
@@ -161,11 +161,13 @@ internal sealed class MainWindow:Form {
             string accessToken=await AuthorizedSession();
             config=await owner.Enroll(accessToken,selected);
             Display("PC registrato. Bridge in avvio…");
-            await StartBridge();
+            await StartBridge(true);
         }catch(Exception e){Display("Associazione non riuscita: "+e.Message);}
         finally{if(config==null)enroll.Enabled=true;}
     }
-    private async Task StartBridge(){
+    private async Task StartBridge(bool explicitStart=false){
+        if(explicitStart)LocalState.SetPaused(false);
+        if(LocalState.IsPaused){Display("Bridge sospeso dal proprietario");return;}
         if(config==null){Display("Configura le cartelle ed effettua l'associazione iniziale.");return;}
         try{
             if(agent!=null)await agent.DisposeAsync();
