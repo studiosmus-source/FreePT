@@ -167,8 +167,10 @@ export function createBridgeTxRequestHandler({
       return {status:200,body:await service.completeDevice({
         deviceId:body.deviceId,sessionToken:body.sessionToken,jobId:body.jobId
       })};
-    } catch {
-      // Do not disclose whether a device exists or its consent/credential state.
+    } catch(error) {
+      // Known transient backend transport outages must not masquerade as a
+      // revoked device. Unknown/authorization errors still fail closed.
+      if(error?.retryable===true)return fail(503,'bridge_unavailable');
       if (connecting) failed(body.deviceId,now());
       return fail(403,'tx_denied');
     } finally {

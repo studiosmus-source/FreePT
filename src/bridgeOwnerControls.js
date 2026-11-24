@@ -13,7 +13,7 @@ export const familyActivationErrorCode=(error)=>{
   const message=typeof error?.message==='string'?error.message:'';
   return allowed.has(message)?message:'bridge_owner_activation_denied';
 };
-export function createBridgeOwnerControls({db,auth}={}){
+export function createBridgeOwnerControls({db,auth,credentials}={}){
   if(typeof db?.rpc!=='function'||typeof db?.from!=='function'||
      typeof auth?.getSession!=='function')
     throw Error('bridge_owner_controls_dependencies_invalid');
@@ -43,6 +43,25 @@ export function createBridgeOwnerControls({db,auth}={}){
   };
   return Object.freeze({
     device,
+    // Recover an orphan only after a successful authenticated database lookup.
+    // Network errors or missing SELECT permissions must NEVER erase credentials.
+    async recoverMissingDevice(deviceId){
+      if(!UUID.test(deviceId)||typeof credentials?.status!=='function'||
+         typeof credentials?.clear!=='function')throw Error('bridge_owner_invalid_control');
+      const uid=await authorized();
+      if(!UUID.test(uid))throw Error('bridge_owner_login_required');
+      const local=await credentials.status();
+      if(!local?.provisioned||local.deviceId!==deviceId)return false;
+      const {data,error}=await db.from('bridge_devices')
+        .select('id,owner_id').eq('id',deviceId).eq('owner_id',uid).maybeSingle();
+      if(error)throw Error('bridge_owner_device_unavailable');
+      if(data)return false;
+      const recheck=await credentials.status();
+      if(recheck.deviceId!==deviceId||!recheck.provisioned)return false;
+      const cleared=await credentials.clear();
+      if(cleared?.cleared!==true)throw Error('bridge_owner_local_clear_failed');
+      return true;
+    },
     async activateFamily(deviceId){
       if(!UUID.test(deviceId))throw Error('bridge_owner_invalid_control');
       await device(deviceId);

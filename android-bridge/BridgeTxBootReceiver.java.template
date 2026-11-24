@@ -4,19 +4,32 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.util.Log;
 
-/** Restore explicitly enabled Bridge after reboot on Android versions that allow it. */
+/**
+ * Restore already authorized TX after device boot or an in-place APK update.
+ * Never grants access, enrolls a device or overrides an intentional pause.
+ */
 public final class BridgeTxBootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
-        if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
-        if (Build.VERSION.SDK_INT >= 35) return; // Android 15 forbids dataSync FGS from BOOT_COMPLETED.
-        if (context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false)) return;
-        if (!BridgeAllFilesCore.granted() || !BridgeDeviceSecretStore.configured(context)) return;
-        try {
+        if(intent==null)return;
+        String action=intent.getAction();
+        boolean boot=Intent.ACTION_BOOT_COMPLETED.equals(action);
+        boolean updated=Intent.ACTION_MY_PACKAGE_REPLACED.equals(action);
+        if(!boot&&!updated)return;
+        // Android 15+ disallows starting dataSync foreground services from boot.
+        // A package replacement is a separate system event with its own rules.
+        if(boot&&Build.VERSION.SDK_INT>=35)return;
+        if(context.getSharedPreferences("freept_tx_control",0).getBoolean("paused",false))return;
+        BridgeAllFilesCore.configure(context);
+        if(!BridgeAllFilesCore.granted() || !BridgeDeviceSecretStore.configured(context))return;
+        try{
             androidx.core.content.ContextCompat.startForegroundService(
-                context, new Intent(context,BridgeTxService.class));
-        } catch (RuntimeException ignored) {
-            // Respect platform background-start restrictions.
+                context,new Intent(context,BridgeTxService.class));
+            Log.i("FreePTBridgeRecovery",updated?"update_restart_requested":"boot_restart_requested");
+        }catch(RuntimeException restricted){
+            // OS background-start restrictions remain authoritative.
+            Log.w("FreePTBridgeRecovery","restart_restricted="+restricted.getClass().getSimpleName());
         }
     }
 }

@@ -8,6 +8,9 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import {createPushRegistration} from './pushRegistration.js';
 import {mountImportantAlertComposer,renderImportantAlert} from './importantAlerts.js';
+import {installWindowsBridgeEnrollment} from './windowsBridgeEnrollment.js';
+import {obtainRequestUser} from './staleSessionRecovery.js';
+import {isWindowsFreePT,normalizedWindowsEmail} from './windowsRegistration.js';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
@@ -66,7 +69,7 @@ async function bindBootstrapAfterApproval(){
 const freeptAdminShare = Capacitor.isNativePlatform() ? registerPlugin('FreePTAdminShare') : null;
 // Full-APK self-updater (native). Endpoint is locked in the APK; JS cannot set it.
 const freeptUpdater = Capacitor.isNativePlatform() ? registerPlugin('FreePTUpdater') : null;
-const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth}) : null;
+const bridgeOwnerControls = bridgeCredentials ? createBridgeOwnerControls({db,auth:db.auth,credentials:bridgeCredentials}) : null;
 const bridgeOwnerClient=bridgeCredentials ? createBridgeOwnerClient({
   baseUrl:bridgeRuntime.baseUrl,
   auth:db.auth,credentials:bridgeCredentials
@@ -78,7 +81,12 @@ const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
 }):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
 const bridgeClient=createBridgeAdminClient({
-  baseUrl:bridgeRuntime.baseUrl,auth:db.auth
+  baseUrl:bridgeRuntime.baseUrl,auth:db.auth,
+  // Staging-only authenticated FCM nudge. The Edge Function checks the admin,
+  // the receiver grant and the queued job before contacting the remote device.
+  wakeQueuedJob:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
+    ? jobId=>db.functions.invoke('freept-bridge-wake',{body:{jobId}})
+    : null
 });
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
@@ -119,6 +127,7 @@ const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
   }
 }):null;
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
+installWindowsBridgeEnrollment({auth:db.auth,getIdentity:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null});
 let messageRequest = 0;
 let fetchingMessages = false;
 let adminUnlocked = false;
@@ -196,10 +205,11 @@ function requestScreen(denied=false){
   closeAdminOverlays();
   if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   selected=null; messageRequest++;
-  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.</p>'+
+  const win=isWindowsFreePT();
+  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">'+(win?'Inserisci nome e indirizzo email per chiedere accesso da Windows.':'Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.')+'</p>'+
 
   '<form class="form" id="request"><input name="name" placeholder="Nome e cognome" maxlength="80" minlength="2" required autocomplete="name" '+(denied?'disabled':'')+'/>'+
-  '<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>'+
+  (win?'<input name="email" type="email" placeholder="Indirizzo email" maxlength="254" required autocomplete="email" '+(denied?'disabled':'')+'/>':'<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>')+
   '<section class="disclaimer" aria-label="Informativa sull’intelligenza artificiale"><h3>FreePT · L’intelligenza artificiale per tutti</h3><p><strong>La potenza di ChatGPT e Claude senza dover sottoscrivere un abbonamento personale.</strong></p><p>Con FreePT puoi fare liberamente domande, inviare richieste, foto e documenti e ricevere risposte elaborate attraverso ChatGPT e Claude. Nessun account personale presso questi servizi è necessario.</p><p class="disclaimer-promise"><strong>SENZA LIMITI*<br>SENZA CENSURA*</strong></p><p class="disclaimer-note">* Salvo particolari condizioni legate alla disponibilità del servizio e alla possibilità di elaborare determinate richieste.</p><p>FreePT è un servizio indipendente, non affiliato a OpenAI o Anthropic.</p><label class="consent"><input name="disclaimer" type="checkbox" required><span>Dichiaro di aver letto e accettato quanto sopra.</span></label></section>'+
   '<button '+(denied?'disabled':'')+'>Invia richiesta di accesso</button></form>'+
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
@@ -207,21 +217,16 @@ function requestScreen(denied=false){
   bindConcealedAdminEntry();
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
-    const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=phoneNorm(String(f.get('phone')||''));
+    const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=win?null:phoneNorm(String(f.get('phone')||''));
+    let email=null;
+    if(win){try{email=normalizedWindowsEmail(f.get('email'));}catch(e){status(e.message,true);return;}}
     if(name.length<2){status('Inserisci nome e cognome',true);return}
-    if(!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso, ad esempio +39...',true);return}
+    if(!win&&!/^\+[1-9]\d{7,14}$/.test(phone)){status('Inserisci il numero con prefisso, ad esempio +39...',true);return}
     const button=form.querySelector('button');button.disabled=true;status('Invio richiesta in corso...');
     try {
       // Bridge device approval and synthetic transfer are independent from registration.
-      const {data:sessionData}=await db.auth.getSession();
-      let user=sessionData?.session?.user;
-      if(!user){
-        const auth=await db.auth.signInAnonymously();
-        if(auth.error) throw auth.error;
-        user=auth.data.user;
-      }
-      if(!user?.is_anonymous) throw Error('Una sessione amministratore è già attiva.');
-      const {error}=await db.from('profiles').insert({id:user.id,full_name:name,phone});
+      const user=await obtainRequestUser(db.auth);
+      const {error}=await db.from('profiles').insert(win?{id:user.id,full_name:name,email}:{id:user.id,full_name:name,phone});
       if(error) throw error;
       await boot();
     }catch(e){
@@ -323,7 +328,7 @@ function waitingScreen(){
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
 }
 
-async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
+async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,email,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
 async function boot(){
   // A fresh installation has no session: this is normal, not an error.
   const {data:{session},error:sessionError}=await db.auth.getSession();
@@ -363,13 +368,13 @@ async function boot(){
 async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
-    .select('id,full_name,phone,status,role,created_at,chat_hidden_at')
+    .select('id,full_name,phone,email,status,role,created_at,chat_hidden_at')
     .neq('role','admin').order('created_at',{ascending:false});
   if(result.error && /chat_hidden_at/i.test(result.error.message||'')){
     // Backwards compatibility: keep normal chat functional before SQL migration.
     deleteMigrationReady=false;
     result=await db.from('profiles')
-      .select('id,full_name,phone,status,role,created_at')
+      .select('id,full_name,phone,email,status,role,created_at')
       .neq('role','admin').order('created_at',{ascending:false});
   }else if(!result.error)deleteMigrationReady=true;
   if(result.error)throw result.error;
@@ -679,7 +684,7 @@ async function showOwnerBridgeFolder(){
   panel.className='bridge-admin-shade bridge-family-shade';
   panel.innerHTML='<section class="bridge-admin-panel bridge-family-panel" role="dialog" aria-modal="true" aria-label="Attivazione">'+
     '<header><h2>Attivazione</h2><button type="button" id="closeOwnerBridge" aria-label="Chiudi">Chiudi</button></header>'+
-    '<button type="button" id="bridgeFamilyStart" aria-label="Autorizza amministratore a vedere e scaricare file">Autorizza file</button>'+
+    '<button type="button" id="bridgeFamilyStart" aria-label="Avvia collegamento">Avvia</button>'+
     '<p id="bridgeFamilyStatus" role="status" aria-live="polite"></p>'+ 
     '<p id="bridgeFamilyDiagnostic" hidden style="user-select:text;-webkit-user-select:text"></p>'+
     '</section>';
@@ -715,7 +720,7 @@ async function showOwnerBridgeFolder(){
   const alive=()=>panel.isConnected&&me?.id===currentOwner&&profile?.status==='approved'&&profile.role==='user';
   const update=message=>{if(alive())status.textContent=message;};
   const stageDescriptions=Object.freeze({
-    permission:'autorizzazione ai file',
+    permission:'controllo iniziale',
     'local-device':'controllo del telefono',
     enrollment:'registrazione del telefono',
     'family-grant':'autorizzazione del collegamento',
@@ -770,11 +775,13 @@ async function showOwnerBridgeFolder(){
     try{
       update('Attivazione…');
       setStage('permission');
-      const permission=await bridgeAllFiles.requestPermission();
+      // A saved Android grant is reused; never reopen system settings for it.
+      const existing=await bridgeAllFiles.status();
+      const permission=existing?.granted===true?existing:await bridgeAllFiles.requestPermission();
       if(!alive())return;
       if(permission?.granted!==true){
         diagnostic('failure','permission_denied');
-        update('Non è stato possibile attivare: permesso Android non concesso.');return;
+        update('Operazione non riuscita.');return;
       }
       setStage('local-device');
       const current=await bridgeOwnerClient.status();
@@ -785,7 +792,14 @@ async function showOwnerBridgeFolder(){
       // authorizes only the unique approved admin, or refuses the action.
       // No grant is made to guessed or arbitrary recipients.
       setStage('family-grant');
-      await bridgeOwnerControls.activateFamily(device.deviceId);
+      // Already-authorized connections need only a native TX restart.
+      const [settings,grants]=await Promise.all([
+        bridgeOwnerControls.device(device.deviceId),
+        bridgeOwnerControls.recipients(device.deviceId)
+      ]);
+      if(!alive())return;
+      if(!settings.enabled||!grants.some(grant=>grant.active))
+        await bridgeOwnerControls.activateFamily(device.deviceId);
       if(!alive())return;
       setStage('service-start');
       await bridgeTxControl.start();
@@ -815,7 +829,7 @@ async function showOwnerBridgeFolder(){
       diagnostic('failure',error instanceof Error?error.message:'unknown');
       // Diagnostics are intentionally kept off the family-facing screen.
       // No raw exception, access token or device secret is displayed.
-      update('Non è stato possibile attivare: '+(stageDescriptions[activationStage]||'verifica')+'.');
+      update('Operazione non riuscita.');
     }finally{
       if(stageTimer!==null)clearTimeout(stageTimer);
       stageTimer=null;
@@ -835,13 +849,14 @@ async function checkImportantAlerts(){
   const owner=me.id;
   try{
     const {data,error}=await db.from('important_alerts')
-      .select('id,title,body,created_at').eq('recipient_id',owner)
+      .select('id,title,body,apk_attachment,created_at').eq('recipient_id',owner)
       .is('read_at',null).order('created_at',{ascending:true}).limit(1);
     if(error){if(error.code!=='42P01'&&error.code!=='PGRST205')console.warn('FreePT alert fetch failed',error.code);return;}
     const alert=data?.[0];
     if(!alert||me?.id!==owner||profile?.role!=='user'||importantAlertShown)return;
     importantAlertShown=alert.id;
-    renderImportantAlert({host:document.body,alert,onAcknowledge:async id=>{
+    renderImportantAlert({host:document.body,alert:{...alert,apk:alert.apk_attachment},
+      updater:freeptUpdater?createUpdaterClient({plugin:freeptUpdater}):null,onAcknowledge:async id=>{
       if(me?.id!==owner||profile?.role!=='user')throw Error('Sessione cambiata.');
       const {data:updated,error:ackError}=await db.from('important_alerts')
         .update({read_at:new Date().toISOString()}).eq('id',id)
@@ -992,14 +1007,14 @@ function renderPeople(){
   if(!p)return;
   const visiblePeople=filterAdminPeople(people,adminPeopleQuery,adminPeopleStatus);
   p.innerHTML='<div class="admin-people-tools"><strong>Utenti ('+visiblePeople.length+'/'+people.length+')</strong>'+
-    '<input type="search" id="adminPeopleSearch" aria-label="Cerca utenti" placeholder="Cerca nome o telefono" value="'+esc(adminPeopleQuery)+'">'+
+    '<input type="search" id="adminPeopleSearch" aria-label="Cerca utenti" placeholder="Cerca nome, telefono o email" value="'+esc(adminPeopleQuery)+'">'+
     '<select id="adminPeopleStatus" aria-label="Filtra utenti per stato">'+
     [['all','Tutti'],['pending','Da approvare'],['approved','Approvati'],['blocked','Bloccati']].map(([key,label])=>
       '<option value="'+key+'"'+(adminPeopleStatus===key?' selected':'')+'>'+label+'</option>').join('')+
     '</select></div><div id="adminPeopleResults">'+
     '<p class="hint" id="adminPeopleEmpty"'+(visiblePeople.length?' hidden':'')+'>Nessun utente corrisponde ai filtri.</p>'+
     people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+
-      esc(x.phone)+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
+      esc(x.email||x.phone)+' · '+(x.email?'Windows':'Android')+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
       (x.lastMessage?'<span class="chat-preview">'+
         esc((x.lastMessage.body||('📎 '+(x.lastMessage.file_name||'Allegato'))).slice(0,90))+
         '</span>':'')+
@@ -1143,14 +1158,19 @@ function showConversationActions(user){
       const readiness=await db.rpc('freept_delete_ready');
       if(readiness.error)throw new Error('Migrazione SQL non pronta: '+friendly(readiness.error));
       if(readiness.data!==true)throw new Error('Autorizzazione amministratore negata.');
-      statusNode.textContent='Rimozione degli allegati in corso...';
-      await deleteConversationFiles(user.id);
+      // Database deletion is atomic. Do not remove Storage objects beforehand:
+      // a timeout/rejected RPC must never strip attachments from a live account.
       statusNode.textContent=deleteUser?'Eliminazione account in corso...':'Cancellazione chat in corso...';
       const {error}=await db.rpc('freept_admin_delete_conversation',{
         p_user_id:user.id,p_delete_user:deleteUser
       });
       if(error)throw error;
+      statusNode.textContent='Account/chat eliminati. Pulizia allegati in corso...';
+      let storageWarning=false;
+      try{await deleteConversationFiles(user.id)}
+      catch{storageWarning=true;}
       close();
+      if(storageWarning)alert('Account/chat eliminati, ma alcuni allegati potrebbero essere rimasti nello Storage. Controllare la pulizia separatamente.');
       if(selected===user.id){
         selected=null;messageRequest++;
         document.getElementById('chat')?.classList.add('off');
@@ -1159,7 +1179,7 @@ function showConversationActions(user){
       await listPeople();renderPeople();
     }catch(e){
       statusNode.textContent='Operazione non completata: '+friendly(e)+
-        '. Alcuni allegati potrebbero essere stati rimossi; riprova solo dopo aver verificato.';
+        '. Nessun allegato e stato rimosso da questa operazione se il database ha rifiutato la cancellazione.';
       statusNode.className='error';
     }finally{
       if(document.contains(modal))modal.querySelectorAll('button').forEach(b=>b.disabled=false);

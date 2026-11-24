@@ -8,7 +8,7 @@ export function filterAdminPeople(people, query='', status='all'){
   return people.filter(person=>{
     if(state!=='all'&&person.status!==state)return false;
     if(!term)return true;
-    return [person.full_name,person.phone]
+    return [person.full_name,person.phone,person.email]
       .some(value=>String(value??'').toLocaleLowerCase('it-IT').includes(term));
   });
 }

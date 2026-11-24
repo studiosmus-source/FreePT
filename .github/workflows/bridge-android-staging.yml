@@ -1,7 +1,7 @@
 name: Build FreePT TEST isolated staging APK
 on:
   push:
-    branches: [work/unified-verified-20261119, fix/bridge-server-admin-only-20261120, feature/important-alerts-20261123, fix/cristina-bridge-ui-20261123, fix/restore-freept-classic-ui-20261123, fix/freept-complete-ui-bridge-20261123, feature/freept-unified-design-20261123, fix/bridge-permission-reprompt-20261123]
+    branches: [work/unified-verified-20261119, fix/bridge-server-admin-only-20261120, feature/important-alerts-20261123, fix/cristina-bridge-ui-20261123, fix/restore-freept-classic-ui-20261123, fix/freept-complete-ui-bridge-20261123, feature/freept-unified-design-20261123, fix/bridge-permission-reprompt-20261123, fix/bridge-no-extra-permissions-storage-20261123]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
       - name: Never build another branch or production with this workflow
         run: |
           case "$GITHUB_REF" in
-            refs/heads/work/unified-verified-20261119|refs/heads/fix/bridge-server-admin-only-20261120|refs/heads/feature/important-alerts-20261123|refs/heads/fix/cristina-bridge-ui-20261123|refs/heads/fix/restore-freept-classic-ui-20261123|refs/heads/fix/freept-complete-ui-bridge-20261123|refs/heads/feature/freept-unified-design-20261123|refs/heads/fix/bridge-permission-reprompt-20261123) ;;
+            refs/heads/work/unified-verified-20261119|refs/heads/fix/bridge-server-admin-only-20261120|refs/heads/feature/important-alerts-20261123|refs/heads/fix/cristina-bridge-ui-20261123|refs/heads/fix/restore-freept-classic-ui-20261123|refs/heads/fix/freept-complete-ui-bridge-20261123|refs/heads/feature/freept-unified-design-20261123|refs/heads/fix/bridge-permission-reprompt-20261123|refs/heads/fix/bridge-no-extra-permissions-storage-20261123) ;;
             *) echo "Refusing a non-staging branch"; exit 1;;
           esac
       - uses: actions/checkout@v4
@@ -37,10 +37,12 @@ jobs:
       - name: Install web dependencies
         run: npm ci --no-audit --no-fund
       - name: Bridge unit regression tests (development branch only)
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123'
         run: npm run test:bridge
       - name: Silent reconnect and consent regression tests
         run: node --test src/bridgeReconnect.test.mjs src/chieditore.test.mjs src/bridgeAutoSetup.test.mjs
+      - name: Orphaned Bridge identity recovery safety tests
+        run: node --test bridge/orphanRecovery.test.mjs
       - name: Unified admin and user design regression tests
         run: node --test src/designSystem.test.mjs
       - name: Important alert validation tests
@@ -53,10 +55,12 @@ jobs:
           node --test src/pushRegistration.test.mjs
       - name: Unified Bridge runtime environment regression tests
         run: node --test src/bridgeRuntimeConfig.test.mjs
+      - name: Deleted anonymous account recovery regression tests
+        run: node --test src/staleSessionRecovery.test.mjs
       - name: JavaScript syntax check
         run: node --check src/main.js
       - name: Require isolated Supabase test project for Bridge APK
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123'
         env:
           VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
@@ -79,7 +83,7 @@ jobs:
           print('Bridge test Supabase configuration present; production project rejected')
           PY
       - name: Require experimental HTTPS Bridge backend endpoint
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123'
         env:
           VITE_BRIDGE_TEST_API_URL: ${{ 'https://freept-bridge-staging.onrender.com' }}
         run: |
@@ -118,7 +122,7 @@ jobs:
           path: vite-build.log
           if-no-files-found: warn
       - name: Isolate experimental Bridge APK identity
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123'
         run: |
           python3 - <<'PY'
           import json
@@ -175,15 +179,17 @@ jobs:
           python3 -m py_compile android-bridge/install.py
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Install native file catalogue and foreground TX (Bridge staging only)
-        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123'
+        if: github.ref == 'refs/heads/work/unified-verified-20261119' || github.ref == 'refs/heads/fix/bridge-server-admin-only-20261120' || github.ref == 'refs/heads/feature/important-alerts-20261123' || github.ref == 'refs/heads/fix/cristina-bridge-ui-20261123' || github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123'
         env:
           VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
           FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
           FREEPT_BRIDGE_INSTALL_TARGET: staging
-          FREEPT_CLASSIC_UI_FIX: ${{ (github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123') && '1' || '0' }}
-          FREEPT_COMPLETE_UI_FIX: ${{ (github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123') && '1' || '0' }}
-          FREEPT_UNIFIED_DESIGN: ${{ (github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123') && '1' || '0' }}
-          FREEPT_PERMISSION_REPROMPT_FIX: ${{ github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' && '1' || '0' }}
+          FREEPT_OTA_APK_UPDATE_URL: https://freept-ota.onrender.com/apk-update
+          FREEPT_CLASSIC_UI_FIX: ${{ (github.ref == 'refs/heads/fix/restore-freept-classic-ui-20261123' || github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123') && '1' || '0' }}
+          FREEPT_COMPLETE_UI_FIX: ${{ (github.ref == 'refs/heads/fix/freept-complete-ui-bridge-20261123' || github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123') && '1' || '0' }}
+          FREEPT_UNIFIED_DESIGN: ${{ (github.ref == 'refs/heads/feature/freept-unified-design-20261123' || github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123') && '1' || '0' }}
+          FREEPT_PERMISSION_REPROMPT_FIX: ${{ (github.ref == 'refs/heads/fix/bridge-permission-reprompt-20261123' || github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123') && '1' || '0' }}
+          FREEPT_STORAGE_FIX: ${{ github.ref == 'refs/heads/fix/bridge-no-extra-permissions-storage-20261123' && '1' || '0' }}
         run: python3 android-bridge/install.py
       - name: Verify isolated bootstrap compile flags before native build
         shell: bash
@@ -337,7 +343,7 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee android-apk-info.txt
-          if [[ "$GITHUB_REF" == "refs/heads/work/unified-verified-20261119" || "$GITHUB_REF" == "refs/heads/fix/bridge-server-admin-only-20261120" || "$GITHUB_REF" == "refs/heads/feature/important-alerts-20261123" || "$GITHUB_REF" == "refs/heads/fix/cristina-bridge-ui-20261123" || "$GITHUB_REF" == "refs/heads/fix/restore-freept-classic-ui-20261123" || "$GITHUB_REF" == "refs/heads/fix/freept-complete-ui-bridge-20261123" || "$GITHUB_REF" == "refs/heads/feature/freept-unified-design-20261123" || "$GITHUB_REF" == "refs/heads/fix/bridge-permission-reprompt-20261123" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/work/unified-verified-20261119" || "$GITHUB_REF" == "refs/heads/fix/bridge-server-admin-only-20261120" || "$GITHUB_REF" == "refs/heads/feature/important-alerts-20261123" || "$GITHUB_REF" == "refs/heads/fix/cristina-bridge-ui-20261123" || "$GITHUB_REF" == "refs/heads/fix/restore-freept-classic-ui-20261123" || "$GITHUB_REF" == "refs/heads/fix/freept-complete-ui-bridge-20261123" || "$GITHUB_REF" == "refs/heads/feature/freept-unified-design-20261123" || "$GITHUB_REF" == "refs/heads/fix/bridge-permission-reprompt-20261123" || "$GITHUB_REF" == "refs/heads/fix/bridge-no-extra-permissions-storage-20261123" ]]; then
             EXPECTED_ID=it.freept.bridge.next
           else
             EXPECTED_ID=it.freept.app

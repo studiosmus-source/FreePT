@@ -1,0 +1,38 @@
+name: FreePT TEST complete non-destructive source audit
+on:
+  push:
+    branches: [fix/bridge-no-extra-permissions-storage-20261123]
+    paths: [.github/workflows/freept-source-audit.yml, src/bootstrapSelfTest.test.mjs]
+permissions:
+  contents: read
+jobs:
+  all-source-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Check complete JavaScript syntax
+        run: |
+          set -euo pipefail
+          find src bridge -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+      - name: All Bridge gateway, credentials, browsing, download and UI tests
+        run: node --test bridge/*.test.mjs src/*.test.mjs
+      - name: Android installer and native service contract tests
+        run: |
+          python3 -m py_compile android-bridge/install.py
+          python3 -m unittest discover -s android-bridge -p 'test_*.py'
+      - name: Build web application from locked source
+        env:
+          VITE_SUPABASE_URL: https://aqjuixbuxftnjfzxmzuj.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_local_only_aaaaaaaaaaaaaaaaaaaa
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
+          VITE_BRIDGE_BOOTSTRAP_ENABLED: 'true'
+        run: |
+          npm run build
+          test -s dist/index.html

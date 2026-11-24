@@ -66,6 +66,22 @@ Deno.serve(async req=>{
     const recipientId=input.recipientId;
     const title=input.title;
     const body=input.body;
+    const apk=input.apk;
+    let attachment:null|{url:string;sha256:string;versionName:string;versionCode:number}=null;
+    if(apk!==undefined&&apk!==null){
+      if(typeof apk!=='object'||Array.isArray(apk))return json({error:'invalid_apk'},400);
+      const item=apk as Record<string,unknown>;
+      const release=/^https:\/\/github\.com\/studiosmus-source\/FreePT\/releases\/download\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.apk$/;
+      if(Object.keys(item).sort().join(',')!=='sha256,url,versionCode,versionName'||
+         typeof item.url!=='string'||!release.test(item.url)||
+         typeof item.sha256!=='string'||!/^[a-f0-9]{64}$/i.test(item.sha256)||
+         typeof item.versionName!=='string'||!/^\d+\.\d+\.\d+$/.test(item.versionName)||
+         typeof item.versionCode!=='number'||!Number.isSafeInteger(item.versionCode)||
+         item.versionCode<=0||item.versionCode>2147483647)
+        return json({error:'invalid_apk'},400);
+      attachment={url:item.url,sha256:item.sha256.toLowerCase(),
+        versionName:item.versionName,versionCode:item.versionCode};
+    }
     if(typeof recipientId!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipientId)
       ||typeof title!=='string'||typeof body!=='string')
       return json({error:'invalid_fields'},400);
@@ -80,7 +96,7 @@ Deno.serve(async req=>{
       return json({error:'recipient_not_approved'},400);
     stage='insert_alert';
     const {data:alert,error:insertError}=await db.from('important_alerts')
-      .insert({sender_id:actor,recipient_id:recipientId,title:cleanTitle,body:cleanBody})
+      .insert({sender_id:actor,recipient_id:recipientId,title:cleanTitle,body:cleanBody,apk_attachment:attachment})
       .select('id').single();
     if(insertError)throw insertError;
     stage='lookup_devices';

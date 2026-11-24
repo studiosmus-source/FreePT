@@ -1,0 +1,74 @@
+name: Build FreePT Windows TEST
+on:
+  push:
+    branches: [fix/bridge-no-extra-permissions-storage-20261123]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/freept-windows-test.yml'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'index.html'
+      - 'vite.config.*'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: freept-windows-test-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require explicit TEST branch
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -ne "refs/heads/fix/bridge-no-extra-permissions-storage-20261123") { throw "Not a TEST branch" }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build isolated FreePT TEST chat
+        shell: pwsh
+        env:
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
+          VITE_BRIDGE_BOOTSTRAP_ENABLED: 'false'
+        run: |
+          if ($env:VITE_SUPABASE_URL -ne 'https://aqjuixbuxftnjfzxmzuj.supabase.co') { throw "Wrong Supabase TEST project" }
+          if (!$env:VITE_SUPABASE_PUBLISHABLE_KEY.StartsWith('sb_publishable_')) { throw "Missing TEST publishable key" }
+          npm ci --no-audit --no-fund
+          node --test src/windowsBridgeEnrollment.test.mjs src/windowsRegistration.test.mjs
+          npm run build
+          if (!(Test-Path dist/index.html)) { throw "Vite build missing" }
+          New-Item -ItemType Directory -Force -Path windows/FreePT.Windows/www | Out-Null
+          Copy-Item dist/* windows/FreePT.Windows/www/ -Recurse -Force
+      - name: Test Windows-only file catalogue
+        shell: pwsh
+        run: dotnet run --project windows/FreePT.Windows.Tests/FreePT.Windows.Tests.csproj -c Release
+      - name: Publish Win64 desktop app
+        shell: pwsh
+        env:
+          FREEPT_TEST_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          dotnet publish windows/FreePT.Windows/FreePT.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o windows/publish
+          if (!(Test-Path windows/publish/FreePT.Windows.exe)) { throw "EXE missing" }
+          @{supabasePublishableKey=$env:FREEPT_TEST_KEY} | ConvertTo-Json | Set-Content windows/publish/freept-test-config.json -Encoding utf8
+          if (!(Test-Path windows/publish/www/index.html)) { throw "Embedded chat not present" }
+      - name: Publish checked Windows distribution ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path windows/publish/* -DestinationPath windows/FreePT-Windows-TEST-win-x64.zip -CompressionLevel Optimal
+          Get-FileHash windows/FreePT-Windows-TEST-win-x64.zip -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-Windows-TEST-win-x64
+          path: windows/FreePT-Windows-TEST-win-x64.zip
+          if-no-files-found: error
+          retention-days: 14
