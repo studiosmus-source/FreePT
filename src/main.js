@@ -1126,6 +1126,7 @@ function showConversationActions(user){
     '<p>Che cosa vuoi fare?</p>'+
     (user.status==='approved'?'<button type="button" id="openFilesAction">File e cartelle</button>':'')+
     (user.status==='approved'?'<button type="button" id="sendImportantAction">Invia avviso importante</button>':'')+
+    (user.status==='approved'&&user.role!=='admin'?'<button type="button" id="pcCodeAction">Codice per il PC</button>':'')+
     '<button type="button" id="clearChatAction">Cancella chat</button>'+ 
     '<button type="button" class="danger" id="deleteUserAction">Elimina utente</button>'+
     '<button type="button" class="secondary" id="cancelChatAction">Annulla</button>'+
@@ -1153,6 +1154,43 @@ function showConversationActions(user){
   };
   const alertAction=document.getElementById('sendImportantAction');
   if(alertAction)alertAction.onclick=()=>{close();showImportantAlertComposer(user);};
+  // One-time code: the person opens THIS same account (chat, files, grants) on
+  // their Windows PC. Generated server-side (freept-pc-access); never stored here.
+  const pcAction=document.getElementById('pcCodeAction');
+  if(pcAction)pcAction.onclick=async()=>{
+    const statusNode=document.getElementById('actionStatus');
+    if(!confirm('Generare il codice per aprire sul PC la chat di '+user.full_name+'?\n\n'+
+      'Chi ha il codice entra come questa persona: dallo solo a lei. '+
+      'Vale una sola volta; un nuovo codice annulla quelli non ancora usati.'))return;
+    pcAction.disabled=true;
+    statusNode.className='small';
+    statusNode.textContent='Generazione del codice…';
+    try{
+      const {data,error}=await db.functions.invoke('freept-pc-access',{body:{userId:user.id}});
+      if(error)throw error;
+      const code=data?.code;
+      if(typeof code!=='string'||!/^[A-Z0-9]{6}-[0-9]{6,10}$/.test(code))
+        throw Error('Risposta non valida dal server.');
+      statusNode.replaceChildren();
+      const intro=document.createElement('span');
+      intro.textContent='Codice per il PC di '+user.full_name+':';
+      const value=document.createElement('strong');
+      value.className='pc-access-code';
+      value.textContent=code;
+      const hint=document.createElement('span');
+      hint.textContent='Sul PC: apri FreePT e scegli «Ho un codice dal mio amministratore». Usalo subito.';
+      const copy=document.createElement('button');
+      copy.type='button';copy.textContent='Copia codice';
+      copy.onclick=async()=>{
+        try{await navigator.clipboard.writeText(code);copy.textContent='Copiato';}
+        catch{copy.textContent='Copia non riuscita: trascrivilo';}
+      };
+      statusNode.append(intro,value,hint,copy);
+    }catch(e){
+      statusNode.className='error';
+      statusNode.textContent='Codice non disponibile: '+friendly(e);
+    }finally{pcAction.disabled=false;}
+  };
   const run=async deleteUser=>{
     if(!deleteMigrationReady){
       const statusNode=document.getElementById('actionStatus');
