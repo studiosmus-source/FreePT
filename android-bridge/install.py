@@ -121,6 +121,8 @@ if target == "staging":
     # One source of truth for staging version, without stacking old patches.
     versions = (
         # 2.8.1: only the TX battery change (idle standby + FCM wake).
+        # 2.8.2: battery change + return to an existing account after reinstall.
+        ("FREEPT_ACCOUNT_RETURN_FIX", 21, "2.8.2"),
         ("FREEPT_TX_BATTERY_FIX", 20, "2.8.1"),
         ("FREEPT_STORAGE_FIX", 19, "2.8.0"),
         ("FREEPT_PERMISSION_REPROMPT_FIX", 6, "1.5.0"),

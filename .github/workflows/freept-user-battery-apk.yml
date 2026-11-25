@@ -1,4 +1,4 @@
-name: FreePT TEST 2.8.1 user APK (TX battery only)
+name: FreePT TEST 2.8.2 user APK (TX battery + account return)
 # Same build as 2.8.0 (commit e90da9b, bridge-android-staging.yml with the
 # storage-fix branch flags). Only change: TX idle standby + FCM wake.
 on:
@@ -38,7 +38,8 @@ jobs:
             'android-bridge/BridgeTxControlPlugin.java.template',
             'android-bridge/install.py',
             'android-bridge/test_service_lifecycle.py',
-            'android-bridge/test_tx_battery.py'
+            'android-bridge/test_tx_battery.py',
+            'src/main.js','bridge/accountReturn.test.mjs'
           }
           changed=set(subprocess.check_output(['git','diff','--name-only',
             'e90da9b220d748a99706287074368c048ef42fd4','HEAD'],text=True).splitlines())
@@ -54,6 +55,7 @@ jobs:
           node --test bridge/orphanRecovery.test.mjs src/designSystem.test.mjs src/importantAlerts.test.mjs
           node --test src/pushRegistration.test.mjs src/bridgeRuntimeConfig.test.mjs src/staleSessionRecovery.test.mjs
           node --check src/main.js
+          node --test bridge/accountReturn.test.mjs
           python3 -m unittest discover -s android-bridge -p 'test_*.py'
       - name: Validate isolated TEST configuration
         env:
@@ -120,12 +122,13 @@ jobs:
           FREEPT_PERMISSION_REPROMPT_FIX: '1'
           FREEPT_STORAGE_FIX: '1'
           FREEPT_TX_BATTERY_FIX: '1'
+          FREEPT_ACCOUNT_RETURN_FIX: '1'
         run: |
           python3 android-bridge/install.py
           grep -Fq 'name="bridge_bootstrap_enabled">true' android/app/src/main/res/values/freept_bootstrap.xml
           grep -Fq 'https://freept-bridge-staging.onrender.com' android/app/src/main/res/values/freept_bridge.xml
-          grep -Fq 'versionCode 20' android/app/build.gradle
-          grep -Fq 'versionName "2.8.1"' android/app/build.gradle
+          grep -Fq 'versionCode 21' android/app/build.gradle
+          grep -Fq 'versionName "2.8.2"' android/app/build.gradle
           grep -Fq 'IDLE_STOP_MS=180000' android/app/src/main/java/it/freept/bridge/next/BridgeTxService.java
           python3 - <<'PY'
           from pathlib import Path
@@ -165,7 +168,7 @@ jobs:
           trap 'rm -f "$RUNNER_TEMP/freept-user.jks"' EXIT
           printf '%s' "$BRIDGE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/freept-user.jks"
           TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
-          APK=FreePT-TEST-2.8.1-UTENTE.apk
+          APK=FreePT-TEST-2.8.2-UTENTE.apk
           "$TOOL" sign --ks "$RUNNER_TEMP/freept-user.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" android/app/build/outputs/apk/debug/app-debug.apk
           "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/user-signature.txt"
           for scheme in v1 v2 v3; do
@@ -177,14 +180,14 @@ jobs:
           grep -Fqi "$KEY_SHA" "$RUNNER_TEMP/user-signature.txt"
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           "$AAPT" dump badging "$APK" > apk-info.txt
-          grep -Fq "package: name='it.freept.bridge.next' versionCode='20' versionName='2.8.1'" apk-info.txt
+          grep -Fq "package: name='it.freept.bridge.next' versionCode='21' versionName='2.8.2'" apk-info.txt
           unzip -t "$APK" >/dev/null
           sha256sum "$APK" > apk-sha256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: FreePT-TEST-2.8.1-utente
+          name: FreePT-TEST-2.8.2-utente
           path: |
-            FreePT-TEST-2.8.1-UTENTE.apk
+            FreePT-TEST-2.8.2-UTENTE.apk
             apk-info.txt
             apk-sha256.txt
           if-no-files-found: error

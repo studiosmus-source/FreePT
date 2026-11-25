@@ -231,6 +231,18 @@ function requestScreen(denied=false){
       await boot();
     }catch(e){
       const message=friendly(e);
+      // Reinstalled phone: this number already has an account. Ask to return
+      // to THAT account (same chat); the person sees the usual waiting screen.
+      if(!win&&(e?.code==='23505'||/profiles_phone_key|duplicate key/i.test(message))){
+        try{
+          const {error:returnError}=await db.functions.invoke('freept-account-return',
+            {body:{action:'request',phone,name}});
+          if(!returnError){
+            try{localStorage.setItem(RETURN_FLAG,'1');}catch{}
+            returnWaitingScreen();return;
+          }
+        }catch{/* falls through to the normal error message */}
+      }
       status(message.includes('Anonymous sign-ins are disabled')?'Occorre abilitare gli accessi anonimi nel progetto FreePT.':message,true);
     }finally{button.disabled=false}
   };
@@ -328,6 +340,33 @@ function waitingScreen(){
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
 }
 
+// Return to an existing account after reinstalling: poll quietly while the
+// standard waiting screen is shown; switch to the account once approved.
+const RETURN_FLAG='freept_return_pending';
+let returnTimer=null;
+function returnWaitingScreen(){
+  waitingScreen();
+  if(returnTimer){clearTimeout(returnTimer);returnTimer=null;}
+  const check=async()=>{
+    returnTimer=null;
+    try{
+      const {data,error}=await db.functions.invoke('freept-account-return',{body:{action:'status'}});
+      if(!error&&data?.state==='login'&&typeof data.email==='string'&&typeof data.token==='string'){
+        const {error:loginError}=await db.auth.verifyOtp({email:data.email,token:data.token,type:'email'});
+        if(!loginError){
+          try{localStorage.removeItem(RETURN_FLAG);}catch{}
+          await boot();return;
+        }
+      }
+      if(!error&&data?.state==='denied'){
+        try{localStorage.removeItem(RETURN_FLAG);}catch{}
+        requestScreen(true);return;
+      }
+    }catch{/* offline: try again */}
+    if(document.querySelector('.waiting-copy'))returnTimer=setTimeout(check,8000);
+  };
+  returnTimer=setTimeout(check,1500);
+}
 async function loadProfile(){const {data,error}=await db.from('profiles').select('id,full_name,phone,email,role,status').eq('id',me.id).maybeSingle();if(error)throw error;profile=data}
 async function boot(){
   // A fresh installation has no session: this is normal, not an error.
@@ -357,7 +396,12 @@ async function boot(){
   if(!me){profile=null;requestScreen();return}
   try{
     await loadProfile();
-    if(!profile){requestScreen();return}
+    if(!profile){
+      let returning=false;
+      try{returning=localStorage.getItem(RETURN_FLAG)==='1';}catch{}
+      if(returning&&me?.is_anonymous)returnWaitingScreen();else requestScreen();
+      return;
+    }
     if(profile.status==='blocked'){requestScreen(true);return}
     if(profile.status==='pending'){waitingScreen();return}
     if(profile.role==='admin' && !(await unlockAdmin()))return;
