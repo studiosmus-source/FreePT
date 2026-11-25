@@ -160,6 +160,7 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 .attach-viewer-bar button{background:#ffffff22;color:#fff;border:0;border-radius:8px;padding:6px 14px}
 .attach-viewer-media{flex:1;max-width:100%;max-height:100%;object-fit:contain;margin:auto;padding:0 8px 16px}
 
+.bridge-file-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;padding:16px}
 /* FreePT Bridge preview: true fullscreen modal, isolated from the chat explorer. */
 .bridge-file-preview-overlay{
   position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;

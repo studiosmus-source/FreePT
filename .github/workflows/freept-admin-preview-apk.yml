@@ -1,0 +1,180 @@
+name: FreePT TEST administrator previews only
+on:
+  push:
+    branches: [fix/admin-previews-20261125]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: freept-admin-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  admin-apk:
+    if: github.ref == 'refs/heads/fix/admin-previews-20261125'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+      VITE_BRIDGE_ISOLATED_BUILD: 'true'
+      VITE_BRIDGE_BOOTSTRAP_ENABLED: 'true'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Reject changes outside administrator preview scope
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          allowed={
+            '.github/workflows/freept-admin-preview-apk.yml',
+            'android-bridge/BridgeDestinationPlugin.java.template',
+            'android-bridge/tests/BridgeDestinationTest.java.template',
+            'bridge/remotePreviewUi.test.mjs','bridge/previewPolicy.test.mjs',
+            'src/bridgeRemoteFilesUi.js','src/bridgePreviewPolicy.js',
+            'src/style.css','docs/ADMIN_PREVIEWS_2_9_0.md'
+          }
+          changed=set(subprocess.check_output([
+            'git','diff','--name-only',
+            'fdf1306bd8acddb314ea668d1e20da4cb7346f1a','HEAD'
+          ],text=True).splitlines())
+          assert changed <= allowed, 'Unexpected change outside administrator-only scope'
+          print('Remote TX, storage catalogue, owner UI, permissions and backend unchanged')
+          PY
+      - name: Run receiver and existing source regressions
+        run: |
+          npm ci --no-audit --no-fund
+          node --test --test-reporter=tap bridge/*.test.mjs src/*.test.mjs > test-results.txt
+          python3 -m unittest discover -s android-bridge -p 'test_*.py'
+      - name: Validate isolated TEST configuration and build bundle
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          url=urlparse(os.environ['VITE_SUPABASE_URL'])
+          assert url.scheme=='https' and url.hostname=='aqjuixbuxftnjfzxmzuj.supabase.co'
+          assert not url.username and not url.password and not url.query and not url.fragment
+          assert url.path in ('','/') and url.port is None
+          assert len(os.environ['VITE_SUPABASE_PUBLISHABLE_KEY'])>=30
+          PY
+          npm run build
+      - name: Generate the same TEST package for administrator installation only
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('capacitor.config.json')
+          config=json.loads(path.read_text())
+          assert config['appId']=='it.freept.app'
+          config['appId']='it.freept.bridge.next'
+          config['appName']='FreePT TEST'
+          path.write_text(json.dumps(config,indent=2)+'\n')
+          PY
+          npx cap add android
+          npx cap sync android
+      - name: Configure the existing TEST Firebase identity
+        env:
+          FIREBASE_CONFIG_B64: ${{ secrets.FREEPT_BRIDGE_GOOGLE_SERVICES_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          data=json.loads(base64.b64decode(os.environ['FIREBASE_CONFIG_B64'],validate=True))
+          clients=[c for c in data.get('client',[]) if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='it.freept.bridge.next']
+          assert len(clients)==1 and data.get('project_info',{}).get('project_number')
+          Path('android/app/google-services.json').write_text(json.dumps(data))
+          root=Path('android/build.gradle');s=root.read_text()
+          assert s.count('dependencies {')==1
+          root.write_text(s.replace('dependencies {',"dependencies {\n        classpath 'com.google.gms:google-services:4.4.4'",1))
+          app=Path('android/app/build.gradle')
+          app.write_text(app.read_text()+"\napply plugin: 'com.google.gms.google-services'\n")
+          PY
+      - name: Install unchanged TEST runtime with receiver preview extension
+        env:
+          FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
+          FREEPT_BRIDGE_INSTALL_TARGET: staging
+          FREEPT_OTA_APK_UPDATE_URL: https://freept-ota.onrender.com/apk-update
+          FREEPT_STORAGE_FIX: '1'
+        run: |
+          python3 android-bridge/install.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/build.gradle');s=p.read_text()
+          assert s.count('versionCode 19')==1 and s.count('versionName "2.8.0"')==1
+          p.write_text(s.replace('versionCode 19','versionCode 20',1).replace('versionName "2.8.0"','versionName "2.9.0-admin"',1))
+          p=Path('android/gradle/wrapper/gradle-wrapper.properties')
+          lines=p.read_text().splitlines()
+          p.write_text('\n'.join(
+            'distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.11.1-bin.zip' if line.startswith('distributionUrl=') else line
+            for line in lines)+'\nnetworkTimeout=120000\n')
+          PY
+          python3 android-bridge/install_destination_tests.py
+      - name: Run native receiver tests and compile APK
+        run: cd android && chmod +x gradlew && ./gradlew testDebugUnitTest assembleDebug --no-daemon
+      - name: Verify single Firebase receiver and TEST version
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          files=list(Path('android/app/build/intermediates/merged_manifests').rglob('AndroidManifest.xml'))
+          assert files
+          root=ET.parse(files[0]).getroot();ns='{http://schemas.android.com/apk/res/android}'
+          services=[s.get(ns+'name') for s in root.iter('service')
+            if any(a.get(ns+'name')=='com.google.firebase.MESSAGING_EVENT' for a in s.iter('action'))]
+          assert len(services)==1 and services[0].endswith('.BridgeWakeMessagingService')
+          PY
+      - name: Sign only administrator download; never publish OTA or a release
+        env:
+          BRIDGE_KEYSTORE_B64: ${{ secrets.FREEPT_BRIDGE_KEYSTORE_B64 }}
+          BRIDGE_STORE_PASSWORD: ${{ secrets.FREEPT_BRIDGE_STORE_PASSWORD }}
+          BRIDGE_KEY_ALIAS: ${{ secrets.FREEPT_BRIDGE_KEY_ALIAS }}
+          BRIDGE_KEY_PASSWORD: ${{ secrets.FREEPT_BRIDGE_KEY_PASSWORD }}
+          BRIDGE_CERT_SHA256: ${{ secrets.FREEPT_BRIDGE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          for key in BRIDGE_KEYSTORE_B64 BRIDGE_STORE_PASSWORD BRIDGE_KEY_ALIAS BRIDGE_KEY_PASSWORD BRIDGE_CERT_SHA256; do
+            test -n "${!key:-}" || { echo "Missing signing configuration: $key"; exit 1; }
+          done
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/freept-admin.jks"' EXIT
+          printf '%s' "$BRIDGE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/freept-admin.jks"
+          TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          APK=FreePT-TEST-2.9.0-ADMIN-ONLY.apk
+          "$TOOL" sign --ks "$RUNNER_TEMP/freept-admin.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" android/app/build/outputs/apk/debug/app-debug.apk
+          "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/admin-signature.txt"
+          for scheme in v1 v2 v3; do
+            grep -Eq "^Verified using ${scheme} scheme .*: true$" "$RUNNER_TEMP/admin-signature.txt"
+          done
+          EXPECTED="$(printf '%s' "$BRIDGE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          KEY_SHA="$(keytool -exportcert -keystore "$RUNNER_TEMP/freept-admin.jks" -storepass:env BRIDGE_STORE_PASSWORD -alias "$BRIDGE_KEY_ALIAS" | sha256sum | cut -d' ' -f1)"
+          [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] && [[ "$EXPECTED" == "$KEY_SHA" ]]
+          grep -Fqi "$KEY_SHA" "$RUNNER_TEMP/admin-signature.txt"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
+          "$AAPT" dump badging "$APK" > apk-info.txt
+          grep -Fq "package: name='it.freept.bridge.next' versionCode='20' versionName='2.9.0-admin'" apk-info.txt
+          unzip -t "$APK" >/dev/null
+          sha256sum "$APK" > apk-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-TEST-administrator-only
+          path: |
+            FreePT-TEST-2.9.0-ADMIN-ONLY.apk
+            apk-info.txt
+            apk-sha256.txt
+            test-results.txt
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FreePT-admin-native-test-evidence
+          path: android/app/build/test-results/testDebugUnitTest
+          if-no-files-found: ignore

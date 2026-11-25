@@ -22,6 +22,37 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,manifest=Config.NONE)
 public class BridgeDestinationTest {
+ @Test public void pdfRejectsOversizeInputWithoutCreatingFiles(){
+  Call c=call(Map.of("base64","A".repeat(2796208),"page",0));
+  plugin.renderPdfPreview(c.call);
+  assertEquals("bridge_pdf_invalid",c.error);
+ }
+ @Test public void pdfRejectsNegativePageAndNonPdfBytes(){
+  Call negative=call(Map.of("base64","JVBERi0=","page",-1));
+  plugin.renderPdfPreview(negative.call);
+  assertEquals("bridge_pdf_invalid",negative.error);
+  Call invalid=call(Map.of("base64","bm90IGEgcGRm","page",0));
+  plugin.renderPdfPreview(invalid.call);
+  assertEquals("bridge_pdf_unavailable",invalid.error);
+ }
+ @Test public void pdfRenderUsesBoundedBitmapAndRemovesPrivateInput()throws Exception{
+  android.graphics.pdf.PdfRenderer.Page page=mock(android.graphics.pdf.PdfRenderer.Page.class);
+  when(page.getWidth()).thenReturn(600);when(page.getHeight()).thenReturn(900);
+  try(org.mockito.MockedConstruction<android.graphics.pdf.PdfRenderer> mocked=
+      mockConstruction(android.graphics.pdf.PdfRenderer.class,(renderer,construction)->{
+        when(renderer.getPageCount()).thenReturn(3);
+        when(renderer.openPage(1)).thenReturn(page);
+      })){
+    Call c=call(Map.of("base64","JVBERi0xLjQ=","page",1));
+    plugin.renderPdfPreview(c.call);
+    assertNull(c.error);assertNotNull(c.result);
+    assertEquals(3,c.result.getInt("pageCount").intValue());
+    verify(page).render(argThat(b->b.getWidth()<=1440&&b.getHeight()<=2048),
+        isNull(),isNull(),eq(android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY));
+    verify(page).close();verify(mocked.constructed().get(0)).close();
+  }
+  assertEquals(0,context.getCacheDir().listFiles((dir,name)->name.startsWith("freept-preview-")).length);
+ }
  private static final String DIR=DocumentsContract.Document.MIME_TYPE_DIR;
  private final Map<String,Doc> docs=new LinkedHashMap<>();
  private Context context;private ContentResolver resolver;private BridgeDestinationPlugin plugin;
@@ -88,6 +119,7 @@ public class BridgeDestinationTest {
   Call c=new Call();c.call=mock(PluginCall.class);JSObject data=new JSObject();for(var e:args.entrySet())data.put(e.getKey(),e.getValue());
   when(c.call.getData()).thenReturn(data);
   when(c.call.getString(anyString())).thenAnswer(a->(String)args.get(a.getArgument(0)));
+  when(c.call.getInt(anyString(),anyInt())).thenAnswer(a->args.getOrDefault(a.getArgument(0),a.getArgument(1)));
   when(c.call.getString(anyString(),nullable(String.class))).thenAnswer(a->args.getOrDefault(a.getArgument(0),a.getArgument(1)));
   when(c.call.getArray(anyString())).thenAnswer(a->{Object v=args.get(a.getArgument(0));return v instanceof List?new JSArray((List<?>)v):null;});
   doAnswer(a->{c.result=a.getArgument(0);return null;}).when(c.call).resolve(any(JSObject.class));
