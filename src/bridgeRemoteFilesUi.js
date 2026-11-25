@@ -482,8 +482,10 @@ export function renderBridgeRemoteFiles({
               ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
           });
           if(result.partial){
-            return (result.interruptedBy==='transient_read'?'Collegamento interrotto. ':'Annullato. ')+
-              'Conservati '+result.files+' file completi in '+
+            const reason=result.interruptedBy==='user_cancel'?'Annullato. ':
+              result.interruptedBy==='transient_read'?'Collegamento interrotto. ':
+              describeBridgeError(Error(result.error||''),'Download interrotto.')+' ';
+            return reason+'Conservati '+result.files+' file completi in '+
               (result.savedName||'cartella (parziale)')+'.';
           }
           return 'cartella scaricata: '+result.files+' file.';
@@ -808,6 +810,16 @@ export function renderBridgeRemoteFiles({
     recentRoots.get(bridgeClient)?.clear();
     void listDevices();
   };
+  // A download stopped by Android/app closure is recovered natively at the
+  // next start: tell the administrator where the completed files are.
+  if(typeof bridgeDestination?.getDestination==='function'){
+    Promise.resolve(bridgeDestination.getDestination()).then(info=>{
+      if(typeof info?.recoveredName!=='string'||!info.recoveredName)return;
+      setStatus('Download interrotto recuperato: '+(info.recoveredFiles||0)+
+        ' file completi salvati in "'+info.recoveredName+'".'+
+        (info.recoveredLegacy?' Controlla l’ultimo file: la versione precedente poteva lasciarlo incompleto.':''));
+    }).catch(()=>{});
+  }
   const unsubscribeTransfers=transfers?.onChange(running=>{
     if(!running&&alive())thumbnailList?.resume();
   });

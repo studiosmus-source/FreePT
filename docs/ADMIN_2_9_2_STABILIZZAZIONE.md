@@ -78,3 +78,27 @@ Nessuna modifica a server Render, database Supabase, autorizzazioni, TX remoto o
 2. Sostituire il contatore globale 180/min con limiti per principale (TX vs admin)
    o escludere `tx/poll`/`tx/chunk` del dispositivo autenticato dal tetto comune.
 3. Unire le 5 RPC del poll TX (`assert_tx_session` + 4 `claim_*`) in una sola.
+
+## 2.9.3-admin — i file completati restano sempre (25/11/2026, richiesta utente)
+
+Problemi trovati nel codice 2.9.2:
+- App chiusa/uccisa da Android durante una cartella: al riavvio `recoverPending()`
+  **cancellava** l'intera cartella temporanea, file completi compresi.
+- Errori non di rete (sessione, file cambiato, scrittura): la cartella veniva scartata.
+- Crash tra la rinomina finale e la rimozione del journal: la cartella già completa
+  poteva essere cancellata al riavvio.
+
+Correzioni (`BridgeDestinationPlugin`, `folderReceiver.mjs`):
+- Cartella visibile durante il download: `Nome (in corso)`.
+- Ogni file è scritto con nome temporaneo nascosto e rinominato al suo nome reale
+  appena verificato: un file col nome reale è sempre completo.
+- Al riavvio dopo una chiusura forzata: eliminati solo i file temporanei a metà;
+  i file completi vengono pubblicati in `Nome (interrotto)`; l'app lo segnala.
+- Qualsiasi errore con almeno un file completo: `Nome (parziale)`. Se anche la
+  pubblicazione fallisce, nulla viene cancellato (recupero al riavvio).
+- Journal con stato `published`: una cartella già pubblicata non viene mai cancellata.
+- Cartelle interrotte con versioni precedenti: recuperate, con avviso che l'ultimo
+  file potrebbe essere incompleto (allora i file avevano subito il nome reale).
+
+Limite: un singolo file (non cartella) interrotto a metà non viene conservato,
+perché sarebbe incompleto.

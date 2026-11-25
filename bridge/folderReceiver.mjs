@@ -148,17 +148,24 @@ export async function receiveBridgeFolder({
   }catch(error){
     const userCancelled=preserveCompletedOnCancel&&signal?.aborted&&
       error?.message==='bridge_transfer_cancelled';
-    const networkInterrupted=preserveCompletedOnFailure&&!signal?.aborted&&
-      isBridgeTransferInterruption(error);
-    if(started&&(userCancelled||networkInterrupted)&&completedFiles>0){
+    // Any failure after at least one verified file keeps those files
+    // (user request 25/11/2026): network, remote phone, session or storage.
+    const failed=preserveCompletedOnFailure&&!signal?.aborted;
+    if(started&&(userCancelled||failed)&&completedFiles>0){
       onStage('preserving');
       // The in-flight file writer has already discarded its partial bytes
       // before downloadFile throws. All remaining native entries are complete.
       keepStaging=true;
-      const saved=await commit({partial:true,completedFiles});
+      let saved;
+      // If even publishing fails, never discard: the native destination
+      // recovers the verified files as "<name> (interrotto)" on next start.
+      try{saved=await commit({partial:true,completedFiles});}
+      catch{throw error;}
       done=true;
       return {...totals,files:completedFiles,partial:true,
-        interruptedBy:userCancelled?'user_cancel':'transient_read',
+        interruptedBy:userCancelled?'user_cancel':
+          isBridgeTransferInterruption(error)?'transient_read':'error',
+        error:userCancelled?null:(error?.message||null),
         savedName:saved?.name||null};
     }
     throw error;

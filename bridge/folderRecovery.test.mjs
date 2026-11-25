@@ -141,12 +141,20 @@ test('an exhausted transport failure can publish only verified completed files a
  assert.ok(f.events.includes('discard-file:file-3.bin'));
  assert.equal(f.events.includes('rollback'),false);
 });
-test('permission loss never invokes retry UI or preserves a purported complete folder',async()=>{
+test('permission loss never invokes retry UI; verified files are kept only as a partial folder',async()=>{
  const f=folderFixture(5,{failureAt:3,failure:'bridge_auth_required'});
  let retryPrompts=0;
- await assert.rejects(downloadBridgeFolder({...f,deviceId:DEVICE,pause:async()=>{},preserveCompletedOnFailure:true,
-  onInterruption:async()=>{retryPrompts++;return true;}}),/auth_required/);
- assert.equal(retryPrompts,0);assert.equal(f.events.at(-1),'rollback');
+ const result=await downloadBridgeFolder({...f,deviceId:DEVICE,pause:async()=>{},preserveCompletedOnFailure:true,
+  onInterruption:async()=>{retryPrompts++;return true;}});
+ assert.equal(retryPrompts,0);
+ assert.equal(result.partial,true);assert.equal(result.interruptedBy,'error');
+ assert.equal(result.error,'bridge_auth_required');
+ assert.equal(f.events.at(-1),'partial');assert.equal(f.events.includes('rollback'),false);
+});
+test('without the preserve option a failure still rolls back (unchanged contract)',async()=>{
+ const f=folderFixture(5,{failureAt:3,failure:'bridge_auth_required'});
+ await assert.rejects(downloadBridgeFolder({...f,deviceId:DEVICE,pause:async()=>{}}),/auth_required/);
+ assert.equal(f.events.at(-1),'rollback');
 });
 test('cancelling while waiting to resume saves previous complete files only',async()=>{
  const f=folderFixture(5,{failureAt:2}),controller=new AbortController();
