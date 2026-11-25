@@ -16,6 +16,9 @@ import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
 import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
 import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
+import {withBridgeHandleLeases} from './bridgeHandleLeases.js';
+import {createBridgeTransferManager} from './bridgeTransferManager.js';
+import {createBridgeThumbnailStore} from './bridgeThumbnailStore.js';
 import {renderOriginalTxRx} from './originalTxRxUi.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {resolveBridgeRuntimeConfig} from './bridgeRuntimeConfig.js';
@@ -80,14 +83,21 @@ const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
  getUser:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null
 }):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
-const bridgeClient=createBridgeAdminClient({
+// Renews the server's ~300 s handle authorization through normal browse jobs
+// (see bridgeHandleLeases.js); never bypasses the server-side checks.
+const bridgeClient=withBridgeHandleLeases(createBridgeAdminClient({
   baseUrl:bridgeRuntime.baseUrl,auth:db.auth,
   // Staging-only authenticated FCM nudge. The Edge Function checks the admin,
   // the receiver grant and the queued job before contacting the remote device.
   wakeQueuedJob:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
     ? jobId=>db.functions.invoke('freept-bridge-wake',{body:{jobId}})
     : null
-});
+}));
+// One admin download at a time, independent of the chat file panel.
+const bridgeTransfers=bridgeClient?createBridgeTransferManager():null;
+// Persistent list thumbnails (hashed keys, bounded, purged on revocation/logout).
+let bridgeThumbnailStore=null;
+try{bridgeThumbnailStore=bridgeClient?createBridgeThumbnailStore():null;}catch{bridgeThumbnailStore=null;}
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
 let bridgePendingOwnerId=null;
@@ -203,6 +213,7 @@ function bindConcealedAdminEntry(){
 
 function requestScreen(denied=false){
   closeAdminOverlays();
+  bridgeTransfers?.dispose(); // leaving the admin area stops admin downloads
   if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   selected=null; messageRequest++;
   const win=isWindowsFreePT();
@@ -253,6 +264,7 @@ async function completeAdminLogin(user){
 function adminScreen(){
   if(diagnosticCleanup){diagnosticCleanup();diagnosticCleanup=null;}
   closeAdminOverlays();
+  bridgeTransfers?.dispose();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
     '<p class="small">Accedi con email e password del tuo account amministratore FreePT. La sessione resta attiva finché è valida.</p>'+
     '<form id="adminForm" class="form">'+
@@ -323,6 +335,7 @@ function adminScreen(){
 
 function waitingScreen(){
   closeAdminOverlays();
+  bridgeTransfers?.dispose();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiesta inviata</h2>'+
   '<p class="notice waiting-copy">I nostri sistemi stanno elaborando la tua richiesta di accesso… Attendere.</p>'+
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
@@ -365,7 +378,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
+async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();bridgeTransfers?.dispose();try{await bridgeThumbnailStore?.clear();}catch{}if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,email,status,role,created_at,chat_hidden_at')
@@ -889,6 +902,7 @@ function showImportantAlertComposer(targetUser){
 }
 let openChatRemoteFiles=async()=>{};
 function renderLayout(){
+  // Re-rendering the admin workspace does not interrupt a running download.
   closeAdminOverlays();
   const admin=profile.role==='admin';
   el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button type="button" id="adminBridge">Bridge</button><button id="logout">Esci</button>':'')+
@@ -985,6 +999,7 @@ function renderLayout(){
       panel.append(filesHost);
       chatFilesCleanup=renderBridgeRemoteFiles({
         host:filesHost,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
+        transfers:bridgeTransfers,thumbnailStore:bridgeThumbnailStore,
         isAuthorized:()=>panel.isConnected&&selected===ownerId&&
           me?.id&&profile?.role==='admin'&&adminUnlocked
       });
@@ -1011,7 +1026,7 @@ function renderPeople(){
     '<select id="adminPeopleStatus" aria-label="Filtra utenti per stato">'+
     [['all','Tutti'],['pending','Da approvare'],['approved','Approvati'],['blocked','Bloccati']].map(([key,label])=>
       '<option value="'+key+'"'+(adminPeopleStatus===key?' selected':'')+'>'+label+'</option>').join('')+
-    '</select></div><div id="adminPeopleResults">'+
+    '</select></div><div id="returnRequests" class="return-requests" hidden></div><div id="adminPeopleResults">'+
     '<p class="hint" id="adminPeopleEmpty"'+(visiblePeople.length?' hidden':'')+'>Nessun utente corrisponde ai filtri.</p>'+
     people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+
       esc(x.email||x.phone)+' · '+(x.email?'Windows':'Android')+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
@@ -1030,6 +1045,60 @@ function renderPeople(){
   filter.onchange=()=>{adminPeopleStatus=filter.value;updateAdminPeopleResults();};
   bindAdminPeopleActions(p);
   updateAdminPeopleResults();
+  void loadReturnRequests();
+}
+// People who reinstalled FreePT and ask to return to their existing account
+// (same number). Approving lets that phone sign in to the account and its chat.
+let returnRequests=[],returnRequestsAt=0,returnLoading=false;
+function paintReturnRequests(){
+  const box=document.getElementById('returnRequests');
+  if(!box)return;
+  box.replaceChildren();
+  box.hidden=!returnRequests.length;
+  if(!returnRequests.length)return;
+  const title=document.createElement('strong');
+  title.textContent='Richieste di rientro ('+returnRequests.length+')';
+  box.append(title);
+  for(const request of returnRequests){
+    const card=document.createElement('div');card.className='return-request';
+    const who=document.createElement('p');
+    who.textContent=request.accountName+(request.phone?' · '+request.phone:'');
+    const detail=document.createElement('small');
+    detail.textContent='Ha reinstallato l’app e chiede di rientrare nel suo account'+
+      (request.typedName&&request.typedName!==request.accountName?' (nome scritto: «'+request.typedName+'»)':'')+
+      ' · '+new Date(request.at).toLocaleString('it-IT');
+    const actions=document.createElement('div');actions.className='return-request-actions';
+    const approve=document.createElement('button');approve.type='button';approve.textContent='Approva';
+    const deny=document.createElement('button');deny.type='button';deny.className='secondary';deny.textContent='Rifiuta';
+    const decide=async action=>{
+      const question=action==='approve'
+        ?'Approvare il rientro di '+request.accountName+'? Il telefono che ha fatto la richiesta entrerà nel suo account e vedrà tutta la sua chat.'
+        :'Rifiutare la richiesta di rientro per '+request.accountName+'?';
+      if(!confirm(question))return;
+      approve.disabled=true;deny.disabled=true;
+      try{
+        const {error}=await db.functions.invoke('freept-account-return',{body:{action,id:request.id}});
+        if(error)throw error;
+      }catch(e){alert('Operazione non riuscita: '+friendly(e));}
+      await loadReturnRequests(true);
+    };
+    approve.onclick=()=>void decide('approve');
+    deny.onclick=()=>void decide('deny');
+    actions.append(approve,deny);
+    card.append(who,detail,actions);
+    box.append(card);
+  }
+}
+async function loadReturnRequests(force=false){
+  paintReturnRequests();
+  if(returnLoading||(!force&&Date.now()-returnRequestsAt<15000))return;
+  if(profile?.role!=='admin'||!adminUnlocked)return;
+  returnLoading=true;
+  try{
+    const {data,error}=await db.functions.invoke('freept-account-return',{body:{action:'list'}});
+    if(!error&&Array.isArray(data?.requests)){returnRequests=data.requests;returnRequestsAt=Date.now();}
+  }catch{/* keep the last known list */}
+  finally{returnLoading=false;paintReturnRequests();}
 }
 function updateAdminPeopleResults(){
   const p=document.getElementById('people');

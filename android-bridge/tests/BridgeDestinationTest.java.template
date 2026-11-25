@@ -249,6 +249,67 @@ public class BridgeDestinationTest {
   assertArrayEquals(new byte[]{1,2,3},Files.readAllBytes(saved.bytes.toPath()));
   assertFalse(docs.values().stream().anyMatch(x->"two.bin".equals(x.name)));
  }
+ private String openWrite(List<String> path,byte[] bytes,boolean commit)throws Exception{
+  Call o=call(Map.of("path",path,"size",commit?bytes.length:bytes.length+100,"mime","application/octet-stream"));
+  plugin.openFile(o.call);assertNull(o.error);String id=o.result.getString("fileId");
+  Call w=call(Map.of("fileId",id,"offset",0,"base64",android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP)));
+  plugin.writeChunk(w.call);assertNull(w.error);
+  if(commit){Call c=call(Map.of("fileId",id));plugin.commitFile(c.call);assertNull(c.error);}
+  return id;
+ }
+ @Test public void folderFilesAppearUnderRealNameOnlyWhenComplete()throws Exception{
+  Call b=call(Map.of("ownerId",A,"ownerName","Cristina","name","Foto"));plugin.beginFolder(b.call);assertNull(b.error);
+  assertTrue(docs.values().stream().anyMatch(d->"Foto (in corso)".equals(d.name)));
+  Call o=call(Map.of("path",List.of("a.bin"),"size",3,"mime","application/octet-stream"));
+  plugin.openFile(o.call);assertNull(o.error);
+  assertFalse(docs.values().stream().anyMatch(d->"a.bin".equals(d.name)));
+  String id=o.result.getString("fileId");
+  Call w=call(Map.of("fileId",id,"offset",0,"base64","AQID"));plugin.writeChunk(w.call);assertNull(w.error);
+  Call c=call(Map.of("fileId",id));plugin.commitFile(c.call);assertNull(c.error);
+  assertTrue(docs.values().stream().anyMatch(d->"a.bin".equals(d.name)));
+ }
+ @Test public void appKilledDuringFolderKeepsCompletedFilesAsInterrupted()throws Exception{
+  Call b=call(Map.of("ownerId",A,"ownerName","Cristina","name","Foto"));plugin.beginFolder(b.call);assertNull(b.error);
+  Call d=call(Map.of("path",List.of("sub")));plugin.makeDirectory(d.call);assertNull(d.error);
+  openWrite(List.of("one.bin"),new byte[]{1,2,3},true);
+  openWrite(List.of("sub","two.bin"),new byte[]{4,5},true);
+  openWrite(List.of("sub","three.bin"),new byte[]{6},false); // process dies mid-file
+  plugin=freshPlugin(); // Android killed the app; next start
+  Call g=call(Map.of());plugin.getDestination(g.call);
+  assertEquals("Foto (interrotto)",g.result.getString("recoveredName"));
+  assertEquals(2,g.result.getInt("recoveredFiles"));
+  assertFalse(g.result.getBoolean("recoveredLegacy"));
+  Doc folder=docs.values().stream().filter(x->"Foto (interrotto)".equals(x.name)).findFirst().orElseThrow();
+  Doc one=docs.values().stream().filter(x->"one.bin".equals(x.name)).findFirst().orElseThrow();
+  assertEquals(folder.id,one.parent);
+  assertArrayEquals(new byte[]{1,2,3},Files.readAllBytes(one.bytes.toPath()));
+  assertTrue(docs.values().stream().anyMatch(x->"two.bin".equals(x.name)));
+  assertFalse(docs.values().stream().anyMatch(x->x.name.startsWith(".freept-partial-")));
+  // Reported once only; a new download can start normally.
+  g=call(Map.of());plugin.getDestination(g.call);assertNull(g.result.getString("recoveredName"));
+  finish(begin(A,"next.bin",0),new byte[0]);
+ }
+ @Test public void appKilledBeforeAnyCompleteFileLeavesNothingBehind()throws Exception{
+  Call b=call(Map.of("ownerId",A,"ownerName","Cristina","name","Vuota"));plugin.beginFolder(b.call);assertNull(b.error);
+  openWrite(List.of("x.bin"),new byte[]{1},false);
+  plugin=freshPlugin();Call g=call(Map.of());plugin.getDestination(g.call);
+  assertNull(g.result.getString("recoveredName"));
+  assertFalse(docs.values().stream().anyMatch(x->x.name.startsWith("Vuota")));
+ }
+ @Test public void crashRightAfterPublishingNeverDeletesTheFinishedFolder()throws Exception{
+  Call b=call(Map.of("ownerId",A,"ownerName","Cristina","name","Finita"));plugin.beginFolder(b.call);assertNull(b.error);
+  openWrite(List.of("ok.bin"),new byte[]{7},true);
+  Call c=call(Map.of());plugin.commitFolder(c.call);assertNull(c.error);
+  // Simulate death between rename and journal removal: journal says published.
+  Doc folder=docs.values().stream().filter(x->"Finita".equals(x.name)).findFirst().orElseThrow();
+  org.json.JSONObject j=new org.json.JSONObject();
+  j.put("tree","content://freept.test/tree/root");j.put("parent",folder.parent);
+  j.put("document",folder.id);j.put("name","Finita");j.put("published",true);
+  context.getSharedPreferences("freept_bridge_destination",0).edit().putString("pending_stage",j.toString()).commit();
+  plugin=freshPlugin();Call g=call(Map.of());plugin.getDestination(g.call);
+  assertTrue(docs.containsKey(folder.id));
+  assertTrue(docs.values().stream().anyMatch(x->"ok.bin".equals(x.name)));
+ }
  @Test public void profileRenameAndManualDirectoryRenamePreserveTheMapping()throws Exception{
   finish(begin(A,"first.bin",0),new byte[0]);
   Doc owner=docs.values().stream().filter(d->"Cristina".equals(d.name)).findFirst().orElseThrow();owner.name="Nome manuale";

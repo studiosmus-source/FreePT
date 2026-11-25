@@ -20,14 +20,50 @@ export function normalizeBridgeApiUrl(raw) {
   return url.origin;
 }
 
-export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch,wakeQueuedJob=null}={}) {
+export function createBridgeAdminClient({
+  baseUrl,auth,fetchImpl=fetch,wakeQueuedJob=null,requestTimeoutMs=20000
+}={}) {
   const url=normalizeBridgeApiUrl(baseUrl);
-  if(!url||typeof auth?.getSession!=='function'||typeof fetchImpl!=='function')
+  if(!url||typeof auth?.getSession!=='function'||typeof fetchImpl!=='function'||
+     !Number.isSafeInteger(requestTimeoutMs)||requestTimeoutMs<1||requestTimeoutMs>120000)
     return null;
   // Best-effort wake only for authenticated, validated jobs. Never block a job on FCM.
   const wake=jobId=>{
     if(typeof wakeQueuedJob!=='function')return;
     try{Promise.resolve(wakeQueuedJob(jobId)).catch(()=>{});}catch{/* push unavailable; normal polling remains valid */}
+  };
+  const requestJson=async(action,body,token,signal)=>{
+    if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+    const controller=new AbortController();
+    const abort=()=>controller.abort();
+    signal?.addEventListener('abort',abort,{once:true});
+    let timedOut=false;
+    const timer=setTimeout(()=>{timedOut=true;controller.abort();},requestTimeoutMs);
+    try{
+      const response=await fetchImpl(url+'/bridge/admin/'+action,{
+        method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},
+        body:JSON.stringify(body),cache:'no-store',redirect:'error',signal:controller.signal
+      });
+      if(!response?.ok){
+        if(response?.status===401||response?.status===403)throw Error('bridge_auth_required');
+        if(response?.status===429)throw Error('bridge_request_throttled');
+        if(response?.status>=500)throw Error('bridge_backend_unavailable');
+        throw Error('bridge_request_failed');
+      }
+      try{return await response.json();}
+      catch{
+        if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+        if(timedOut)throw Error('bridge_http_timeout');
+        throw Error('bridge_invalid_response');
+      }
+    }catch(error){
+      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
+      if(timedOut)throw Error('bridge_http_timeout');
+      if(typeof error?.message==='string'&&error.message.startsWith('bridge_'))throw error;
+      throw Error('bridge_network_unavailable');
+    }finally{
+      clearTimeout(timer);signal?.removeEventListener('abort',abort);
+    }
   };
   const perform=async(action,id,{signal}={})=>{
     if(!UUID.test(id))throw Error('bridge_invalid_id');
@@ -37,24 +73,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch,wakeQueued
       throw Error('bridge_auth_required');
     if(signal?.aborted)throw Error('bridge_transfer_cancelled');
     const field=action==='list'?'deviceId':'jobId';
-    let response;
-    try {
-      response=await fetchImpl(url+'/bridge/admin/'+action,{
-        method:'POST',
-        headers:{'content-type':'application/json',authorization:'Bearer '+token},
-        body:JSON.stringify({[field]:id}),
-        cache:'no-store',
-        redirect:'error',signal
-      });
-    }catch{
-      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-      throw Error('bridge_network_unavailable');
-    }
-    if(!response||!response.ok)
-      throw Error(response?.status===401||response?.status===403
-        ?'bridge_auth_required':'bridge_request_failed');
-    let body;
-    try{body=await response.json()}catch{throw Error('bridge_invalid_response');}
+    const body=await requestJson(action,{[field]:id},token,signal);
     if(!body||!UUID.test(body.jobId)||!UUID.test(body.deviceId)||
        !STATES.has(body.state)||
        (action==='list'&&body.deviceId!==id)||
@@ -70,20 +89,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch,wakeQueued
     const token=data?.session?.access_token;
     if(error||typeof token!=='string'||token.length<20)
       throw Error('bridge_auth_required');
-    let response;
-    try{
-      response=await fetchImpl(url+'/bridge/admin/folder',{
-        method:'POST',
-        headers:{'content-type':'application/json',authorization:'Bearer '+token},
-        body:JSON.stringify({jobId}),
-        cache:'no-store',redirect:'error'
-      });
-    }catch{throw Error('bridge_network_unavailable');}
-    if(!response||!response.ok)
-      throw Error(response?.status===401||response?.status===403
-        ?'bridge_auth_required':'bridge_request_failed');
-    let payload;
-    try{payload=await response.json()}catch{throw Error('bridge_invalid_response');}
+    const payload=await requestJson('folder',{jobId},token);
     if(!payload||Object.keys(payload).sort().join(',')!=='entries,jobId,nextOffset'||
        payload.jobId!==jobId)
       throw Error('bridge_invalid_response');
@@ -100,22 +106,7 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch,wakeQueued
     if(error||typeof token!=='string'||token.length<20)
       throw Error('bridge_auth_required');
     if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-    let response;
-    try{
-      response=await fetchImpl(url+'/bridge/admin/'+action,{
-        method:'POST',headers:{'content-type':'application/json',
-          authorization:'Bearer '+token},
-        body:JSON.stringify(body),cache:'no-store',redirect:'error',signal
-      });
-    }catch{
-      if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-      throw Error('bridge_network_unavailable');
-    }
-    if(!response?.ok)
-      throw Error(response?.status===401||response?.status===403?
-        'bridge_auth_required':'bridge_request_failed');
-    try{return await response.json()}
-    catch{throw Error('bridge_invalid_response');}
+    return requestJson(action,body,token,signal);
   };
   const requestBrowse=async(deviceId,{handle='root',offset=0}={},{signal}={})=>{
     if(!UUID.test(deviceId)||!(handle==='root'||UUID.test(handle))||
@@ -134,20 +125,20 @@ export function createBridgeAdminClient({baseUrl,auth,fetchImpl=fetch,wakeQueued
     const page=validateBridgeFolderPage({entries:data.entries,nextOffset:data.nextOffset});
     return {jobId,entries:page.entries,nextOffset:page.nextOffset};
   };
-  const requestRead=async(deviceId,request)=>{
+  const requestRead=async(deviceId,request,{signal}={})=>{
     if(!UUID.test(deviceId))throw Error('bridge_invalid_id');
     const valid=validateBridgeReadRequest(request);
     if(valid.length>262144)throw Error("bridge_read_chunk_limit");
-    const result=await readCall('read',{deviceId,...valid});
+    const result=await readCall('read',{deviceId,...valid},{signal});
     if(!result||!UUID.test(result.jobId)||result.deviceId!==deviceId||
        result.state!=='queued'||Object.keys(result).sort().join(',')!=='deviceId,jobId,state')
       throw Error('bridge_invalid_response');
     wake(result.jobId);
     return result;
   };
-  const getReadChunk=async(jobId)=>{
+  const getReadChunk=async(jobId,{signal}={})=>{
     if(!UUID.test(jobId))throw Error('bridge_invalid_id');
-    const result=await readCall('chunk',{jobId});
+    const result=await readCall('chunk',{jobId},{signal});
     try{
       if(!Number.isSafeInteger(result?.bytesRead)||result.bytesRead<1||
          result.bytesRead>262144)throw Error("invalid");
