@@ -37,3 +37,29 @@ test('normal browser and Android do not install Windows-only handoff',()=>{
  assert.equal(bridge.listener,null);
  delete globalThis.window;
 });
+
+test('existing phone consent is reported so the PC activates without a new request',async()=>{
+ const bridge=setup();
+ let asked=0;
+ installWindowsBridgeEnrollment({
+   auth:{getSession:async()=>({data:{session:{user:{id:'owner-id'},access_token:'x'.repeat(40)}}})},
+   getIdentity:()=>({id:'owner-id',role:'user',status:'approved'}),
+   hasActiveShare:async()=>{asked++;return true;}
+ });
+ await bridge.listener({data:{kind:'freept_win_pair_request',nonce:'c'.repeat(32)}});
+ assert.equal(asked,1);
+ assert.equal(bridge.sent[0].alreadyShared,true);
+ delete globalThis.window;
+});
+test('no consent or lookup failure never claims an existing share',async()=>{
+ for(const lookup of [async()=>false,async()=>{throw Error('rls')}]){
+   const bridge=setup();
+   installWindowsBridgeEnrollment({
+     auth:{getSession:async()=>({data:{session:{user:{id:'owner-id'},access_token:'x'.repeat(40)}}})},
+     getIdentity:()=>({id:'owner-id',role:'user',status:'approved'}),hasActiveShare:lookup
+   });
+   await bridge.listener({data:{kind:'freept_win_pair_request',nonce:'d'.repeat(32)}});
+   assert.equal(bridge.sent[0].alreadyShared,undefined);
+   delete globalThis.window;
+ }
+});

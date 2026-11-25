@@ -10,7 +10,7 @@ import {createPushRegistration} from './pushRegistration.js';
 import {mountImportantAlertComposer,renderImportantAlert} from './importantAlerts.js';
 import {installWindowsBridgeEnrollment} from './windowsBridgeEnrollment.js';
 import {obtainRequestUser} from './staleSessionRecovery.js';
-import {isWindowsFreePT,normalizedWindowsEmail} from './windowsRegistration.js';
+import {isWindowsFreePT,normalizedWindowsEmail,parsePcAccessCode} from './windowsRegistration.js';
 import * as tus from 'tus-js-client';
 import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
@@ -127,7 +127,16 @@ const pushRegistration=Capacitor.isNativePlatform()?createPushRegistration({
   }
 }):null;
 let me = null, profile = null, people = [], selected = null, messages = [], sub = null, busy = false;
-installWindowsBridgeEnrollment({auth:db.auth,getIdentity:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null});
+installWindowsBridgeEnrollment({auth:db.auth,getIdentity:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null,
+  // Consent already given on the phone (an active, non-revoked share of one of
+  // this account's devices). Read under the owner's own RLS policy.
+  hasActiveShare:async()=>{
+    if(!me?.id)return false;
+    const {data,error}=await db.from('bridge_grants')
+      .select('device_id,bridge_devices!inner(owner_id)')
+      .eq('bridge_devices.owner_id',me.id).is('revoked_at',null).limit(1);
+    return !error&&Array.isArray(data)&&data.length>0;
+  }});
 let messageRequest = 0;
 let fetchingMessages = false;
 let adminUnlocked = false;
@@ -206,7 +215,16 @@ function requestScreen(denied=false){
   if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   selected=null; messageRequest++;
   const win=isWindowsFreePT();
-  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel"><h2>Richiedi accesso</h2><p class="small">'+(win?'Inserisci nome e indirizzo email per chiedere accesso da Windows.':'Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.')+'</p>'+
+  // Windows: the person already uses FreePT on the phone -> same account via the
+  // administrator's one-time code (same chat, same files, same grants).
+  const pcCodeBlock=win&&!denied?'<section class="pc-code" aria-label="Accesso con codice">'+
+    '<h2>Usi già FreePT sul telefono?</h2>'+
+    '<p class="small">Chiedi all’amministratore il <strong>codice per il PC</strong>: ritroverai qui la stessa chat del telefono.</p>'+
+    '<form class="form" id="pcCodeForm"><input name="code" placeholder="Codice, es. K7Q2M9-48291376" maxlength="40" '+
+    'autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required/>'+
+    '<button type="submit">Entra con il codice</button></form><p id="pcCodeStatus" class="small"></p>'+
+    '<p class="small pc-code-or">Oppure, se è la prima volta che usi FreePT, richiedi l’accesso qui sotto.</p></section>':'';
+  el.innerHTML='<div class="shell request-shell">'+heading('FreePT')+'<main class="panel">'+pcCodeBlock+'<h2>Richiedi accesso</h2><p class="small">'+(win?'Inserisci nome e indirizzo email per chiedere accesso da Windows.':'Inserisci il tuo nome e numero di cellulare. Nessuna password e nessun SMS.')+'</p>'+
 
   '<form class="form" id="request"><input name="name" placeholder="Nome e cognome" maxlength="80" minlength="2" required autocomplete="name" '+(denied?'disabled':'')+'/>'+
   (win?'<input name="email" type="email" placeholder="Indirizzo email" maxlength="254" required autocomplete="email" '+(denied?'disabled':'')+'/>':'<input name="phone" type="tel" placeholder="Numero di telefono (+39...)" required autocomplete="tel" '+(denied?'disabled':'')+'/>')+
@@ -215,6 +233,25 @@ function requestScreen(denied=false){
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
   '</main></div>';
   bindConcealedAdminEntry();
+  const pcCodeForm=document.getElementById('pcCodeForm');
+  if(pcCodeForm)pcCodeForm.onsubmit=async ev=>{
+    ev.preventDefault();
+    const out=document.getElementById('pcCodeStatus');
+    const say=(text,error=false)=>{out.textContent=text;out.className=error?'error':'small';};
+    let login;
+    try{login=parsePcAccessCode(new FormData(pcCodeForm).get('code'));}
+    catch(e){say(e.message,true);return;}
+    const button=pcCodeForm.querySelector('button');button.disabled=true;
+    say('Verifica del codice…');
+    try{
+      const {data,error}=await db.auth.verifyOtp({email:login.email,token:login.token,type:'email'});
+      if(error||!data?.session)throw error||Error('Codice non accettato.');
+      say('Codice accettato. Apertura della chat…');
+      await boot();
+    }catch(e){
+      say('Codice non valido, già usato o scaduto. Chiedi un nuovo codice all’amministratore.',true);
+    }finally{if(button.isConnected)button.disabled=false;}
+  };
   document.getElementById('request').onsubmit=async ev=>{
     ev.preventDefault();
     const form=ev.target, f=new FormData(form),name=String(f.get('name')||'').trim(),phone=win?null:phoneNorm(String(f.get('phone')||''));

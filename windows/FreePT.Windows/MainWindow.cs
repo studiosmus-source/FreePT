@@ -17,7 +17,8 @@ internal sealed class MainWindow:Form {
     private readonly TabControl tabs=new(){Dock=DockStyle.Fill};
     private BridgeConfig? config;
     private string? pendingNonce;
-    private TaskCompletionSource<string>? pendingToken;
+    private TaskCompletionSource<(string token,bool shared)>? pendingToken;
+    private bool enrolling=false;
     internal MainWindow(){
         Text="FreePT Windows TEST";MinimumSize=new Size(700,540);Size=new Size(1080,730);
         BackColor=Color.FromArgb(239,247,248);Font=new Font("Segoe UI",10);
@@ -37,7 +38,7 @@ internal sealed class MainWindow:Form {
             Font=new Font("Segoe UI",18,FontStyle.Bold),ForeColor=Color.FromArgb(18,65,83)};
         layout.Controls.Add(title,0,0);
         var explainer=new Label{Dock=DockStyle.Fill,AutoSize=false,
-            Text="Accesso ai dischi disponibili per questo utente Windows. Nessuna scelta di cartelle richiesta. I permessi restano quelli di Windows; puoi sospendere il Bridge quando vuoi.",
+            Text="Accesso ai dischi disponibili per questo utente Windows, unità esterne comprese. Nessuna scelta di cartelle richiesta. Se hai già condiviso i file dal telefono, il Bridge del PC si attiva da solo con lo stesso consenso. Puoi sospenderlo quando vuoi.",
             Font=new Font("Segoe UI",11),ForeColor=Color.FromArgb(34,77,89)};
         layout.Controls.Add(explainer,0,1);
         var driveInfo=new ListBox{Dock=DockStyle.Fill,IntegralHeight=false,
@@ -63,7 +64,7 @@ internal sealed class MainWindow:Form {
         bottom.Controls.Add(status);Controls.Add(bottom);bottom.BringToFront();
         start.Click+=async(_,_)=>await StartBridge(true);
         stop.Click+=async(_,_)=>{LocalState.SetPaused(true);if(agent!=null)await agent.Stop();status.Text="Bridge sospeso dal proprietario";};
-        enroll.Click+=async(_,_)=>await Enroll();
+        enroll.Click+=async(_,_)=>await Enroll(null);
         startup.CheckedChanged+=(_,_)=>SetStartup(startup.Checked);
         tray.DoubleClick+=(_,_)=>ShowWindow();
         tray.ContextMenuStrip=new ContextMenuStrip();
@@ -78,6 +79,7 @@ internal sealed class MainWindow:Form {
         Shown+=async(_,_)=>{
             await StartChat();
             if(config!=null)await StartBridge();
+            else _=AutoActivate();
         };
     }
     private Button Button(string title)=>new(){Text=title,AutoSize=true,MinimumSize=new Size(130,40),
@@ -123,36 +125,58 @@ internal sealed class MainWindow:Form {
             if(root.GetProperty("kind").GetString()!="freept_win_pair_response"||
                root.GetProperty("nonce").GetString()!=pendingNonce)return;
             string? access=root.GetProperty("accessToken").GetString();
+            bool shared=root.TryGetProperty("alreadyShared",out var flag)&&flag.ValueKind==JsonValueKind.True;
             if(access==null||access.Length<20)
                 pendingToken.TrySetException(new InvalidOperationException(
                     "Apri la chat e attendi l'approvazione del tuo account prima di associare il PC."));
-            else pendingToken.TrySetResult(access);
+            else pendingToken.TrySetResult((access,shared));
         }catch{}
     }
-    private async Task<string> AuthorizedSession(){
+    private async Task<(string token,bool shared)> AuthorizedSession(int timeoutMs=15000){
         if(web.CoreWebView2==null)throw new InvalidOperationException("Chat non disponibile");
+        if(pendingToken!=null)throw new InvalidOperationException("Richiesta già in corso");
         pendingNonce=Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-        pendingToken=new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        pendingToken=new TaskCompletionSource<(string token,bool shared)>(TaskCreationOptions.RunContinuationsAsynchronously);
         try{
             web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new{
                 kind="freept_win_pair_request",nonce=pendingNonce}));
-            var ready=await Task.WhenAny(pendingToken.Task,Task.Delay(15000));
+            var ready=await Task.WhenAny(pendingToken.Task,Task.Delay(timeoutMs));
             if(ready!=pendingToken.Task)throw new TimeoutException("La chat non ha risposto");
             return await pendingToken.Task;
         }finally{pendingToken=null;pendingNonce=null;}
     }
-    private async Task Enroll(){
+    /**
+     * Consent already given on the phone = no new request on the PC: as soon as
+     * the chat runs with the same approved account and that account has an
+     * active share, enroll this PC under the same owner and grant. Otherwise
+     * nothing happens and the manual button remains.
+     */
+    private async Task AutoActivate(){
+        var started=DateTime.UtcNow;
+        while(config==null&&!IsDisposed){
+            var wait=DateTime.UtcNow-started<TimeSpan.FromMinutes(10)?15000:120000;
+            try{await Task.Delay(wait);}catch{return;}
+            if(config!=null||enrolling||IsDisposed)return;
+            try{
+                var (token,shared)=await AuthorizedSession(6000);
+                if(shared&&config==null&&!enrolling)await Enroll(token);
+            }catch{/* not signed in / not approved yet: try later, silently */}
+        }
+    }
+    private async Task Enroll(string? knownToken=null){
+        if(enrolling)return;
+        enrolling=true;
         enroll.Enabled=false;
         try{
             _=new BridgeCatalogue();
             using var owner=new EnrollmentClient(Key()??"");
             Display("Associazione al tuo account FreePT TEST…");
-            string accessToken=await AuthorizedSession();
+            string accessToken=knownToken??(await AuthorizedSession()).token;
             config=await owner.Enroll(accessToken,Array.Empty<string>());
             Display("PC registrato. Bridge in avvio…");
             await StartBridge(true);
         }catch(Exception e){Display("Associazione non riuscita: "+e.Message);}
-        finally{if(config==null)enroll.Enabled=true;}
+        finally{enrolling=false;if(config==null)enroll.Enabled=true;}
     }
     private async Task StartBridge(bool explicitStart=false){
         if(explicitStart)LocalState.SetPaused(false);
