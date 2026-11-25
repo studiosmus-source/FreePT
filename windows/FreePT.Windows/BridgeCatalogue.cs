@@ -29,17 +29,18 @@ public sealed class BridgeCatalogue {
     // cached briefly: a disconnected network drive can block IsReady for seconds,
     // and the list used to be rebuilt for every single file of every page.
     private static string[] cachedRoots=Array.Empty<string>();
-    private static long cachedRootsAt=long.MinValue;
+    private static long cachedRootsAt=0;
+    private static bool rootsCached=false;
     private static readonly object rootsGate=new();
     private static string[] Roots(){
         lock(rootsGate){
             long now=Environment.TickCount64;
-            if(now-cachedRootsAt<5000)return cachedRoots;
+            if(rootsCached&&now-cachedRootsAt<5000)return cachedRoots;
             cachedRoots=DriveInfo.GetDrives()
                 .Where(d=>{try{return d.IsReady&&Directory.Exists(d.RootDirectory.FullName);}catch{return false;}})
                 .Select(d=>Path.GetFullPath(d.RootDirectory.FullName))
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            cachedRootsAt=now;
+            cachedRootsAt=now;rootsCached=true;
             return cachedRoots;
         }
     }
