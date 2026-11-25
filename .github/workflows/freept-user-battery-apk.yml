@@ -1,0 +1,190 @@
+name: FreePT TEST 2.8.1 user APK (TX battery only)
+# Same build as 2.8.0 (commit e90da9b, bridge-android-staging.yml with the
+# storage-fix branch flags). Only change: TX idle standby + FCM wake.
+on:
+  push:
+    branches: [fix/tx-battery-20261125]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: freept-user-battery-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    if: github.ref == 'refs/heads/fix/tx-battery-20261125'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Reject any change other than the TX battery change
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          allowed={
+            '.github/workflows/freept-user-battery-apk.yml',
+            'android-bridge/BridgeTxService.java.template',
+            'android-bridge/BridgeTxControlPlugin.java.template',
+            'android-bridge/install.py',
+            'android-bridge/test_service_lifecycle.py',
+            'android-bridge/test_tx_battery.py'
+          }
+          changed=set(subprocess.check_output(['git','diff','--name-only',
+            'e90da9b220d748a99706287074368c048ef42fd4','HEAD'],text=True).splitlines())
+          assert changed<=allowed, sorted(changed-allowed)
+          print('Only TX battery files changed since 2.8.0:',sorted(changed))
+          PY
+      - name: Install web dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Regression tests (same suites as 2.8.0 + battery)
+        run: |
+          npm run test:bridge
+          node --test src/bridgeReconnect.test.mjs src/chieditore.test.mjs src/bridgeAutoSetup.test.mjs
+          node --test bridge/orphanRecovery.test.mjs src/designSystem.test.mjs src/importantAlerts.test.mjs
+          node --test src/pushRegistration.test.mjs src/bridgeRuntimeConfig.test.mjs src/staleSessionRecovery.test.mjs
+          node --check src/main.js
+          python3 -m unittest discover -s android-bridge -p 'test_*.py'
+      - name: Validate isolated TEST configuration
+        env:
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          url=urlparse(os.environ['VITE_SUPABASE_URL'])
+          assert url.scheme=='https' and url.hostname=='aqjuixbuxftnjfzxmzuj.supabase.co'
+          assert not url.username and not url.password and not url.query and not url.fragment
+          assert url.path in ('','/') and url.port is None
+          assert len(os.environ['VITE_SUPABASE_PUBLISHABLE_KEY'])>=30
+          PY
+      - name: Build web bundle
+        env:
+          VITE_SUPABASE_URL: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.FREEPT_BRIDGE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          VITE_BRIDGE_ISOLATED_BUILD: 'true'
+          VITE_BRIDGE_BOOTSTRAP_ENABLED: 'true'
+        run: |
+          npm run build
+          test -s dist/index.html
+      - name: Same TEST package identity as 2.8.0
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('capacitor.config.json');d=json.loads(p.read_text())
+          assert d.get('appId')=='it.freept.app'
+          d['appId']='it.freept.bridge.next';d['appName']='FreePT TEST'
+          p.write_text(json.dumps(d,indent=2)+'\n')
+          PY
+          npx cap add android
+          npx cap sync android
+      - name: Existing TEST Firebase identity
+        env:
+          FIREBASE_CONFIG_B64: ${{ secrets.FREEPT_BRIDGE_GOOGLE_SERVICES_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          data=json.loads(base64.b64decode(os.environ['FIREBASE_CONFIG_B64'],validate=True))
+          clients=[c for c in data.get('client',[]) if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='it.freept.bridge.next']
+          assert len(clients)==1 and data.get('project_info',{}).get('project_number')
+          Path('android/app/google-services.json').write_text(json.dumps(data))
+          root=Path('android/build.gradle');s=root.read_text()
+          assert s.count('dependencies {')==1
+          root.write_text(s.replace('dependencies {',"dependencies {\n        classpath 'com.google.gms:google-services:4.4.4'",1))
+          app=Path('android/app/build.gradle')
+          app.write_text(app.read_text()+"\napply plugin: 'com.google.gms.google-services'\n")
+          PY
+      - name: Install native runtime with the 2.8.0 flags plus battery fix
+        env:
+          VITE_BRIDGE_TEST_API_URL: https://freept-bridge-staging.onrender.com
+          FREEPT_BRIDGE_BOOTSTRAP: STAGING_DEVICE_KEY_V1
+          FREEPT_BRIDGE_INSTALL_TARGET: staging
+          FREEPT_OTA_APK_UPDATE_URL: https://freept-ota.onrender.com/apk-update
+          FREEPT_CLASSIC_UI_FIX: '1'
+          FREEPT_COMPLETE_UI_FIX: '1'
+          FREEPT_UNIFIED_DESIGN: '1'
+          FREEPT_PERMISSION_REPROMPT_FIX: '1'
+          FREEPT_STORAGE_FIX: '1'
+          FREEPT_TX_BATTERY_FIX: '1'
+        run: |
+          python3 android-bridge/install.py
+          grep -Fq 'name="bridge_bootstrap_enabled">true' android/app/src/main/res/values/freept_bootstrap.xml
+          grep -Fq 'https://freept-bridge-staging.onrender.com' android/app/src/main/res/values/freept_bridge.xml
+          grep -Fq 'versionCode 20' android/app/build.gradle
+          grep -Fq 'versionName "2.8.1"' android/app/build.gradle
+          grep -Fq 'IDLE_STOP_MS=180000' android/app/src/main/java/it/freept/bridge/next/BridgeTxService.java
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/gradle/wrapper/gradle-wrapper.properties')
+          lines=p.read_text().splitlines()
+          p.write_text('\n'.join(
+            'distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.11.1-bin.zip' if l.startswith('distributionUrl=') else l
+            for l in lines)+'\nnetworkTimeout=120000\n')
+          PY
+      - name: Compile APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Verify single Firebase receiver
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          files=list(Path('android/app/build/intermediates/merged_manifests').rglob('AndroidManifest.xml'))
+          assert files
+          root=ET.parse(files[0]).getroot();ns='{http://schemas.android.com/apk/res/android}'
+          services=[s.get(ns+'name') for s in root.iter('service')
+            if any(a.get(ns+'name')=='com.google.firebase.MESSAGING_EVENT' for a in s.iter('action'))]
+          assert len(services)==1 and services[0].endswith('.BridgeWakeMessagingService')
+          PY
+      - name: Sign with the existing identity; no OTA, no release
+        env:
+          BRIDGE_KEYSTORE_B64: ${{ secrets.FREEPT_BRIDGE_KEYSTORE_B64 }}
+          BRIDGE_STORE_PASSWORD: ${{ secrets.FREEPT_BRIDGE_STORE_PASSWORD }}
+          BRIDGE_KEY_ALIAS: ${{ secrets.FREEPT_BRIDGE_KEY_ALIAS }}
+          BRIDGE_KEY_PASSWORD: ${{ secrets.FREEPT_BRIDGE_KEY_PASSWORD }}
+          BRIDGE_CERT_SHA256: ${{ secrets.FREEPT_BRIDGE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          for key in BRIDGE_KEYSTORE_B64 BRIDGE_STORE_PASSWORD BRIDGE_KEY_ALIAS BRIDGE_KEY_PASSWORD BRIDGE_CERT_SHA256; do
+            test -n "${!key:-}" || { echo "Missing signing configuration: $key"; exit 1; }
+          done
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/freept-user.jks"' EXIT
+          printf '%s' "$BRIDGE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/freept-user.jks"
+          TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          APK=FreePT-TEST-2.8.1-UTENTE.apk
+          "$TOOL" sign --ks "$RUNNER_TEMP/freept-user.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" android/app/build/outputs/apk/debug/app-debug.apk
+          "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/user-signature.txt"
+          for scheme in v1 v2 v3; do
+            grep -Eq "^Verified using ${scheme} scheme .*: true$" "$RUNNER_TEMP/user-signature.txt"
+          done
+          EXPECTED="$(printf '%s' "$BRIDGE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          KEY_SHA="$(keytool -exportcert -keystore "$RUNNER_TEMP/freept-user.jks" -storepass:env BRIDGE_STORE_PASSWORD -alias "$BRIDGE_KEY_ALIAS" | sha256sum | cut -d' ' -f1)"
+          [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] && [[ "$EXPECTED" == "$KEY_SHA" ]]
+          grep -Fqi "$KEY_SHA" "$RUNNER_TEMP/user-signature.txt"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
+          "$AAPT" dump badging "$APK" > apk-info.txt
+          grep -Fq "package: name='it.freept.bridge.next' versionCode='20' versionName='2.8.1'" apk-info.txt
+          unzip -t "$APK" >/dev/null
+          sha256sum "$APK" > apk-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreePT-TEST-2.8.1-utente
+          path: |
+            FreePT-TEST-2.8.1-UTENTE.apk
+            apk-info.txt
+            apk-sha256.txt
+          if-no-files-found: error

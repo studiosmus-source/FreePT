@@ -120,6 +120,8 @@ if gradle_source.count("dependencies {") != 1 or "firebase-messaging" in gradle_
 if target == "staging":
     # One source of truth for staging version, without stacking old patches.
     versions = (
+        # 2.8.1: only the TX battery change (idle standby + FCM wake).
+        ("FREEPT_TX_BATTERY_FIX", 20, "2.8.1"),
         ("FREEPT_STORAGE_FIX", 19, "2.8.0"),
         ("FREEPT_PERMISSION_REPROMPT_FIX", 6, "1.5.0"),
         ("FREEPT_UNIFIED_DESIGN", 5, "1.4.0"),

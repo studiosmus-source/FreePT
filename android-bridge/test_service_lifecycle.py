@@ -35,7 +35,10 @@ class ForegroundServiceLifecycleTests(unittest.TestCase):
         self.assertIn("backendConnected=true;", service)
         self.assertGreaterEqual(service.count("backendConnected=false;"), 5)
         self.assertIn('out.put("connected",BridgeTxService.backendConnected)', control)
-        self.assertIn('out.put("running",BridgeTxService.active)', control)
+        # 2.8.1: an armed idle standby also counts as running (FCM wake),
+        # still never derived from the backend connection state.
+        self.assertIn('out.put("running",BridgeTxService.active||standby);', control)
+        self.assertNotRegex(control, r'out\.put\("running",[^;]*backendConnected')
 
     def test_in_place_update_recovers_existing_authorized_bridge(self):
         receiver = (ROOT / "BridgeTxBootReceiver.java.template").read_text()

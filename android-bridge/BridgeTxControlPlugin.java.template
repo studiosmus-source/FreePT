@@ -12,7 +12,19 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class BridgeTxControlPlugin extends Plugin {
     @PluginMethod public void status(PluginCall call){
         JSObject out=new JSObject();
-        out.put("running",BridgeTxService.active);
+        // An armed standby (idle stop, FCM wake) is ready, not switched off.
+        android.content.SharedPreferences tx=getContext().getSharedPreferences("freept_tx_control",0);
+        boolean standby=tx.getBoolean(BridgeTxService.STANDBY,false)&&!tx.getBoolean("paused",false)&&
+            BridgeAllFilesCore.granted()&&BridgeDeviceSecretStore.configured(getContext());
+        out.put("running",BridgeTxService.active||standby);
+        out.put("standby",!BridgeTxService.active&&standby);
+        // The app is in the foreground (status is asked by its UI): as before,
+        // opening FreePT brings the service up, a fallback if a push is lost.
+        if(standby&&!BridgeTxService.active){
+            try{androidx.core.content.ContextCompat.startForegroundService(getContext(),
+                new Intent(getContext(),BridgeTxService.class));}
+            catch(Exception restricted){/* system policy wins; FCM wake remains */}
+        }
         out.put("connected",BridgeTxService.backendConnected);
         out.put("permissionGranted",BridgeAllFilesCore.granted());
         out.put("configured",BridgeDeviceSecretStore.configured(getContext()));
@@ -49,7 +61,7 @@ public class BridgeTxControlPlugin extends Plugin {
     }
     @PluginMethod public void stop(PluginCall call){
         getContext().getSharedPreferences("freept_tx_control",0)
-            .edit().putBoolean("paused",true).apply();
+            .edit().putBoolean("paused",true).putBoolean(BridgeTxService.STANDBY,false).apply();
         getContext().stopService(new Intent(getContext(),BridgeTxService.class));
         JSObject out=new JSObject();out.put("requested",true);call.resolve(out);
     }

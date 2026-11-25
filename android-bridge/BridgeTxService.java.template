@@ -25,10 +25,25 @@ public final class BridgeTxService extends Service {
     static final int NOTIFICATION_ID=4751;
     private static final String CHANNEL="freept_sistema_connesso";
     private final AtomicBoolean running=new AtomicBoolean(false);
-    private Thread worker;
+    private volatile Thread worker;
+    private final Object lifecycle=new Object();
+    private volatile boolean wakeRequested=false;
+    /** Atomic idle decision: true = stop now; false = a wake just arrived. */
+    private boolean idleStopDecided(){
+        synchronized(lifecycle){
+            if(wakeRequested){wakeRequested=false;return false;}
+            running.set(false);
+            return true;
+        }
+    }
     private volatile HttpURLConnection connection;
 
     static volatile boolean active=false;
+    // Battery: with no remote request for IDLE_STOP_MS the service disconnects
+    // and stops. It is armed ("standby"), not paused: the administrator's
+    // request sends an FCM bridge_wake that restarts it (BridgeWakeMessagingService).
+    static final long IDLE_STOP_MS=180000;
+    static final String STANDBY="standby";
     static volatile boolean backendConnected=false;
     @Override public IBinder onBind(Intent intent){return null;}
 
@@ -50,9 +65,12 @@ public final class BridgeTxService extends Service {
             if(!validEndpoint(endpoint)){stopSelf();return START_NOT_STICKY;}
         }catch(Exception error){stopSelf();return START_NOT_STICKY;}
         showForeground();
-        if(running.compareAndSet(false,true)){
-            worker=new Thread(this::runWorker,"freept-bridge-tx");
-            worker.start();
+        getSharedPreferences("freept_tx_control",0).edit().putBoolean(STANDBY,false).apply();
+        synchronized(lifecycle){
+            if(running.compareAndSet(false,true)){
+                worker=new Thread(this::runWorker,"freept-bridge-tx");
+                worker.start();
+            }else wakeRequested=true; // a wake must postpone an idle stop
         }
         // Allow Android to recreate an unexpectedly killed service when permitted.
         // Every restart still rechecks file consent, provisioning and pause state.
@@ -199,7 +217,14 @@ public final class BridgeTxService extends Service {
             if(!running.get())return;
             BridgeDeviceSecretStore.Credentials cred=BridgeDeviceSecretStore.read(this);
             long reconnectDelayMs=1500;
+            // Shared by connected and offline phases: no network must not mean
+            // endless retries (the old loop retried every 8 s forever).
+            long lastActivity=android.os.SystemClock.elapsedRealtime();
             while(running.get()&&!Thread.currentThread().isInterrupted()){
+                if(android.os.SystemClock.elapsedRealtime()-lastActivity>=IDLE_STOP_MS){
+                    if(idleStopDecided()){goIdle(cred.deviceId,null);return;}
+                    lastActivity=android.os.SystemClock.elapsedRealtime();
+                }
                 boolean connectedOnce=false;
                 try{
                     JSONObject connected=post("/bridge/tx/connect",new JSONObject()
@@ -214,12 +239,17 @@ public final class BridgeTxService extends Service {
                     // protect the shared gateway's request rate limit.
                     int followupPolls=0;
                     while(running.get()&&!Thread.currentThread().isInterrupted()){
+                        if(android.os.SystemClock.elapsedRealtime()-lastActivity>=IDLE_STOP_MS){
+                            if(idleStopDecided()){goIdle(cred.deviceId,token);return;}
+                            lastActivity=android.os.SystemClock.elapsedRealtime();
+                        }
                         JSONObject command=post("/bridge/tx/poll",payload(cred.deviceId,token));
                         JSONObject job=command.optJSONObject("job");
                         // A successful round trip resets the transient-failure
                         // retry delay. Permanent permission denial still stops.
                         reconnectDelayMs=1500;
                         if(job!=null){
+                            lastActivity=android.os.SystemClock.elapsedRealtime();
                             executeJob(job,cred.deviceId,token);
                             String operation=job.optString("operation");
                             followupPolls=("read".equals(operation)||"browse".equals(operation))?2:0;
@@ -247,9 +277,22 @@ public final class BridgeTxService extends Service {
         }catch(Exception ignored){
             // Never expose device credentials, private paths or file contents in logs.
         }finally{
-            backendConnected=false;active=false;running.set(false);
-            stopSelf();
+            // A wake arriving while this worker went idle has already started
+            // a new worker: an old worker must not stop the new service run.
+            if(worker==Thread.currentThread()){
+                backendConnected=false;active=false;running.set(false);
+                stopSelf();
+            }
         }
+    }
+    /** No work for IDLE_STOP_MS: release network, notification and CPU. */
+    private void goIdle(String deviceId,String token){
+        getSharedPreferences("freept_tx_control",0).edit().putBoolean(STANDBY,true).commit();
+        if(token!=null){
+            try{post("/bridge/tx/disconnect",payload(deviceId,token));}
+            catch(Exception ignored){/* the 5-minute server session expires anyway */}
+        }
+        Log.i("FreePTBridgeTX","idle_standby");
     }
     // Android 15+ limits dataSync foreground-service runtime. Stop promptly
     // when the OS reports timeout instead of allowing a fatal exception.
