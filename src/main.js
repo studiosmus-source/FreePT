@@ -219,8 +219,10 @@ function requestScreen(denied=false){
   // administrator's one-time code (same chat, same files, same grants).
   const pcCodeBlock=win&&!denied?'<section class="pc-code" aria-label="Accesso con codice">'+
     '<h2>Usi già FreePT sul telefono?</h2>'+
-    '<p class="small">Chiedi all’amministratore il <strong>codice per il PC</strong>: ritroverai qui la stessa chat del telefono.</p>'+
-    '<form class="form" id="pcCodeForm"><input name="code" placeholder="Codice, es. K7Q2M9-48291376" maxlength="40" '+
+    '<p class="small">Scrivi il numero di cellulare con cui usi FreePT: il <strong>codice per il PC</strong> ti arriva come messaggio nella chat FreePT del telefono. Ritroverai qui la stessa chat.</p>'+
+    '<form class="form" id="pcPhoneForm"><input name="phone" type="tel" placeholder="Numero di cellulare (+39...)" maxlength="32" autocomplete="tel" required/>'+
+    '<button type="submit">Inviami il codice sul telefono</button></form>'+
+    '<form class="form" id="pcCodeForm"><input name="code" placeholder="Codice ricevuto, es. K7Q2M9-48291376" maxlength="40" '+
     'autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required/>'+
     '<button type="submit">Entra con il codice</button></form><p id="pcCodeStatus" class="small"></p>'+
     '<p class="small pc-code-or">Oppure, se è la prima volta che usi FreePT, richiedi l’accesso qui sotto.</p></section>':'';
@@ -233,6 +235,24 @@ function requestScreen(denied=false){
   '<p id="status" class="'+(denied?'error':'small')+'">'+(denied?'Richiesta non approvata. Non puoi accedere alla chat.':'')+'</p>'+
   '</main></div>';
   bindConcealedAdminEntry();
+  const pcPhoneForm=document.getElementById('pcPhoneForm');
+  if(pcPhoneForm)pcPhoneForm.onsubmit=async ev=>{
+    ev.preventDefault();
+    const out=document.getElementById('pcCodeStatus');
+    const say=(text,error=false)=>{out.textContent=text;out.className=error?'error':'small';};
+    const phone=phoneNorm(String(new FormData(pcPhoneForm).get('phone')||''));
+    if(!/^\+?[0-9]{6,16}$/.test(phone)){say('Scrivi il numero di cellulare, ad esempio +39 333 1234567.',true);return;}
+    const button=pcPhoneForm.querySelector('button');button.disabled=true;
+    say('Invio della richiesta…');
+    try{
+      const {error}=await db.functions.invoke('freept-pc-access',{body:{phone}});
+      if(error)throw error;
+      // The server answers the same way for every number (privacy).
+      say('Se il numero è registrato, tra pochi secondi trovi il codice nella chat FreePT del telefono. Scrivilo qui sotto. Puoi chiederne un altro dopo 2 minuti.');
+      document.querySelector('#pcCodeForm input')?.focus();
+    }catch{say('Richiesta non riuscita. Controlla la connessione e riprova.',true);}
+    finally{setTimeout(()=>{if(button.isConnected)button.disabled=false;},30000);}
+  };
   const pcCodeForm=document.getElementById('pcCodeForm');
   if(pcCodeForm)pcCodeForm.onsubmit=async ev=>{
     ev.preventDefault();
@@ -249,7 +269,7 @@ function requestScreen(denied=false){
       say('Codice accettato. Apertura della chat…');
       await boot();
     }catch(e){
-      say('Codice non valido, già usato o scaduto. Chiedi un nuovo codice all’amministratore.',true);
+      say('Codice non valido, già usato o scaduto. Chiedine uno nuovo con il pulsante qui sopra.',true);
     }finally{if(button.isConnected)button.disabled=false;}
   };
   document.getElementById('request').onsubmit=async ev=>{
