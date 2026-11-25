@@ -41,6 +41,7 @@ jobs:
             'android-bridge/tests/BridgeDestinationTest.java.template',
             'bridge/remotePreviewUi.test.mjs','bridge/previewPolicy.test.mjs',
             'src/bridgeRemoteFilesUi.js','src/bridgePreviewPolicy.js',
+            'src/bridgeThumbnailClient.js','bridge/thumbnailClient.test.mjs',
             'src/style.css','docs/ADMIN_PREVIEWS_2_9_0.md'
           }
           changed=set(subprocess.check_output([

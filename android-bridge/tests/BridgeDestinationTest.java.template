@@ -46,7 +46,7 @@ public class BridgeDestinationTest {
     Call c=call(Map.of("base64","JVBERi0xLjQ=","page",1));
     plugin.renderPdfPreview(c.call);
     assertNull(c.error);assertNotNull(c.result);
-    assertEquals(3,c.result.getInt("pageCount").intValue());
+    assertEquals(3,c.result.getInt("pageCount"));
     verify(page).render(argThat(b->b.getWidth()<=1440&&b.getHeight()<=2048),
         isNull(),isNull(),eq(android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY));
     verify(page).close();verify(mocked.constructed().get(0)).close();

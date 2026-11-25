@@ -12,6 +12,7 @@ import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
 import {filterOwnerAuthorizedDevices} from './bridgeChatDeviceFilter.js';
 import {bridgePreviewPolicy} from './bridgePreviewPolicy.js';
 import {encodeBridgeBytes} from './bridgeAndroidDestination.js';
+import {canLoadBridgeThumbnail,createBridgeThumbnailList} from './bridgeThumbnailClient.js';
 
 // Only a validated ROOT page, bound to the current authenticated receiver and
 // device, is reused briefly within the same runtime. No disk or account-wide
@@ -53,6 +54,7 @@ export function renderBridgeRemoteFiles({
   let revision=0;
   let controller=null;
   let activeDownload=false;
+  let thumbnailList=null;
   let abortActiveBrowse=()=>{};
   const previewClosers=new Set();
   const setBridgeBusy=value=>{host.dataset.bridgeBusy=value?'true':'false';};
@@ -166,6 +168,7 @@ export function renderBridgeRemoteFiles({
       panel.remove();
       previewClosers.delete(dismiss);
       if(!activeDownload)setBridgeBusy(false);
+      thumbnailList?.resume();
       if(priorFocus?.isConnected)priorFocus.focus();
     };
     const onKeyDown=event=>{
@@ -257,6 +260,8 @@ export function renderBridgeRemoteFiles({
       cachePreview(key,blob);
     };
     try{
+      await thumbnailList?.pause();
+      if(closed||abort.signal.aborted||!alive())return;
       const cached=cachedPreview(key);
       if(cached){await publishPreview(cached);return;}
       if(policy.mime==='image/jpeg'&&policy.embeddedOnly){
@@ -378,6 +383,7 @@ export function renderBridgeRemoteFiles({
     controller=new AbortController();
     const signal=controller.signal;
     try{
+      await thumbnailList?.pause();
       if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
       if(isFolder){
         // Fresh independent inventory: never trust cached UI page counts.
@@ -448,6 +454,7 @@ export function renderBridgeRemoteFiles({
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
+      thumbnailList?.resume();
     }
   };
   cancel.onclick=()=>{controller?.abort();setStatus('Interruzione richiesta…')};
@@ -471,6 +478,7 @@ export function renderBridgeRemoteFiles({
     if(!alive())return;
     abortActiveBrowse();
     const marker=++revision;
+    await thumbnailList?.stop();
     closePreviews();
     clearPreviewCache();
     devices.replaceChildren();browser.replaceChildren();
@@ -518,7 +526,12 @@ export function renderBridgeRemoteFiles({
     openingDeviceId=deviceId;
     abortActiveBrowse();
     const marker=++revision;
+    await thumbnailList?.stop();
     let pendingBrowse=null;
+    thumbnailList=createBridgeThumbnailList({
+      api:bridgeClient,deviceId,
+      canRun:()=>alive()&&marker===revision&&!pendingBrowse&&!activeDownload&&previewClosers.size===0
+    });
     abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
     stopObservingMore();
     closePreviews();
@@ -539,9 +552,15 @@ export function renderBridgeRemoteFiles({
       const currentBrowse=new AbortController();
       pendingBrowse=currentBrowse;
       const view=++navigation;
+      await thumbnailList.pause();
+      if(!alive()||marker!==revision||view!==navigation)return false;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
-      if(offset===0){stopObservingMore();closePreviews();browser.replaceChildren();}
+      if(offset===0){
+        await thumbnailList.reset();
+        if(!alive()||marker!==revision||view!==navigation)return false;
+        stopObservingMore();closePreviews();browser.replaceChildren();
+      }
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
@@ -611,9 +630,18 @@ export function renderBridgeRemoteFiles({
           line.className='bridge-entry';
           const hidden=item.name.startsWith('.');
           line.dataset.bridgeHidden=hidden?'true':'false';
-          const primary=create('button',(item.directory?'📁 ':'📄 ')+item.name,line);
+          const primary=create('button',undefined,line);
           primary.className='bridge-entry-primary';
           primary.type='button';
+          const icon=create('span',item.directory?'📁':'📄',primary);
+          icon.className='bridge-entry-icon';
+          if(canLoadBridgeThumbnail(item)){
+            const img=create('img',undefined,primary);
+            img.className='bridge-entry-thumbnail';
+            img.alt='Miniatura di '+item.name;img.hidden=true;
+            thumbnailList.track(line,item,img,icon);
+          }
+          create('span',item.name,primary);
           if(hidden){
             const marker=create('small','nascosto',line);
             marker.className='bridge-hidden-label';
@@ -686,7 +714,10 @@ export function renderBridgeRemoteFiles({
             :'Elenco non disponibile: '+(error?.message||'errore remoto'));
         return false;
       }finally{
-        if(pendingBrowse===currentBrowse)pendingBrowse=null;
+        if(pendingBrowse===currentBrowse){
+          pendingBrowse=null;
+          thumbnailList.resume();
+        }
       }
     }
     try{await display();}
@@ -702,6 +733,7 @@ export function renderBridgeRemoteFiles({
     disposed=true;revision++;
     controller?.abort();
     abortActiveBrowse();
+    void thumbnailList?.stop();
     stopObservingMore();
     closePreviews();
     clearPreviewCache();

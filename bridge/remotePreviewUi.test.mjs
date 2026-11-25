@@ -142,7 +142,7 @@ test('remote browser preserves bounded paging, lazy loads on scroll, and cleans 
  assert.match(source,/const previewClosers=new Set\(\)/);
  assert.match(source,/previewClosers\.add\(dismiss\)/);
  assert.match(source,/previewClosers\.delete\(dismiss\)/);
- assert.match(source,/controller\?\.abort\(\);\s*abortActiveBrowse\(\);\s*stopObservingMore\(\);\s*closePreviews\(\)/);
+ assert.match(source,/controller\?\.abort\(\);\s*abortActiveBrowse\(\);\s*void thumbnailList\?\.stop\(\);\s*stopObservingMore\(\);\s*closePreviews\(\)/);
  assert.match(source,/signal:currentBrowse\.signal/);
  assert.match(source,/pendingBrowse\?\.abort\(\)/);
 });

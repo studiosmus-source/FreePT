@@ -7,6 +7,18 @@ Non pubblicare questa build nel canale OTA condiviso con gli utenti.
 
 ## Modifiche solo ricevitore
 
+**Obiettivo principale chiarito dall'utente: miniature nell'elenco dei file.**
+Le righe delle immagini ora includono una miniatura reale da 56×56 pixel,
+caricata automaticamente solo quando la riga è visibile. Una sola lettura
+remota alla volta; navigazione, anteprima esplicita e download hanno priorità.
+Quando si esce dalla cartella o dal pannello vengono annullati i job e rimossi
+gli URL. Cache di sessione limitata a 40 immagini / 12 MiB.
+I MIME generici Android sono riconosciuti dall'estensione. Immagini fino a
+8 MiB vengono lette e ridotte; JPEG maggiori usano solo l'eventuale EXIF.
+Senza EXIF o con codec non supportati resta un'icona, non una miniatura finta.
+Non promettere miniature di tutti i formati o delle foto grandi senza EXIF
+senza aggiornare il TX: la versione remota non offre un renderer thumbnail.
+
 - MIME generici Android riconosciuti dall'estensione per i formati consentiti.
 - Immagini JPEG/PNG/GIF/WebP fino a 8 MiB, senza lettura preliminare ridondante.
 - JPEG più grandi: solo eventuale miniatura EXIF nei primi 64 KiB; nessun caricamento integrale nascosto.
