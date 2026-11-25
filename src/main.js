@@ -1026,7 +1026,7 @@ function renderPeople(){
     '<select id="adminPeopleStatus" aria-label="Filtra utenti per stato">'+
     [['all','Tutti'],['pending','Da approvare'],['approved','Approvati'],['blocked','Bloccati']].map(([key,label])=>
       '<option value="'+key+'"'+(adminPeopleStatus===key?' selected':'')+'>'+label+'</option>').join('')+
-    '</select></div><div id="adminPeopleResults">'+
+    '</select></div><div id="returnRequests" class="return-requests" hidden></div><div id="adminPeopleResults">'+
     '<p class="hint" id="adminPeopleEmpty"'+(visiblePeople.length?' hidden':'')+'>Nessun utente corrisponde ai filtri.</p>'+
     people.map(x=>'<button class="person" data-id="'+esc(x.id)+'"><strong>'+esc(x.full_name)+'</strong><br><small>'+
       esc(x.email||x.phone)+' · '+(x.email?'Windows':'Android')+' · '+(x.status==='pending'?'NUOVA RICHIESTA':esc(x.status))+'</small>'+
@@ -1045,6 +1045,60 @@ function renderPeople(){
   filter.onchange=()=>{adminPeopleStatus=filter.value;updateAdminPeopleResults();};
   bindAdminPeopleActions(p);
   updateAdminPeopleResults();
+  void loadReturnRequests();
+}
+// People who reinstalled FreePT and ask to return to their existing account
+// (same number). Approving lets that phone sign in to the account and its chat.
+let returnRequests=[],returnRequestsAt=0,returnLoading=false;
+function paintReturnRequests(){
+  const box=document.getElementById('returnRequests');
+  if(!box)return;
+  box.replaceChildren();
+  box.hidden=!returnRequests.length;
+  if(!returnRequests.length)return;
+  const title=document.createElement('strong');
+  title.textContent='Richieste di rientro ('+returnRequests.length+')';
+  box.append(title);
+  for(const request of returnRequests){
+    const card=document.createElement('div');card.className='return-request';
+    const who=document.createElement('p');
+    who.textContent=request.accountName+(request.phone?' · '+request.phone:'');
+    const detail=document.createElement('small');
+    detail.textContent='Ha reinstallato l’app e chiede di rientrare nel suo account'+
+      (request.typedName&&request.typedName!==request.accountName?' (nome scritto: «'+request.typedName+'»)':'')+
+      ' · '+new Date(request.at).toLocaleString('it-IT');
+    const actions=document.createElement('div');actions.className='return-request-actions';
+    const approve=document.createElement('button');approve.type='button';approve.textContent='Approva';
+    const deny=document.createElement('button');deny.type='button';deny.className='secondary';deny.textContent='Rifiuta';
+    const decide=async action=>{
+      const question=action==='approve'
+        ?'Approvare il rientro di '+request.accountName+'? Il telefono che ha fatto la richiesta entrerà nel suo account e vedrà tutta la sua chat.'
+        :'Rifiutare la richiesta di rientro per '+request.accountName+'?';
+      if(!confirm(question))return;
+      approve.disabled=true;deny.disabled=true;
+      try{
+        const {error}=await db.functions.invoke('freept-account-return',{body:{action,id:request.id}});
+        if(error)throw error;
+      }catch(e){alert('Operazione non riuscita: '+friendly(e));}
+      await loadReturnRequests(true);
+    };
+    approve.onclick=()=>void decide('approve');
+    deny.onclick=()=>void decide('deny');
+    actions.append(approve,deny);
+    card.append(who,detail,actions);
+    box.append(card);
+  }
+}
+async function loadReturnRequests(force=false){
+  paintReturnRequests();
+  if(returnLoading||(!force&&Date.now()-returnRequestsAt<15000))return;
+  if(profile?.role!=='admin'||!adminUnlocked)return;
+  returnLoading=true;
+  try{
+    const {data,error}=await db.functions.invoke('freept-account-return',{body:{action:'list'}});
+    if(!error&&Array.isArray(data?.requests)){returnRequests=data.requests;returnRequestsAt=Date.now();}
+  }catch{/* keep the last known list */}
+  finally{returnLoading=false;paintReturnRequests();}
 }
 function updateAdminPeopleResults(){
   const p=document.getElementById('people');
@@ -1126,7 +1180,6 @@ function showConversationActions(user){
     '<p>Che cosa vuoi fare?</p>'+
     (user.status==='approved'?'<button type="button" id="openFilesAction">File e cartelle</button>':'')+
     (user.status==='approved'?'<button type="button" id="sendImportantAction">Invia avviso importante</button>':'')+
-    (user.status==='approved'&&user.role!=='admin'?'<button type="button" id="pcCodeAction">Codice per il PC</button>':'')+
     '<button type="button" id="clearChatAction">Cancella chat</button>'+ 
     '<button type="button" class="danger" id="deleteUserAction">Elimina utente</button>'+
     '<button type="button" class="secondary" id="cancelChatAction">Annulla</button>'+
@@ -1154,43 +1207,6 @@ function showConversationActions(user){
   };
   const alertAction=document.getElementById('sendImportantAction');
   if(alertAction)alertAction.onclick=()=>{close();showImportantAlertComposer(user);};
-  // One-time code: the person opens THIS same account (chat, files, grants) on
-  // their Windows PC. Generated server-side (freept-pc-access); never stored here.
-  const pcAction=document.getElementById('pcCodeAction');
-  if(pcAction)pcAction.onclick=async()=>{
-    const statusNode=document.getElementById('actionStatus');
-    if(!confirm('Generare il codice per aprire sul PC la chat di '+user.full_name+'?\n\n'+
-      'Chi ha il codice entra come questa persona: dallo solo a lei. '+
-      'Vale una sola volta; un nuovo codice annulla quelli non ancora usati.'))return;
-    pcAction.disabled=true;
-    statusNode.className='small';
-    statusNode.textContent='Generazione del codice…';
-    try{
-      const {data,error}=await db.functions.invoke('freept-pc-access',{body:{userId:user.id}});
-      if(error)throw error;
-      const code=data?.code;
-      if(typeof code!=='string'||!/^[A-Z0-9]{6}-[0-9]{6,10}$/.test(code))
-        throw Error('Risposta non valida dal server.');
-      statusNode.replaceChildren();
-      const intro=document.createElement('span');
-      intro.textContent='Codice per il PC di '+user.full_name+':';
-      const value=document.createElement('strong');
-      value.className='pc-access-code';
-      value.textContent=code;
-      const hint=document.createElement('span');
-      hint.textContent='Sul PC: apri FreePT e scegli «Ho un codice dal mio amministratore». Usalo subito.';
-      const copy=document.createElement('button');
-      copy.type='button';copy.textContent='Copia codice';
-      copy.onclick=async()=>{
-        try{await navigator.clipboard.writeText(code);copy.textContent='Copiato';}
-        catch{copy.textContent='Copia non riuscita: trascrivilo';}
-      };
-      statusNode.append(intro,value,hint,copy);
-    }catch(e){
-      statusNode.className='error';
-      statusNode.textContent='Codice non disponibile: '+friendly(e);
-    }finally{pcAction.disabled=false;}
-  };
   const run=async deleteUser=>{
     if(!deleteMigrationReady){
       const statusNode=document.getElementById('actionStatus');

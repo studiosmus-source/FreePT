@@ -296,8 +296,12 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 .bridge-transfer-banner-actions button{background:#354257;padding:8px 12px;min-height:40px;font-size:13px}
 .bridge-transfer-banner-actions button[hidden]{display:none}
 
-/* Admin: one-time PC access code */
-#actionStatus .pc-access-code{display:block;font-size:26px;letter-spacing:2px;margin:8px 0;
-  font-family:ui-monospace,Consolas,monospace;color:#101827;user-select:all}
-#actionStatus span{display:block;margin:4px 0}
-#actionStatus button{margin-top:6px}
+
+/* Admin: requests to return to an existing account (reinstalled app) */
+.return-requests{margin:10px 12px 4px;padding:12px 14px;border:1px solid #f0c36d;background:#fff8e6;border-radius:12px}
+.return-requests>strong{display:block;margin-bottom:6px;color:#7a4b00}
+.return-request{border-top:1px solid #f3dfb0;padding:8px 0}
+.return-request p{margin:0;font-weight:700}
+.return-request small{display:block;color:#5d4a26;margin:2px 0 8px}
+.return-request-actions{display:flex;gap:8px}
+.return-request-actions button{flex:1;padding:9px 10px}
