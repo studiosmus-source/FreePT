@@ -48,13 +48,17 @@ public sealed class BridgeAgent: IAsyncDisposable {
                     throw new JsonException("Invalid session");
                 connectedOnce=true;delay=1500;Status("Bridge attivo e collegato");
                 int follow=0;
+                long lastWork=Environment.TickCount64;
                 while(!ct.IsCancellationRequested){
                     using var poll=await Post("bridge/tx/poll",Auth(config.DeviceId,session),ct);
                     if(poll.RootElement.TryGetProperty("job",out var job)&&job.ValueKind==JsonValueKind.Object){
                         await Execute(job,session,ct);
-                        follow=2;Status("Bridge attivo e collegato");
+                        follow=2;lastWork=Environment.TickCount64;Status("Bridge attivo e collegato");
                     }else{
-                        await Task.Delay(follow>0?750:2000,ct);
+                        // No push wake on Windows: stay responsive, but after a quiet
+                        // minute poll every 5 s instead of 2 s (shared server limit).
+                        int idle=Environment.TickCount64-lastWork<60000?2000:5000;
+                        await Task.Delay(follow>0?750:idle,ct);
                         if(follow>0)follow--;
                     }
                 }

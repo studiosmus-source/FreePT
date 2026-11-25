@@ -48,5 +48,23 @@ try{
         if(filtered.Entries.Any(x=>x.Name=="link"))throw new Exception("symlink exposed");
     }catch(UnauthorizedAccessException){}
     finally{if(Directory.Exists(link))Directory.Delete(link);Directory.Delete(outside);}
+    // A junction (directory link) is excluded exactly like a symbolic link.
+    var junctionTarget=Path.Combine(Path.GetTempPath(),"freept-jt-"+Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(junctionTarget);
+    var junction=Path.Combine(folder,"giunzione");
+    try{
+        var mk=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe",
+            "/c mklink /J \""+junction+"\" \""+junctionTarget+"\""){CreateNoWindow=true,UseShellExecute=false});
+        mk!.WaitForExit();
+        if(Directory.Exists(junction)&&catalog.Browse(handle,0).Entries.Any(x=>x.Name=="giunzione"))
+            throw new Exception("junction exposed");
+    }finally{if(Directory.Exists(junction))Directory.Delete(junction);Directory.Delete(junctionTarget);}
+    // A regular file whose attributes carry only cloud-style flags stays visible.
+    var offline=Path.Combine(child,"cloud.txt");
+    File.WriteAllText(offline,"x");
+    File.SetAttributes(offline,FileAttributes.Offline|FileAttributes.Archive);
+    if(!catalog.Browse(listed.Entries[0].Handle,0).Entries.Any(x=>x.Name=="cloud.txt"))
+        throw new Exception("offline file hidden");
+    File.SetAttributes(offline,FileAttributes.Normal);
     Console.WriteLine("FreePT Windows automatic-volume catalogue OK");
 }finally{Directory.Delete(folder,true);}

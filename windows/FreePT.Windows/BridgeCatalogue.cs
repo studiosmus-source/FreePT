@@ -3,7 +3,9 @@ using System.Net.Mime;
 using System.Text;
 using System.Text.Json.Serialization;
 namespace FreePT.Windows;
-// Only enumerate drives Windows exposes as ready to the signed-in user. No privilege escalation. Reparse points are never followed.
+// Only enumerate drives Windows exposes as ready to the signed-in user. No privilege escalation.
+// Symbolic links and junctions are never followed. Other reparse points (OneDrive and
+// cloud "on demand" files, deduplicated files) are ordinary user files and are shown.
 public sealed record FileEntry(
  [property:JsonPropertyName("handle")]string Handle,
  [property:JsonPropertyName("name")]string Name,
@@ -23,15 +25,38 @@ public sealed class BridgeCatalogue {
     private readonly object gate=new();
     private const int PageSize=100, MaxEntries=10000, MaxHandles=60000;
     public BridgeCatalogue(){}
-    // Drives can appear and disappear (USB, mapped network volumes).
-    private static string[] Roots()=>DriveInfo.GetDrives()
-        .Where(d=>{try{return d.IsReady&&Directory.Exists(d.RootDirectory.FullName)&&!IsLink(d.RootDirectory.FullName);}catch{return false;}})
-        .Select(d=>Path.GetFullPath(d.RootDirectory.FullName))
-        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-    static bool IsLink(string path){
-        try{return (File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0;}
-        catch{return true;}
+    // Drives can appear and disappear (USB, mapped network volumes). The list is
+    // cached briefly: a disconnected network drive can block IsReady for seconds,
+    // and the list used to be rebuilt for every single file of every page.
+    private static string[] cachedRoots=Array.Empty<string>();
+    private static long cachedRootsAt=long.MinValue;
+    private static readonly object rootsGate=new();
+    private static string[] Roots(){
+        lock(rootsGate){
+            long now=Environment.TickCount64;
+            if(now-cachedRootsAt<5000)return cachedRoots;
+            cachedRoots=DriveInfo.GetDrives()
+                .Where(d=>{try{return d.IsReady&&Directory.Exists(d.RootDirectory.FullName);}catch{return false;}})
+                .Select(d=>Path.GetFullPath(d.RootDirectory.FullName))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            cachedRootsAt=now;
+            return cachedRoots;
+        }
     }
+    // A link is a symbolic link or junction (LinkTarget set). Cloud placeholders
+    // carry a reparse attribute too but are regular files and stay visible.
+    static bool IsLink(FileSystemInfo info){
+        try{return info.LinkTarget!=null;}catch{return true;}
+    }
+    static bool IsLink(string path){
+        try{
+            FileSystemInfo info=Directory.Exists(path)?new DirectoryInfo(path):new FileInfo(path);
+            return IsLink(info);
+        }catch{return true;}
+    }
+    static bool IsRoot(string full)=>Roots().Any(root=>string.Equals(
+        full.TrimEnd(Path.DirectorySeparatorChar),root.TrimEnd(Path.DirectorySeparatorChar),
+        StringComparison.OrdinalIgnoreCase));
     private static readonly string PrivateState=Path.GetFullPath(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"FreePT.Windows"));
     static bool Protected(string full)=>full.Equals(PrivateState,StringComparison.OrdinalIgnoreCase)||
@@ -42,10 +67,11 @@ public sealed class BridgeCatalogue {
             string full=Path.GetFullPath(path);
             if(Protected(full))return false;
             if(!Roots().Any(root=>full.StartsWith(root,StringComparison.OrdinalIgnoreCase)))return false;
-            // Reject junctions/symlinks anywhere along a selected path.
+            // Reject junctions/symlinks anywhere along a selected path (drive roots
+            // themselves are mount points, not links to elsewhere).
             var walk=full;
             while(!string.IsNullOrEmpty(walk)){
-                if(IsLink(walk))return false;
+                if(!IsRoot(walk)&&IsLink(walk))return false;
                 var parent=Path.GetDirectoryName(walk);
                 if(parent==null||parent==walk)break;
                 walk=parent;
@@ -69,17 +95,34 @@ public sealed class BridgeCatalogue {
             if(!handles.TryGetValue(handle,out var parent)||!Allowed(parent)||!Directory.Exists(parent))
                 throw new UnauthorizedAccessException("Folder unavailable");
             var info=new DirectoryInfo(parent);
-            var items=info.EnumerateFileSystemInfos().Where(item=>Allowed(item.FullName)&&ValidName(item.Name))
-                .OrderBy(item=>(item.Attributes&FileAttributes.Directory)==0)
-                .ThenBy(item=>item.Name,StringComparer.OrdinalIgnoreCase).ThenBy(item=>item.Name,StringComparer.Ordinal)
-                .Take(MaxEntries+1).ToArray();
-            var nodes=items.Select(item=>{
-                bool dir=(item.Attributes&FileAttributes.Directory)!=0;
-                long size=dir?-1:((FileInfo)item).Length;
-                return new FileEntry(Handle(item.FullName),item.Name,dir,size,
-                    dir?"vnd.android.document/directory":"application/octet-stream");
-            }).ToArray();
-            return Slice(nodes,offset);
+            // The parent was fully validated above: each child only needs its own
+            // link/private-folder check (was a full drive scan + walk per child).
+            var options=new EnumerationOptions{IgnoreInaccessible=true,AttributesToSkip=0,
+                RecurseSubdirectories=false,ReturnSpecialDirectories=false};
+            FileSystemInfo[] items;
+            try{
+                items=info.EnumerateFileSystemInfos("*",options)
+                    .Where(item=>ValidName(item.Name)&&!IsLink(item)&&!Protected(item.FullName))
+                    .OrderBy(item=>(item.Attributes&FileAttributes.Directory)==0)
+                    .ThenBy(item=>item.Name,StringComparer.OrdinalIgnoreCase).ThenBy(item=>item.Name,StringComparer.Ordinal)
+                    .Take(MaxEntries+1).ToArray();
+            }catch(UnauthorizedAccessException){
+                // Windows denies this folder to the signed-in user (e.g. System Volume
+                // Information): answer an empty page instead of leaving the remote
+                // request waiting until its timeout.
+                items=Array.Empty<FileSystemInfo>();
+            }
+            var nodes=new List<FileEntry>(items.Length);
+            foreach(var item in items){
+                try{
+                    bool dir=(item.Attributes&FileAttributes.Directory)!=0;
+                    long size=dir?-1:((FileInfo)item).Length;
+                    nodes.Add(new FileEntry(Handle(item.FullName),item.Name,dir,size,
+                        dir?"vnd.android.document/directory":"application/octet-stream"));
+                }catch(IOException){/* removed while listing */}
+                catch(UnauthorizedAccessException){}
+            }
+            return Slice(nodes.ToArray(),offset);
         }
     }
     static bool ValidName(string s)=>s.Length is >0 and <=255&&s!="."&&s!=".."&&

@@ -1,7 +1,7 @@
 name: Build FreePT Windows TEST
 on:
   push:
-    branches: [fix/bridge-no-extra-permissions-storage-20261123]
+    branches: [fix/bridge-no-extra-permissions-storage-20261123, fix/windows-pc-20261125]
     paths:
       - 'windows/**'
       - '.github/workflows/freept-windows-test.yml'
@@ -25,7 +25,7 @@ jobs:
       - name: Require explicit TEST branch
         shell: pwsh
         run: |
-          if ("${{ github.ref }}" -ne "refs/heads/fix/bridge-no-extra-permissions-storage-20261123") { throw "Not a TEST branch" }
+          if ("${{ github.ref }}" -ne "refs/heads/fix/bridge-no-extra-permissions-storage-20261123" -and "${{ github.ref }}" -ne "refs/heads/fix/windows-pc-20261125") { throw "Not a TEST branch" }
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
