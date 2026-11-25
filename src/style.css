@@ -245,8 +245,8 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 }
 .bridge-remote-folders>.bridge-entry>.bridge-entry-primary,
 .bridge-remote-files>.bridge-entry>.bridge-entry-primary{
-  display:block;flex:1 1 auto;min-width:0;
-  min-height:52px;text-align:left;overflow-wrap:anywhere;
+  display:flex;align-items:center;gap:10px;flex:1 1 auto;min-width:0;
+  min-height:64px;text-align:left;overflow-wrap:anywhere;
 }
 .bridge-remote-folders>.bridge-entry>.bridge-entry-menu,
 .bridge-remote-files>.bridge-entry>.bridge-entry-menu{flex:0 0 auto;}
