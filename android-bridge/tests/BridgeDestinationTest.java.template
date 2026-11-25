@@ -22,6 +22,27 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,manifest=Config.NONE)
 public class BridgeDestinationTest {
+ @Test public void pdfRejectsOversizeInputWithoutCreatingFiles(){
+  Call c=call(Map.of("base64","A".repeat(2796208),"page",0));
+  plugin.renderPdfPreview(c.call);
+  assertEquals("bridge_pdf_invalid",c.error);
+ }
+ @Test public void pdfRejectsNegativePageAndNonPdfBytes(){
+  Call negative=call(Map.of("base64","JVBERi0=","page",-1));
+  plugin.renderPdfPreview(negative.call);
+  assertEquals("bridge_pdf_invalid",negative.error);
+  Call invalid=call(Map.of("base64","bm90IGEgcGRm","page",0));
+  plugin.renderPdfPreview(invalid.call);
+  assertEquals("bridge_pdf_unavailable",invalid.error);
+ }
+ @Test public void pdfMalformedDocumentRemovesPrivateInput()throws Exception{
+  // Exercise the real failure path, rather than constructor mocking of an
+  // Android framework class (unsupported by Robolectric's mock maker).
+  Call c=call(Map.of("base64","JVBERi0xLjQ=","page",1));
+  plugin.renderPdfPreview(c.call);
+  assertEquals("bridge_pdf_unavailable",c.error);
+  assertEquals(0,context.getCacheDir().listFiles((dir,name)->name.startsWith("freept-preview-")).length);
+ }
  private static final String DIR=DocumentsContract.Document.MIME_TYPE_DIR;
  private final Map<String,Doc> docs=new LinkedHashMap<>();
  private Context context;private ContentResolver resolver;private BridgeDestinationPlugin plugin;
@@ -88,6 +109,7 @@ public class BridgeDestinationTest {
   Call c=new Call();c.call=mock(PluginCall.class);JSObject data=new JSObject();for(var e:args.entrySet())data.put(e.getKey(),e.getValue());
   when(c.call.getData()).thenReturn(data);
   when(c.call.getString(anyString())).thenAnswer(a->(String)args.get(a.getArgument(0)));
+  when(c.call.getInt(anyString(),anyInt())).thenAnswer(a->args.getOrDefault(a.getArgument(0),a.getArgument(1)));
   when(c.call.getString(anyString(),nullable(String.class))).thenAnswer(a->args.getOrDefault(a.getArgument(0),a.getArgument(1)));
   when(c.call.getArray(anyString())).thenAnswer(a->{Object v=args.get(a.getArgument(0));return v instanceof List?new JSArray((List<?>)v):null;});
   doAnswer(a->{c.result=a.getArgument(0);return null;}).when(c.call).resolve(any(JSObject.class));

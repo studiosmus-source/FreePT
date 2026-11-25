@@ -3,29 +3,35 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../src/bridgeRemoteFilesUi.js',import.meta.url),'utf8');
 test('remote preview is explicit and bounded',()=>{
-  assert.match(source,/IMAGE_PREVIEW_LIMIT=8\*1024\*1024/);
-  assert.match(source,/PDF_PREVIEW_LIMIT=2\*1024\*1024/);
+  const policy=readFileSync(new URL('../src/bridgePreviewPolicy.js',import.meta.url),'utf8');
+  assert.match(policy,/IMAGE_PREVIEW_LIMIT=8\*1024\*1024/);
+  assert.match(policy,/PDF_PREVIEW_LIMIT=2\*1024\*1024/);
   assert.match(source,/onProgress:p=>/);
   assert.match(source,/previewable\(item\)/);
   assert.match(source,/create\('button','Anteprima',options\)/);
   assert.match(source,/preview.onclick=\(\)=>\{menu.open=false;void showPreview\(item,deviceId\)\}/);
-  assert.match(source,/item\.size<=IMAGE_PREVIEW_LIMIT/);
-  assert.match(source,/item\.size<=PDF_PREVIEW_LIMIT/);
+  assert.match(source,/position\+bytes.length>policy.limit/);
+  assert.match(source,/bridgePreviewPolicy\(item\)/);
   assert.doesNotMatch(source,/createObjectURL\(new Blob\(parts[^)]*\)\).*for\s*\(/);
 });
-test('JPEG previews prefer bounded embedded EXIF thumbnail before any full download',()=>{
+test('large JPEG previews use only bounded EXIF, small images avoid a redundant prefix read',()=>{
+ assert.match(source,/policy.mime==='image\/jpeg'&&policy.embeddedOnly/);
  assert.match(source,/readBridgePreviewPrefix\(\{/);
  assert.match(source,/extractEmbeddedJpegThumbnail\(prefix\)/);
- assert.match(source,/publishPreview\(new Blob\(\[thumbnail\],\{type:item\.mime\}\)\);return/);
+ assert.match(source,/await publishPreview\(new Blob\(\[thumbnail\],\{type:policy\.mime\}\)\);return/);
  assert.match(source,/message\.textContent='Caricamento foto…'/);
 });
 test('preview uses authorized chunk download and local blob URL',()=>{
   assert.match(source,/await downloadBridgeFile\(\{/);
   assert.match(source,/deviceId,handle:item\.handle,size:item\.size/);
   assert.match(source,/URL\.createObjectURL\(blob\)/);
-  assert.match(source,/publishPreview\(new Blob\(parts,\{type:item\.mime\}\)\)/);
+  assert.match(source,/await publishPreview\(new Blob\(parts,\{type:policy\.mime\}\)\)/);
   assert.match(source,/URL\.revokeObjectURL\(url\)/);
-  assert.match(source,/setAttribute\('sandbox',''\)/);
+  assert.doesNotMatch(source,/'iframe'|innerHTML|fetch\(/);
+  assert.match(source,/create\('pre',text,content\)/);
+  assert.match(source,/bridgeDestination.renderPdfPreview\(\{base64,page\}\)/);
+  assert.match(source,/view.onerror=/);
+  assert.match(source,/Scarica file originale/);
 });
 
 
@@ -47,9 +53,9 @@ test('preview opens fullscreen on document.body with an always-available X and s
 test('already opened previews are cached only in bounded session memory',()=>{
  assert.match(source,/PREVIEW_CACHE_BYTES=12\*1024\*1024/);
  assert.match(source,/cachedPreview\(key\)/);
- assert.match(source,/if\(cached\)\{publishPreview\(cached\);return;\}/);
+ assert.match(source,/if\(cached\)\{await publishPreview\(cached\);return;\}/);
  assert.match(source,/clearPreviewCache\(\)/);
- assert.match(source,/if\(closed\|\|abort\.signal\.aborted\)return/);
+ assert.match(source,/if\(closed\|\|abort\.signal\.aborted\|\|!alive\(\)\)return/);
 });
 test('active file transfer prevents navigation away and defers chat polling',()=>{
  const main=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
@@ -136,7 +142,7 @@ test('remote browser preserves bounded paging, lazy loads on scroll, and cleans 
  assert.match(source,/const previewClosers=new Set\(\)/);
  assert.match(source,/previewClosers\.add\(dismiss\)/);
  assert.match(source,/previewClosers\.delete\(dismiss\)/);
- assert.match(source,/controller\?\.abort\(\);\s*abortActiveBrowse\(\);\s*stopObservingMore\(\);\s*closePreviews\(\)/);
+ assert.match(source,/controller\?\.abort\(\);\s*abortActiveBrowse\(\);\s*void thumbnailList\?\.stop\(\);\s*stopObservingMore\(\);\s*closePreviews\(\)/);
  assert.match(source,/signal:currentBrowse\.signal/);
  assert.match(source,/pendingBrowse\?\.abort\(\)/);
 });

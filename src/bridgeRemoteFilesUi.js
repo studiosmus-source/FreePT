@@ -10,6 +10,9 @@ import {extractEmbeddedJpegThumbnail} from './bridgeExifThumbnail.js';
 import {createBridgeAndroidFolderDestination,createBridgeAndroidSingleFileWriter} from './bridgeAndroidDestination.js';
 import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
 import {filterOwnerAuthorizedDevices} from './bridgeChatDeviceFilter.js';
+import {bridgePreviewPolicy} from './bridgePreviewPolicy.js';
+import {encodeBridgeBytes} from './bridgeAndroidDestination.js';
+import {canLoadBridgeThumbnail,createBridgeThumbnailList} from './bridgeThumbnailClient.js';
 
 // Only a validated ROOT page, bound to the current authenticated receiver and
 // device, is reused briefly within the same runtime. No disk or account-wide
@@ -51,6 +54,7 @@ export function renderBridgeRemoteFiles({
   let revision=0;
   let controller=null;
   let activeDownload=false;
+  let thumbnailList=null;
   let abortActiveBrowse=()=>{};
   const previewClosers=new Set();
   const setBridgeBusy=value=>{host.dataset.bridgeBusy=value?'true':'false';};
@@ -119,14 +123,11 @@ export function renderBridgeRemoteFiles({
   // Never fetch arbitrary remote URLs or read an entire large file for a thumbnail.
   // Only explicit user-triggered previews read remote image bytes.
   // Large image previews are bounded; automatic thumbnails are not fetched.
-  const IMAGE_PREVIEW_LIMIT=8*1024*1024;
-  const PDF_PREVIEW_LIMIT=2*1024*1024;
-  const previewable=item=>!item.directory&&item.size>0&&
-    (['image/png','image/jpeg','image/gif','image/webp'].includes(item.mime)
-      ?item.size<=IMAGE_PREVIEW_LIMIT
-      :item.mime==='application/pdf'&&item.size<=PDF_PREVIEW_LIMIT);
+  const previewable=item=>bridgePreviewPolicy(item)!==null;
   const showPreview=async(item,deviceId)=>{
     if(activeDownload||!alive())return;
+    const policy=bridgePreviewPolicy(item);
+    if(!policy)return;
     closePreviews();
     setBridgeBusy(true);
     const priorFocus=document.activeElement;
@@ -140,6 +141,9 @@ export function renderBridgeRemoteFiles({
     const heading=create('strong',item.name,header);
     heading.className='bridge-file-preview-title';
     const close=create('button','×',header);
+    const save=create('button','Scarica file originale',header);
+    save.type='button';
+    save.onclick=()=>{dismiss();void startDownload(item,deviceId);};
     close.type='button';
     close.className='bridge-file-preview-close';
     close.setAttribute('aria-label','Chiudi anteprima');
@@ -150,16 +154,21 @@ export function renderBridgeRemoteFiles({
     const abort=new AbortController();
     const key=[deviceId,item.handle,item.size,item.mime].join('|');
     let url=null;
+    let media=null;
     let closed=false;
     const dismiss=()=>{
       if(closed)return;
       closed=true;
       abort.abort();
+      if(media?.tagName==='VIDEO'||media?.tagName==='AUDIO'){
+        media.pause();media.removeAttribute('src');media.load();
+      }
       if(url){URL.revokeObjectURL(url);url=null;}
       document.removeEventListener('keydown',onKeyDown);
       panel.remove();
       previewClosers.delete(dismiss);
       if(!activeDownload)setBridgeBusy(false);
+      thumbnailList?.resume();
       if(priorFocus?.isConnected)priorFocus.focus();
     };
     const onKeyDown=event=>{
@@ -173,30 +182,89 @@ export function renderBridgeRemoteFiles({
     let position=0;
     const destination={
       write:async(bytes,offset)=>{
-        if(offset!==position||
-           position+bytes.length>(item.mime==='application/pdf'?PDF_PREVIEW_LIMIT:IMAGE_PREVIEW_LIMIT))
+        if(offset!==position||position+bytes.length>policy.limit)
           throw Error('bridge_preview_limit');
         parts.push(new Uint8Array(bytes));position+=bytes.length;
       },
       commit:async()=>{},
       discard:async()=>{parts.length=0}
     };
-    const publishPreview=blob=>{
-      if(closed||abort.signal.aborted)return;
+    const publishPreview=async blob=>{
+      if(closed||abort.signal.aborted||!alive())return;
+      if(policy.kind==='text'){
+        const text=await blob.text();
+        if(closed||abort.signal.aborted||!alive())return;
+        const view=create('pre',text,content);
+        view.className='bridge-file-preview-text';
+        message.remove();cachePreview(key,blob);return;
+      }
+      if(policy.kind==='pdf'){
+        if(typeof bridgeDestination?.renderPdfPreview!=='function')
+          throw Error('Visualizzatore PDF disponibile nel nuovo APK amministratore. Usa Scarica file originale.');
+        const base64=encodeBridgeBytes(new Uint8Array(await blob.arrayBuffer()));
+        let page=0;
+        const controls=create('nav',undefined,content);
+        const prev=create('button','Pagina precedente',controls);
+        const label=create('span','',controls);
+        const next=create('button','Pagina successiva',controls);
+        const view=create('img',undefined,content);
+        view.className='bridge-file-preview-media';
+        view.alt='Pagina PDF';
+        const render=async()=>{
+          prev.disabled=true;next.disabled=true;
+          try{
+            const result=await bridgeDestination.renderPdfPreview({base64,page});
+            if(closed||abort.signal.aborted||!alive())return;
+            if(!Number.isInteger(result?.pageCount)||result.pageCount<=page||
+               typeof result.base64!=='string'||!/^[A-Za-z0-9+/]+={0,2}$/.test(result.base64))
+              throw Error('Risposta PDF non valida');
+            view.src='data:image/png;base64,'+result.base64;
+            label.textContent=' '+(page+1)+' / '+result.pageCount+' ';
+            prev.disabled=page===0;next.disabled=page+1>=result.pageCount;
+            message.remove();
+          }catch{
+            if(!closed&&alive()){
+              message.textContent='PDF non visualizzabile. Usa Scarica file originale.';
+              if(!message.isConnected)content.appendChild(message);
+            }
+          }
+        };
+        prev.onclick=()=>{page--;void render();};
+        next.onclick=()=>{page++;void render();};
+        await render();cachePreview(key,blob);return;
+      }
       url=URL.createObjectURL(blob);
-      message.remove();
-      const view=document.createElement(item.mime==='application/pdf'?'iframe':'img');
-      view.src=url;
+      const view=document.createElement(policy.kind==='image'?'img':policy.kind);
+      media=view;
       view.setAttribute('aria-label','Anteprima '+item.name);
       view.className='bridge-file-preview-media';
-      if(view.tagName==='IFRAME')view.setAttribute('sandbox','');
+      const ready=()=>{if(!closed)message.remove();};
+      view.onload=ready;
+      view.onloadeddata=ready;
+      view.onloadedmetadata=ready;
+      view.onerror=()=>{
+        if(!closed&&alive()){
+          message.textContent='Formato non visualizzabile su questo telefono. Usa Scarica file originale.';
+          if(!message.isConnected)content.appendChild(message);
+        }
+        if(previewCache.has(key)){
+          previewCacheBytes-=previewCache.get(key).size;
+          previewCache.delete(key);
+        }
+      };
+      if(policy.kind==='video'||policy.kind==='audio'){
+        view.controls=true;view.preload='metadata';
+      }
+      view.src=url;
       content.appendChild(view);
       cachePreview(key,blob);
     };
     try{
+      await thumbnailList?.pause();
+      if(closed||abort.signal.aborted||!alive())return;
       const cached=cachedPreview(key);
-      if(cached){publishPreview(cached);return;}
-      if(item.mime==='image/jpeg'){
+      if(cached){await publishPreview(cached);return;}
+      if(policy.mime==='image/jpeg'&&policy.embeddedOnly){
         message.textContent='Ricerca miniatura rapida…';
         const prefix=await readBridgePreviewPrefix({
           api:bridgeClient,deviceId,handle:item.handle,size:item.size,signal:abort.signal
@@ -204,8 +272,10 @@ export function renderBridgeRemoteFiles({
         if(closed||abort.signal.aborted||!alive()){dismiss();return;}
         const thumbnail=extractEmbeddedJpegThumbnail(prefix);
         if(thumbnail){
-          publishPreview(new Blob([thumbnail],{type:item.mime}));return;
+          await publishPreview(new Blob([thumbnail],{type:policy.mime}));return;
         }
+        if(policy.embeddedOnly)
+          throw Error('Foto oltre 8 MiB senza miniatura incorporata. Usa Scarica file originale.');
         message.textContent='Caricamento foto…';
       }
       await downloadBridgeFile({
@@ -219,7 +289,7 @@ export function renderBridgeRemoteFiles({
         }
       });
       if(closed||abort.signal.aborted||!alive()){dismiss();return;}
-      publishPreview(new Blob(parts,{type:item.mime}));
+      await publishPreview(new Blob(parts,{type:policy.mime}));
     }catch(error){
       if(!closed&&!abort.signal.aborted)
         message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
@@ -313,6 +383,7 @@ export function renderBridgeRemoteFiles({
     controller=new AbortController();
     const signal=controller.signal;
     try{
+      await thumbnailList?.pause();
       if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
       if(isFolder){
         // Fresh independent inventory: never trust cached UI page counts.
@@ -383,6 +454,7 @@ export function renderBridgeRemoteFiles({
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       setBridgeBusy(false);
+      thumbnailList?.resume();
     }
   };
   cancel.onclick=()=>{controller?.abort();setStatus('Interruzione richiesta…')};
@@ -406,6 +478,7 @@ export function renderBridgeRemoteFiles({
     if(!alive())return;
     abortActiveBrowse();
     const marker=++revision;
+    await thumbnailList?.stop();
     closePreviews();
     clearPreviewCache();
     devices.replaceChildren();browser.replaceChildren();
@@ -453,7 +526,12 @@ export function renderBridgeRemoteFiles({
     openingDeviceId=deviceId;
     abortActiveBrowse();
     const marker=++revision;
+    await thumbnailList?.stop();
     let pendingBrowse=null;
+    thumbnailList=createBridgeThumbnailList({
+      api:bridgeClient,deviceId,
+      canRun:()=>alive()&&marker===revision&&!pendingBrowse&&!activeDownload&&previewClosers.size===0
+    });
     abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
     stopObservingMore();
     closePreviews();
@@ -474,9 +552,15 @@ export function renderBridgeRemoteFiles({
       const currentBrowse=new AbortController();
       pendingBrowse=currentBrowse;
       const view=++navigation;
+      await thumbnailList.pause();
+      if(!alive()||marker!==revision||view!==navigation)return false;
       const current=stack[stack.length-1];
       const key=current.handle+'|'+offset;
-      if(offset===0){stopObservingMore();closePreviews();browser.replaceChildren();}
+      if(offset===0){
+        await thumbnailList.reset();
+        if(!alive()||marker!==revision||view!==navigation)return false;
+        stopObservingMore();closePreviews();browser.replaceChildren();
+      }
       if(!folderPages.has(key))setStatus('Richiesta elenco '+history()+'…');
       try{
         const cached=folderPages.get(key);
@@ -546,9 +630,18 @@ export function renderBridgeRemoteFiles({
           line.className='bridge-entry';
           const hidden=item.name.startsWith('.');
           line.dataset.bridgeHidden=hidden?'true':'false';
-          const primary=create('button',(item.directory?'📁 ':'📄 ')+item.name,line);
+          const primary=create('button',undefined,line);
           primary.className='bridge-entry-primary';
           primary.type='button';
+          const icon=create('span',item.directory?'📁':'📄',primary);
+          icon.className='bridge-entry-icon';
+          if(canLoadBridgeThumbnail(item)){
+            const img=create('img',undefined,primary);
+            img.className='bridge-entry-thumbnail';
+            img.alt='Miniatura di '+item.name;img.hidden=true;
+            thumbnailList.track(line,item,img,icon);
+          }
+          create('span',item.name,primary);
           if(hidden){
             const marker=create('small','nascosto',line);
             marker.className='bridge-hidden-label';
@@ -621,7 +714,10 @@ export function renderBridgeRemoteFiles({
             :'Elenco non disponibile: '+(error?.message||'errore remoto'));
         return false;
       }finally{
-        if(pendingBrowse===currentBrowse)pendingBrowse=null;
+        if(pendingBrowse===currentBrowse){
+          pendingBrowse=null;
+          thumbnailList.resume();
+        }
       }
     }
     try{await display();}
@@ -637,6 +733,7 @@ export function renderBridgeRemoteFiles({
     disposed=true;revision++;
     controller?.abort();
     abortActiveBrowse();
+    void thumbnailList?.stop();
     stopObservingMore();
     closePreviews();
     clearPreviewCache();
