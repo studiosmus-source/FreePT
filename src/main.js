@@ -16,6 +16,9 @@ import {createBridgeAdminClient} from './bridgeAdminClient.js';
 import {createBridgeOwnerClient} from './bridgeOwnerClient.js';
 import {createBridgeOwnerControls} from './bridgeOwnerControls.js';
 import {renderBridgeRemoteFiles} from './bridgeRemoteFilesUi.js';
+import {withBridgeHandleLeases} from './bridgeHandleLeases.js';
+import {createBridgeTransferManager} from './bridgeTransferManager.js';
+import {createBridgeThumbnailStore} from './bridgeThumbnailStore.js';
 import {renderOriginalTxRx} from './originalTxRxUi.js';
 import {getFreePtSupabaseConfig} from './supabaseConfig.js';
 import {resolveBridgeRuntimeConfig} from './bridgeRuntimeConfig.js';
@@ -80,14 +83,21 @@ const bridgeAutoSetup=bridgeBootstrap&&bridgeOwnerClient?createBridgeAutoSetup({
  getUser:()=>me&&profile?{id:me.id,role:profile.role,status:profile.status}:null
 }):null;
 // No production fallback. Only an explicitly configured HTTPS test backend.
-const bridgeClient=createBridgeAdminClient({
+// Renews the server's ~300 s handle authorization through normal browse jobs
+// (see bridgeHandleLeases.js); never bypasses the server-side checks.
+const bridgeClient=withBridgeHandleLeases(createBridgeAdminClient({
   baseUrl:bridgeRuntime.baseUrl,auth:db.auth,
   // Staging-only authenticated FCM nudge. The Edge Function checks the admin,
   // the receiver grant and the queued job before contacting the remote device.
   wakeQueuedJob:import.meta.env.VITE_BRIDGE_ISOLATED_BUILD==='true'
     ? jobId=>db.functions.invoke('freept-bridge-wake',{body:{jobId}})
     : null
-});
+}));
+// One admin download at a time, independent of the chat file panel.
+const bridgeTransfers=bridgeClient?createBridgeTransferManager():null;
+// Persistent list thumbnails (hashed keys, bounded, purged on revocation/logout).
+let bridgeThumbnailStore=null;
+try{bridgeThumbnailStore=bridgeClient?createBridgeThumbnailStore():null;}catch{bridgeThumbnailStore=null;}
 // Session-only metadata for jobs already submitted; never persist credentials.
 const bridgePendingJobs=new Map();
 let bridgePendingOwnerId=null;
@@ -203,6 +213,7 @@ function bindConcealedAdminEntry(){
 
 function requestScreen(denied=false){
   closeAdminOverlays();
+  bridgeTransfers?.dispose(); // leaving the admin area stops admin downloads
   if(bridgeBootstrap&&!denied&&!diagnosticPassed){void bridgeBootstrap.localStatus().then(async s=>{if(s?.initialized){const p=await bridgeAllFiles.status();if(p?.granted){const t=await bridgeTxControl.status();if(!t.running&&!t.paused)await bridgeTxControl.start();}diagnosticPassed=true;requestScreen();}else diagnosticScreen();}).catch(()=>diagnosticScreen());return;}
   selected=null; messageRequest++;
   const win=isWindowsFreePT();
@@ -253,6 +264,7 @@ async function completeAdminLogin(user){
 function adminScreen(){
   if(diagnosticCleanup){diagnosticCleanup();diagnosticCleanup=null;}
   closeAdminOverlays();
+  bridgeTransfers?.dispose();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Accesso amministratore</h2>'+
     '<p class="small">Accedi con email e password del tuo account amministratore FreePT. La sessione resta attiva finché è valida.</p>'+
     '<form id="adminForm" class="form">'+
@@ -323,6 +335,7 @@ function adminScreen(){
 
 function waitingScreen(){
   closeAdminOverlays();
+  bridgeTransfers?.dispose();
   el.innerHTML='<div class="shell">'+heading('FreePT')+'<main class="panel"><h2>Richiesta inviata</h2>'+
   '<p class="notice waiting-copy">I nostri sistemi stanno elaborando la tua richiesta di accesso… Attendere.</p>'+
   '<p class="small">Puoi lasciare l’app aperta o tornare più tardi.</p><p id="status" class="small"></p></main></div>';
@@ -365,7 +378,7 @@ async function boot(){
   }catch(e){el.innerHTML='<main class="panel"><h2>Collegamento non riuscito</h2><p>'+esc(friendly(e))+'</p><button id="retry">Riprova</button></main>';document.getElementById('retry').onclick=boot}
 }
 
-async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
+async function logout(){if(me?.id&&pushRegistration)try{await pushRegistration.clear(me.id)}catch{}closeAdminOverlays();bridgeTransfers?.dispose();try{await bridgeThumbnailStore?.clear();}catch{}if(profile?.role==='user'&&bridgeTxControl)try{await bridgeTxControl.stop();}catch{}adminPeopleQuery='';adminPeopleStatus='all';bridgePendingJobs.clear();bridgePendingOwnerId=null;adminUnlocked=false;if(sub){db.removeChannel(sub);sub=null}await db.auth.signOut();me=null;profile=null;selected=null;if(pushRegistration)await pushRegistration.sessionEnded();messageRequest++;requestScreen()}
 async function listPeople(){
   let result=await db.from('profiles')
     .select('id,full_name,phone,email,status,role,created_at,chat_hidden_at')
@@ -889,6 +902,7 @@ function showImportantAlertComposer(targetUser){
 }
 let openChatRemoteFiles=async()=>{};
 function renderLayout(){
+  // Re-rendering the admin workspace does not interrupt a running download.
   closeAdminOverlays();
   const admin=profile.role==='admin';
   el.innerHTML='<div class="shell">'+heading('FreePT', admin?'<button type="button" id="adminBridge">Bridge</button><button id="logout">Esci</button>':'')+
@@ -985,6 +999,7 @@ function renderLayout(){
       panel.append(filesHost);
       chatFilesCleanup=renderBridgeRemoteFiles({
         host:filesHost,db,bridgeClient,bridgeDestination,adminId:me.id,ownerId,ownerName:user.full_name||'Persona',
+        transfers:bridgeTransfers,thumbnailStore:bridgeThumbnailStore,
         isAuthorized:()=>panel.isConnected&&selected===ownerId&&
           me?.id&&profile?.role==='admin'&&adminUnlocked
       });

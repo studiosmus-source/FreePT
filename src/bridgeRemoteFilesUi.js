@@ -13,6 +13,8 @@ import {filterOwnerAuthorizedDevices} from './bridgeChatDeviceFilter.js';
 import {bridgePreviewPolicy} from './bridgePreviewPolicy.js';
 import {encodeBridgeBytes} from './bridgeAndroidDestination.js';
 import {canLoadBridgeThumbnail,createBridgeThumbnailList} from './bridgeThumbnailClient.js';
+import {bridgeThumbnailKey} from './bridgeThumbnailStore.js';
+import {describeBridgeError} from './bridgeTransferManager.js';
 
 // Only a validated ROOT page, bound to the current authenticated receiver and
 // device, is reused briefly within the same runtime. No disk or account-wide
@@ -45,7 +47,8 @@ function create(node,label,parent){
 }
 
 export function renderBridgeRemoteFiles({
-  host,db,bridgeClient,bridgeDestination,adminId,ownerId=null,ownerName=null,isAuthorized
+  host,db,bridgeClient,bridgeDestination,adminId,ownerId=null,ownerName=null,isAuthorized,
+  transfers=null,thumbnailStore=null
 }={}){
   if(!host||typeof db?.from!=='function'||typeof isAuthorized!=='function')
     throw Error('bridge_remote_ui_invalid_options');
@@ -110,17 +113,6 @@ export function renderBridgeRemoteFiles({
     if(!alive())throw Error('Download non autorizzato');
   };
   const setStatus=value=>{if(alive())status.textContent=value};
-  const fileDownload=async(item,deviceId)=>{
-    const writer=await createBridgeAndroidSingleFileWriter({
-      plugin:bridgeDestination,name:item.name,size:item.size,mime:item.mime,
-      ownerId,ownerName
-    });
-    await downloadBridgeFile({
-      api:bridgeClient,deviceId,handle:item.handle,size:item.size,
-      destination:writer,signal:controller.signal,
-      onProgress:p=>setStatus('Download '+item.name+': '+p.receivedBytes+' / '+p.totalBytes+' byte')
-    });
-  };
   // Explicit, bounded previews use the same authorized Bridge read path as downloads.
   // Never fetch arbitrary remote URLs or read an entire large file for a thumbnail.
   // Only explicit user-triggered previews read remote image bytes.
@@ -128,6 +120,10 @@ export function renderBridgeRemoteFiles({
   const previewable=item=>bridgePreviewPolicy(item)!==null;
   const showPreview=async(item,deviceId)=>{
     if(activeDownload||!alive())return;
+    if(transfers?.active()){
+      setStatus('Anteprima disponibile al termine del download in corso ('+transfers.label()+').');
+      return;
+    }
     const policy=bridgePreviewPolicy(item);
     if(!policy)return;
     closePreviews();
@@ -294,7 +290,7 @@ export function renderBridgeRemoteFiles({
       await publishPreview(new Blob(parts,{type:policy.mime}));
     }catch(error){
       if(!closed&&!abort.signal.aborted)
-        message.textContent='Anteprima non disponibile: '+(error?.message||'errore');
+        message.textContent='Anteprima non disponibile: '+describeBridgeError(error,'errore');
     }
   };
   /**
@@ -374,8 +370,48 @@ export function renderBridgeRemoteFiles({
     yes.onclick=()=>settle(true);
     close.focus();
   });
+  // Scan + inventory review happen in this panel (they need its UI). The
+  // transfer itself is handed to the app-wide manager, so returning to the
+  // chat or opening another person no longer interrupts it.
+  const runTransfer=async job=>{
+    if(transfers){
+      setStatus('Download avviato: puoi navigare o tornare alla chat. Avanzamento nella barra in basso.');
+      void transfers.start(job);
+      return;
+    }
+    // Fallback without manager (tests/other builds): same job, panel-bound.
+    activeDownload=true;setBridgeBusy(true);cancel.hidden=false;
+    controller=new AbortController();
+    try{
+      const outcome=await job.run({
+        signal:controller.signal,status:setStatus,
+        askRetry:message=>new Promise(resolve=>{
+          const signal=controller.signal;
+          const settle=retry=>{
+            retryTransfer.hidden=true;retryTransfer.onclick=null;
+            signal.removeEventListener('abort',aborted);resolve(retry);
+          };
+          const aborted=()=>settle(false);
+          if(signal.aborted){settle(false);return;}
+          setStatus(message);retryTransfer.hidden=false;
+          retryTransfer.onclick=()=>settle(true);
+          signal.addEventListener('abort',aborted,{once:true});
+        })
+      });
+      setStatus(job.label+': '+outcome);
+    }catch(error){setStatus(describeBridgeError(error,'Download non riuscito.'));}
+    finally{
+      controller=null;activeDownload=false;cancel.hidden=true;
+      retryTransfer.hidden=true;retryTransfer.onclick=null;
+      setBridgeBusy(false);thumbnailList?.resume();
+    }
+  };
   const startDownload=async(item,deviceId,root=false)=>{
     if(activeDownload||!alive())return;
+    if(transfers?.active()){
+      setStatus(describeBridgeError(Error('bridge_transfer_busy'))+' ('+transfers.label()+')');
+      return;
+    }
     const title=root?'Cartella condivisa':item.name;
     const isFolder=root||item.directory;
     if(!isFolder&&!confirm('Scaricare '+title+' nella cartella scelta?'))return;
@@ -384,6 +420,7 @@ export function renderBridgeRemoteFiles({
     cancel.hidden=false;
     controller=new AbortController();
     const signal=controller.signal;
+    let job=null;
     try{
       await thumbnailList?.pause();
       if(!ownerId||!ownerName)throw Error('Apri i file dalla chat della persona.');
@@ -422,60 +459,65 @@ export function renderBridgeRemoteFiles({
         setStatus('Controllo cartella di destinazione…');
         await destinationReady();
         if(signal.aborted)throw Error('bridge_transfer_cancelled');
-        const writer=createBridgeAndroidFolderDestination({
-          plugin:bridgeDestination,name:title,ownerId,ownerName
-        });
-        const result=await downloadBridgeFolder({
-          api:bridgeClient,deviceId,manifest,
-          destination:writer,signal,preserveCompletedOnCancel:true,
-          preserveCompletedOnFailure:true,
-          onInterruption:({path,completedFiles,totalFiles})=>new Promise(resolve=>{
-            const settle=retry=>{
-              retryTransfer.hidden=true;retryTransfer.onclick=null;
-              signal.removeEventListener('abort',aborted);
-              resolve(retry);
-            };
-            const aborted=()=>settle(false);
-            if(signal.aborted){settle(false);return;}
-            setStatus('Collegamento interrotto su '+path.join('/')+'. '+
+        const owner={ownerId,ownerName};
+        job={label:'Cartella '+title,run:async({signal:jobSignal,status,askRetry})=>{
+          const writer=createBridgeAndroidFolderDestination({
+            plugin:bridgeDestination,name:title,...owner
+          });
+          const result=await downloadBridgeFolder({
+            api:bridgeClient,deviceId,manifest,
+            destination:writer,signal:jobSignal,preserveCompletedOnCancel:true,
+            preserveCompletedOnFailure:true,
+            onInterruption:({path,completedFiles,totalFiles,error})=>askRetry(
+              describeBridgeError(error,'Collegamento interrotto')+' su '+path.join('/')+'. '+
               completedFiles+'/'+totalFiles+' file già completati e conservati. '+
-              'Controlla la connessione e premi Riprendi, oppure Interrompi per salvarli in una cartella parziale.');
-            retryTransfer.hidden=false;
-            retryTransfer.onclick=()=>settle(true);
-            signal.addEventListener('abort',aborted,{once:true});
-          }),
-          onStage:stage=>{
-            if(stage==='destination')setStatus('Creazione cartella temporanea…');
-            else if(stage==='transfer')setStatus('Scaricamento dei '+summary.files+' file…');
-            else if(stage==='finalizing')setStatus('Verifica finale della cartella…');
-            else if(stage==='preserving')setStatus('Salvataggio dei file completi già scaricati…');
-          },
-          onProgress:p=>setStatus('Completati '+p.completedFiles+'/'+summary.files+
-            ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
-        });
-        if(result.partial){
-          setStatus((result.interruptedBy==='transient_read'?'Collegamento interrotto. ':'Annullato. ')+
-            'Conservati '+result.files+' file completi in '+
-            (result.savedName||'cartella (parziale)')+'.');
-        }else setStatus('Cartella scaricata: '+result.files+' file.');
+              'Premi Riprendi, oppure Interrompi per salvarli in una cartella parziale.'),
+            onStage:stage=>{
+              if(stage==='destination')status('Creazione cartella temporanea…');
+              else if(stage==='transfer')status('Scaricamento dei '+summary.files+' file…');
+              else if(stage==='finalizing')status('Verifica finale della cartella…');
+              else if(stage==='preserving')status('Salvataggio dei file completi già scaricati…');
+            },
+            onProgress:p=>status('Completati '+p.completedFiles+'/'+summary.files+
+              ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
+          });
+          if(result.partial){
+            return (result.interruptedBy==='transient_read'?'Collegamento interrotto. ':'Annullato. ')+
+              'Conservati '+result.files+' file completi in '+
+              (result.savedName||'cartella (parziale)')+'.';
+          }
+          return 'cartella scaricata: '+result.files+' file.';
+        }};
       }else{
         setStatus('Controllo cartella di destinazione…');
         await destinationReady();
         if(signal.aborted)throw Error('bridge_transfer_cancelled');
         if(item.size<0)throw Error('Dimensione del file non disponibile.');
-        await fileDownload(item,deviceId);
-        setStatus('File scaricato: '+item.name);
+        const file={...item};
+        job={label:file.name,run:async({signal:jobSignal,status})=>{
+          const writer=await createBridgeAndroidSingleFileWriter({
+            plugin:bridgeDestination,name:file.name,size:file.size,mime:file.mime,
+            ownerId,ownerName
+          });
+          await downloadBridgeFile({
+            api:bridgeClient,deviceId,handle:file.handle,size:file.size,
+            destination:writer,signal:jobSignal,
+            onProgress:p=>status(p.receivedBytes+' / '+p.totalBytes+' byte')
+          });
+          return 'file scaricato.';
+        }};
       }
     }catch(error){
       if(error?.message==='bridge_transfer_cancelled')
-        setStatus('Download interrotto. Se nessun file era completo, nessuna cartella è stata salvata.');
-      else setStatus(error?.message||'Download non riuscito.');
+        setStatus('Operazione interrotta prima del download.');
+      else setStatus(describeBridgeError(error,'Download non riuscito.'));
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
       retryTransfer.hidden=true;retryTransfer.onclick=null;
       setBridgeBusy(false);
       thumbnailList?.resume();
     }
+    if(job&&alive())await runTransfer(job);
   };
   cancel.onclick=()=>{controller?.abort();setStatus('Interruzione richiesta…')};
   destinationButton.onclick=async()=>{
@@ -484,6 +526,16 @@ export function renderBridgeRemoteFiles({
       await bridgeDestination.chooseDestination();
       setStatus('Cartella di destinazione selezionata.');
     }catch{setStatus('Selezione destinazione annullata o non disponibile.');}
+  };
+  // Revocation: keep persistent thumbnails only for devices still granted to
+  // this administrator (all owners, not only the person of this chat).
+  const purgeRevokedThumbnails=async()=>{
+    try{
+      const {data,error}=await db.from('bridge_grants').select('device_id')
+        .eq('receiver_id',adminId).is('revoked_at',null).limit(1000);
+      if(error||!Array.isArray(data))return;
+      await thumbnailStore.retainDevices(data.map(row=>row.device_id));
+    }catch{/* best effort; entries still expire */}
   };
   let listingDevices=false;
   async function listDevices(){
@@ -518,6 +570,7 @@ export function renderBridgeRemoteFiles({
       if(error)throw error;
       if(!alive()||marker!==revision)return;
       const allowed=filterOwnerAuthorizedDevices(data,{ownerId});
+      if(thumbnailStore)void purgeRevokedThumbnails();
       if(!allowed.length){
         setStatus(ownerId?'Nessun telefono Bridge autorizzato per questa persona.':
           'Nessun dispositivo condiviso con questo amministratore.');
@@ -548,9 +601,12 @@ export function renderBridgeRemoteFiles({
     const marker=++revision;
     await thumbnailList?.stop();
     let pendingBrowse=null;
+    // Thumbnails yield to navigation, previews and any running download:
+    // every remote job shares the remote phone's single FIFO.
     thumbnailList=createBridgeThumbnailList({
-      api:bridgeClient,deviceId,
-      canRun:()=>alive()&&marker===revision&&!pendingBrowse&&!activeDownload&&previewClosers.size===0
+      api:bridgeClient,deviceId,store:thumbnailStore,
+      canRun:()=>alive()&&marker===revision&&!pendingBrowse&&!activeDownload&&
+        previewClosers.size===0&&!transfers?.active()
     });
     abortActiveBrowse=()=>{pendingBrowse?.abort();pendingBrowse=null;};
     stopObservingMore();
@@ -659,7 +715,11 @@ export function renderBridgeRemoteFiles({
             const img=create('img',undefined,primary);
             img.className='bridge-entry-thumbnail';
             img.alt='Miniatura di '+item.name;img.hidden=true;
-            thumbnailList.track(line,item,img,icon);
+            // Opaque SHA-256 key: no file or folder name is written to disk.
+            const persistKey=thumbnailStore?bridgeThumbnailKey([
+              adminId,deviceId,...stack.map(segment=>segment.name),item.name,item.size,item.mime
+            ]).catch(()=>null):null;
+            thumbnailList.track(line,item,img,icon,{persistKey});
           }
           create('span',item.name,primary);
           if(hidden){
@@ -731,7 +791,7 @@ export function renderBridgeRemoteFiles({
           ?'Richiesta scaduta: il telefono remoto non ha ritirato o completato il lavoro. Controlla il Bridge sul telefono e premi Aggiorna.'
           :error?.message==='bridge_remote_browse_timeout'
             ?'Il telefono remoto non ha risposto entro il limite di attesa. Controlla il Bridge sul telefono. Premi Aggiorna per riprovare.'
-            :'Elenco non disponibile: '+(error?.message||'errore remoto'));
+            :'Elenco non disponibile: '+describeBridgeError(error,'errore remoto'));
         return false;
       }finally{
         if(pendingBrowse===currentBrowse){
@@ -748,8 +808,12 @@ export function renderBridgeRemoteFiles({
     recentRoots.get(bridgeClient)?.clear();
     void listDevices();
   };
+  const unsubscribeTransfers=transfers?.onChange(running=>{
+    if(!running&&alive())thumbnailList?.resume();
+  });
   void listDevices();
   return ()=>{
+    unsubscribeTransfers?.();
     disposed=true;revision++;
     controller?.abort();
     abortActiveBrowse();
