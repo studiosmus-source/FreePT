@@ -109,7 +109,7 @@ async function requestFromPc(origin:string|null,db:any,phone:string){
     if(!code)return generic;
     const body='Codice per collegare il PC: '+code+'\n\n'+
       'Scrivilo nell’app FreePT sul computer. Vale una sola volta.\n'+
-      'Se non hai chiesto tu di collegare un PC, ignora questo messaggio e avvisa l’amministratore.';
+      'Se non hai chiesto tu di collegare un PC, ignora questo messaggio: senza il codice nessuno può entrare.';
     const {error}=await db.from('messages').insert({user_id:userId,sender_id:adminId,body});
     console.info('freept-pc-access',{outcome:error?'chat_failed':'issued_chat'});
   }catch(error){

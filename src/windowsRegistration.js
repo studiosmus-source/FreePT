@@ -15,6 +15,6 @@ export function normalizedWindowsEmail(value){
 export function parsePcAccessCode(value){
  const raw=String(value??'').toUpperCase().replace(/[\s.·_]/g,'').replace(/[–—]/g,'-');
  const match=/^([A-HJKMNP-Z2-9]{6})-?([0-9]{6,10})$/.exec(raw);
- if(!match)throw Error('Codice non valido: controlla di averlo scritto come te l’ha dato l’amministratore.');
+ if(!match)throw Error('Codice non valido: controlla di averlo copiato esattamente come appare nella chat FreePT del telefono.');
  return {email:'pc-'+match[1].toLowerCase()+'@freept-pc.invalid',token:match[2]};
 }
