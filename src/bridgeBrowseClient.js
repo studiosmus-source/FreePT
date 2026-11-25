@@ -1,4 +1,5 @@
 import {validateBridgeFolderPage} from './bridgeFileProtocol.js';
+import {retryBridgeRead} from './bridgeTransferRecovery.js';
 
 /**
  * Authenticated remote directory browsing: one paginated job per SAF page.
@@ -38,7 +39,7 @@ export function createBridgeRemoteFolderLister({
       let complete=false;
       for(let attempt=0;attempt<maxPolls;attempt++){
         if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-        const status=await api.getStatus(job.jobId,{signal});
+        const status=await retryBridgeRead(()=>api.getStatus(job.jobId,{signal}),{signal,pause,pollMs});
         if(status?.jobId!==job.jobId||status.deviceId!==deviceId)
           throw Error('bridge_remote_browse_job_mismatch');
         if(status.state==='done'){complete=true;break}
@@ -59,7 +60,7 @@ export function createBridgeRemoteFolderLister({
       }
       if(!complete)throw Error('bridge_remote_browse_timeout');
       if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-      const page=await api.getBrowsePage(job.jobId,{signal});
+      const page=await retryBridgeRead(()=>api.getBrowsePage(job.jobId,{signal}),{signal,pause,pollMs});
       if(page?.jobId!==job.jobId||!Array.isArray(page.entries)||
          !Number.isSafeInteger(page.nextOffset))
         throw Error('bridge_remote_browse_invalid_page');

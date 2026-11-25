@@ -1,7 +1,7 @@
-name: FreePT TEST administrator previews only
+name: FreePT TEST administrator folder download recovery
 on:
   push:
-    branches: [fix/admin-previews-20261125]
+    branches: [fix/admin-folder-downloads-20261125]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   admin-apk:
-    if: github.ref == 'refs/heads/fix/admin-previews-20261125'
+    if: github.ref == 'refs/heads/fix/admin-folder-downloads-20261125'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -43,6 +43,11 @@ jobs:
             'src/bridgeRemoteFilesUi.js','src/bridgePreviewPolicy.js',
             'src/bridgeThumbnailClient.js','bridge/thumbnailClient.test.mjs',
             'src/style.css','docs/ADMIN_PREVIEWS_2_9_0.md'
+            ,'src/bridgeAdminClient.js','src/bridgeBrowseClient.js',
+            'src/bridgeDownloadClient.js','src/bridgeFolderDownloadClient.js',
+            'src/bridgeTransferRecovery.js','bridge/folderReceiver.mjs',
+            'bridge/adminClient.test.mjs','bridge/folderRecovery.test.mjs',
+            'docs/ADMIN_FOLDER_RECOVERY_2_9_1.md'
           }
           changed=set(subprocess.check_output([
             'git','diff','--name-only',
@@ -111,7 +116,7 @@ jobs:
           from pathlib import Path
           p=Path('android/app/build.gradle');s=p.read_text()
           assert s.count('versionCode 19')==1 and s.count('versionName "2.8.0"')==1
-          p.write_text(s.replace('versionCode 19','versionCode 20',1).replace('versionName "2.8.0"','versionName "2.9.0-admin"',1))
+          p.write_text(s.replace('versionCode 19','versionCode 21',1).replace('versionName "2.8.0"','versionName "2.9.1-admin"',1))
           p=Path('android/gradle/wrapper/gradle-wrapper.properties')
           lines=p.read_text().splitlines()
           p.write_text('\n'.join(
@@ -149,7 +154,7 @@ jobs:
           trap 'rm -f "$RUNNER_TEMP/freept-admin.jks"' EXIT
           printf '%s' "$BRIDGE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/freept-admin.jks"
           TOOL="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
-          APK=FreePT-TEST-2.9.0-ADMIN-ONLY.apk
+          APK=FreePT-TEST-2.9.1-ADMIN-ONLY.apk
           "$TOOL" sign --ks "$RUNNER_TEMP/freept-admin.jks" --ks-pass env:BRIDGE_STORE_PASSWORD --ks-key-alias "$BRIDGE_KEY_ALIAS" --key-pass env:BRIDGE_KEY_PASSWORD --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" android/app/build/outputs/apk/debug/app-debug.apk
           "$TOOL" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/admin-signature.txt"
           for scheme in v1 v2 v3; do
@@ -161,14 +166,14 @@ jobs:
           grep -Fqi "$KEY_SHA" "$RUNNER_TEMP/admin-signature.txt"
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)"
           "$AAPT" dump badging "$APK" > apk-info.txt
-          grep -Fq "package: name='it.freept.bridge.next' versionCode='20' versionName='2.9.0-admin'" apk-info.txt
+          grep -Fq "package: name='it.freept.bridge.next' versionCode='21' versionName='2.9.1-admin'" apk-info.txt
           unzip -t "$APK" >/dev/null
           sha256sum "$APK" > apk-sha256.txt
       - uses: actions/upload-artifact@v4
         with:
           name: FreePT-TEST-administrator-only
           path: |
-            FreePT-TEST-2.9.0-ADMIN-ONLY.apk
+            FreePT-TEST-2.9.1-ADMIN-ONLY.apk
             apk-info.txt
             apk-sha256.txt
             test-results.txt

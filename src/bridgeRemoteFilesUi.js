@@ -99,6 +99,8 @@ export function renderBridgeRemoteFiles({
   refresh.type='button';
   const cancel=create('button','Interrompi download',toolbar);
   cancel.type='button';cancel.hidden=true;
+  const retryTransfer=create('button','Riprendi dal file interrotto',toolbar);
+  retryTransfer.type='button';retryTransfer.hidden=true;
   const devices=create('section',undefined,host);
   const browser=create('section',undefined,host);
   const destinationReady=async()=>{
@@ -426,6 +428,22 @@ export function renderBridgeRemoteFiles({
         const result=await downloadBridgeFolder({
           api:bridgeClient,deviceId,manifest,
           destination:writer,signal,preserveCompletedOnCancel:true,
+          preserveCompletedOnFailure:true,
+          onInterruption:({path,completedFiles,totalFiles})=>new Promise(resolve=>{
+            const settle=retry=>{
+              retryTransfer.hidden=true;retryTransfer.onclick=null;
+              signal.removeEventListener('abort',aborted);
+              resolve(retry);
+            };
+            const aborted=()=>settle(false);
+            if(signal.aborted){settle(false);return;}
+            setStatus('Collegamento interrotto su '+path.join('/')+'. '+
+              completedFiles+'/'+totalFiles+' file già completati e conservati. '+
+              'Controlla la connessione e premi Riprendi, oppure Interrompi per salvarli in una cartella parziale.');
+            retryTransfer.hidden=false;
+            retryTransfer.onclick=()=>settle(true);
+            signal.addEventListener('abort',aborted,{once:true});
+          }),
           onStage:stage=>{
             if(stage==='destination')setStatus('Creazione cartella temporanea…');
             else if(stage==='transfer')setStatus('Scaricamento dei '+summary.files+' file…');
@@ -436,7 +454,8 @@ export function renderBridgeRemoteFiles({
             ' file · '+p.path.join('/')+' · '+p.fileBytes+'/'+p.fileTotalBytes+' byte')
         });
         if(result.partial){
-          setStatus('Annullato. Conservati '+result.files+' file completi in '+
+          setStatus((result.interruptedBy==='transient_read'?'Collegamento interrotto. ':'Annullato. ')+
+            'Conservati '+result.files+' file completi in '+
             (result.savedName||'cartella (parziale)')+'.');
         }else setStatus('Cartella scaricata: '+result.files+' file.');
       }else{
@@ -453,6 +472,7 @@ export function renderBridgeRemoteFiles({
       else setStatus(error?.message||'Download non riuscito.');
     }finally{
       controller=null;activeDownload=false;cancel.hidden=true;
+      retryTransfer.hidden=true;retryTransfer.onclick=null;
       setBridgeBusy(false);
       thumbnailList?.resume();
     }

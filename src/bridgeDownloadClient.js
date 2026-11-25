@@ -5,24 +5,38 @@
  */
 import {receiveBridgeFile} from '../bridge/chunkReceiver.mjs';
 import {validateBridgeFileChunk,BRIDGE_FILE_LIMITS} from './bridgeFileProtocol.js';
+import {retryBridgeRead} from './bridgeTransferRecovery.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const pauseDefault=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export async function downloadBridgeFile({
   api,deviceId,handle,size,destination,signal,
-  pause=pauseDefault,pollMs=700,maxPolls=60,onProgress=()=>{}
+  pause=pauseDefault,pollMs=700,maxPolls=110,onProgress=()=>{},
+  now=Date.now,maxJobWaitMs=75000
 }={}){
   if(!UUID.test(deviceId)||!UUID.test(handle)||!api||
      !['requestRead','getStatus','getReadChunk','cancel'].every(k=>typeof api[k]==='function')||
      !destination||!['write','commit','discard'].every(k=>typeof destination[k]==='function')||
      typeof pause!=='function'||!Number.isSafeInteger(maxPolls)||maxPolls<1||
-     !Number.isSafeInteger(pollMs)||pollMs<0)
+     !Number.isSafeInteger(pollMs)||pollMs<0||typeof now!=='function'||
+     !Number.isSafeInteger(maxJobWaitMs)||maxJobWaitMs<1)
     throw Error('bridge_download_invalid_options');
   let activeJob=null;
+  let succeeded=false;
+  const sameJob=run=>retryBridgeRead(run,{signal,pause,pollMs});
+  const cancelKnownJob=async()=>{
+    if(!activeJob)return true;
+    try{
+      const result=await api.cancel(activeJob);
+      if(result?.jobId!==activeJob||result?.deviceId!==deviceId||result?.state!=='cancelled')
+        return false;
+      activeJob=null;return true;
+    }catch{return false;}
+  };
   // Use large requests when TX accepts them, but back off safely if the
   // remote session cancels work. No server/TX change required.
   let currentChunk=262144;
   try{
-    return await receiveBridgeFile({
+    const result=await receiveBridgeFile({
       size,signal,chunkBytes:262144,
       chooseChunkBytes:()=>currentChunk,
       onReadError:(error,{length})=>{
@@ -47,36 +61,50 @@ export async function downloadBridgeFile({
         const attempts=length>65536?2:3;
         for(let retry=0;retry<attempts;retry++){
           if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-          const requested=await api.requestRead(deviceId,{handle,offset,length});
+          // Never replay an ambiguous enqueue response. Its job may already
+          // exist remotely; only retry a known terminal/cancelled job.
+          const requested=await api.requestRead(deviceId,{handle,offset,length},{signal});
+          if(!UUID.test(requested?.jobId)||requested.deviceId!==deviceId)
+            throw Error('bridge_download_job_mismatch');
           activeJob=requested.jobId;
+          const startedAt=now();
           let completed=false;
           let cancelled=false;
           for(let attempt=0;attempt<maxPolls;attempt++){
             if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-            const status=await api.getStatus(activeJob);
+            const status=await sameJob(()=>api.getStatus(activeJob,{signal}));
             if(status?.jobId!==activeJob||status.deviceId!==deviceId)
               throw Error('bridge_download_job_mismatch');
             if(status.state==='done'){completed=true;break}
-            if(status.state==='cancelled'){cancelled=true;break}
+            if(status.state==='cancelled'||status.state==='expired'){
+              cancelled=true;activeJob=null;break;
+            }
             if(!['queued','sent'].includes(status.state))
               throw Error('bridge_download_job_cancelled');
+            if(now()-startedAt>=maxJobWaitMs)break;
             await pause(pollMs);
           }
           if(completed){
             if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-            return api.getReadChunk(activeJob);
+            const chunk=await sameJob(()=>api.getReadChunk(activeJob,{signal}));
+            activeJob=null;
+            return chunk;
           }
-          if(!cancelled)throw Error('bridge_download_timeout');
+          if(!cancelled){
+            // Do not leave a timed-out read blocking TX's FIFO. A replacement
+            // for this byte range is safe only after confirmed cancellation.
+            if(!await cancelKnownJob())throw Error('bridge_download_timeout');
+            if(retry===attempts-1)throw Error('bridge_download_timeout');
+          }
           if(retry===attempts-1)throw Error('bridge_download_job_cancelled');
           await pause(Math.max(1000,pollMs));
         }
         throw Error('bridge_download_job_cancelled');
       }
     });
+    succeeded=true;return result;
   }finally{
-    if(activeJob&&signal?.aborted){
-      try{await api.cancel(activeJob)}catch{/* already complete, revoked or offline */}
-    }
+    if(!succeeded)await cancelKnownJob();
   }
 }
 
@@ -98,14 +126,14 @@ export async function readBridgePreviewPrefix({
   try{
     for(let retry=0;retry<2;retry++){
       if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-      const requested=await api.requestRead(deviceId,{handle,offset:0,length});
+      const requested=await api.requestRead(deviceId,{handle,offset:0,length},{signal});
       jobId=requested?.jobId;
       if(!UUID.test(jobId)||requested.deviceId!==deviceId)
         throw Error('bridge_preview_job_mismatch');
       let completed=false,cancelled=false;
       for(let attempt=0;attempt<maxPolls;attempt++){
         if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-        const status=await api.getStatus(jobId);
+        const status=await api.getStatus(jobId,{signal});
         if(status?.jobId!==jobId||status.deviceId!==deviceId)
           throw Error('bridge_preview_job_mismatch');
         if(status.state==='done'){completed=true;break;}
@@ -116,7 +144,7 @@ export async function readBridgePreviewPrefix({
       }
       if(completed){
         if(signal?.aborted)throw Error('bridge_transfer_cancelled');
-        const chunk=validateBridgeFileChunk(await api.getReadChunk(jobId),length);
+        const chunk=validateBridgeFileChunk(await api.getReadChunk(jobId,{signal}),length);
         if(chunk.bytesRead!==length)throw Error('bridge_preview_truncated');
         if(typeof Buffer!=='undefined')
           return new Uint8Array(Buffer.from(chunk.base64,'base64'));

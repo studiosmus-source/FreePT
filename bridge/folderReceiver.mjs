@@ -6,6 +6,7 @@
  * retain already verified complete files in a clearly partial folder.
  */
 import {validateBridgeFolderPage, BRIDGE_FILE_LIMITS} from '../src/bridgeFileProtocol.js';
+import {isBridgeTransferInterruption} from '../src/bridgeTransferRecovery.js';
 
 const HANDLE=/^(?:root|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const cancelled = signal => { if(signal?.aborted) throw Error('bridge_transfer_cancelled'); };
@@ -88,10 +89,13 @@ export async function planBridgeFolder({
 export async function receiveBridgeFolder({
   root,listPage,manifest=null,begin,makeDirectory,downloadFile,commit,discard,
   signal,maxEntries,onScanProgress=()=>{},onStage=()=>{},
-  preserveCompletedOnCancel=false
+  preserveCompletedOnCancel=false,preserveCompletedOnFailure=false,
+  onInterruption=null
 }={}){
   if([begin,makeDirectory,downloadFile,commit,discard,onScanProgress,onStage]
-      .some(fn=>typeof fn!=='function')||typeof preserveCompletedOnCancel!=='boolean')
+      .some(fn=>typeof fn!=='function')||typeof preserveCompletedOnCancel!=='boolean'||
+      typeof preserveCompletedOnFailure!=='boolean'||
+      (onInterruption!==null&&typeof onInterruption!=='function'))
     throw Error('bridge_folder_destination_invalid');
   let source=manifest;
   if(source!==null){
@@ -113,9 +117,26 @@ export async function receiveBridgeFolder({
       cancelled(signal);
       if(item.directory)await makeDirectory(item.path);
       else{
-        await downloadFile({
-          handle:item.handle,path:item.path,size:item.size,mime:item.mime,signal
-        });
+        for(;;){
+          try{
+            await downloadFile({
+              handle:item.handle,path:item.path,size:item.size,mime:item.mime,signal
+            });
+            break;
+          }catch(error){
+            if(!signal?.aborted&&onInterruption&&isBridgeTransferInterruption(error)){
+              // The file receiver already discarded the interrupted current
+              // file. Completed siblings remain staged; retry only this file.
+              onStage('paused');
+              const retry=await onInterruption({
+                path:[...item.path],completedFiles,totalFiles:totals.files,error,signal
+              });
+              cancelled(signal);
+              if(retry===true){onStage('transfer');continue;}
+            }
+            throw error;
+          }
+        }
         completedFiles++;
       }
     }
@@ -125,8 +146,11 @@ export async function receiveBridgeFolder({
     done=true;
     return {entries:totals.entries,files:totals.files};
   }catch(error){
-    if(started&&preserveCompletedOnCancel&&signal?.aborted&&
-       error?.message==='bridge_transfer_cancelled'&&completedFiles>0){
+    const userCancelled=preserveCompletedOnCancel&&signal?.aborted&&
+      error?.message==='bridge_transfer_cancelled';
+    const networkInterrupted=preserveCompletedOnFailure&&!signal?.aborted&&
+      isBridgeTransferInterruption(error);
+    if(started&&(userCancelled||networkInterrupted)&&completedFiles>0){
       onStage('preserving');
       // The in-flight file writer has already discarded its partial bytes
       // before downloadFile throws. All remaining native entries are complete.
@@ -134,6 +158,7 @@ export async function receiveBridgeFolder({
       const saved=await commit({partial:true,completedFiles});
       done=true;
       return {...totals,files:completedFiles,partial:true,
+        interruptedBy:userCancelled?'user_cancel':'transient_read',
         savedName:saved?.name||null};
     }
     throw error;

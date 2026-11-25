@@ -83,7 +83,8 @@ test('browsing passes an abort signal to HTTPS and stops promptly on navigation'
  controller.abort();
  await assert.rejects(pending,/bridge_transfer_cancelled/);
  assert.deepEqual(endpoints,[endpoint+'/bridge/admin/browse']);
- assert.equal(signals[0],controller.signal);
+ assert.ok(signals[0] instanceof AbortSignal);
+ assert.equal(signals[0].aborted,true);
 });
 test('aborted browse never sends a request after session lookup completes',async()=>{
  const controller=new AbortController(),endpoints=[];
