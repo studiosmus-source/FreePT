@@ -286,6 +286,6 @@ video.attach-thumb,audio.attach-thumb{width:240px;max-width:100%;cursor:default}
 /* Windows: sign in to the same account with the administrator's code */
 .pc-code{border:1px solid #c9dde3;background:#f3fafb;border-radius:12px;padding:14px 16px;margin-bottom:22px}
 .pc-code h2{margin:0 0 6px;font-size:19px}
-.pc-code input{font-family:ui-monospace,Consolas,monospace;letter-spacing:1px;text-transform:uppercase}
+#pcCodeForm input{font-family:ui-monospace,Consolas,monospace;letter-spacing:1px;text-transform:uppercase}
 .pc-code-or{margin-bottom:0}
 #pcPhoneForm{margin-bottom:10px}
